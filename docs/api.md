@@ -35,7 +35,12 @@ Base path: `/api/v1`. Todas las rutas requieren sesión autenticada. Las respues
 | GET | `/dashboard` | Usuario autenticado | Resumen del día comercial |
 | GET | `/reports/sales?from=AAAA-MM-DD&to=AAAA-MM-DD` | Administrador, Gerente | Ventas, pagos, días y productos destacados |
 | GET | `/reports/payables-aging?asOf=AAAA-MM-DD` | Administrador, Gerente | Saldos abiertos agrupados por vencimiento según la fecha y zona horaria comercial |
+| GET | `/reports/receivables-aging?asOf=AAAA-MM-DD` | Administrador, Gerente, Cajero | Cuentas por cobrar netas de notas de crédito y abonos |
+| GET | `/customers/{id}/statement?from=AAAA-MM-DD&to=AAAA-MM-DD` | Administrador, Gerente, Cajero, Vendedor | Estado de cuenta con saldo anterior, ventas, pagos, notas de crédito y balance corrido |
+| GET | `/customers/{id}/statement.csv?from=AAAA-MM-DD&to=AAAA-MM-DD` | Administrador, Gerente, Cajero, Vendedor | Exportar el mismo estado de cuenta a CSV |
 | POST | `/pos/checkout` | Administrador, Gerente, Cajero | Registrar cobro y salida de inventario; requiere `idempotencyKey` UUID estable por intento y devuelve la venta original al reintentar la misma solicitud |
+| POST | `/sales/{id}/receipts` | Administrador, Gerente, Cajero | Registrar abono idempotente a una venta a crédito; cobro en efectivo requiere turno abierto |
+| POST | `/sales/{id}/returns` | Administrador, Gerente, Cajero | Emitir nota de crédito por cantidades vendidas aún no devueltas; repone el almacén original y aplica el crédito a cartera antes de reembolsar |
 | GET | `/pos/registers?includeInactive=false` | Administrador | Consultar terminales de la empresa |
 | POST | `/pos/registers` | Administrador | Crear terminal con código permanente y nombre visible |
 | PUT | `/pos/registers/{id}` | Administrador | Renombrar terminal con revisión optimista |
@@ -74,4 +79,4 @@ Errores de dominio se devuelven como Problem Details de validación. La platafor
 
 El arqueo esperado suma fondo inicial, ventas completadas en efectivo y movimientos de entrada; resta retiros. Una venta nueva requiere un turno abierto para el `registerCode` indicado; el terminal determina el almacén y el checkout descuenta sus existencias sin consumir stock de otras ubicaciones. El recibo imprimible se presenta en `/app/receipts/{id}`.
 
-El módulo actual registra un método de pago por venta. Pagos divididos, idempotencia, conciliación bancaria y recibos fiscales oficiales siguen pendientes.
+El POS admite pagos divididos entre medios configurados. Las devoluciones son idempotentes: envía `idempotencyKey`, `lines` con `{ saleLineId, quantity }`, y `refundPaymentMethodId` solo cuando se deba reembolsar dinero ya pagado; el importe se aplica primero al saldo a crédito. Un reembolso en efectivo usa `registerCode` y necesita un turno abierto. La nota de crédito y el movimiento contable se registran en la misma transacción que inventario y caja. Conciliación bancaria y comprobantes fiscales oficiales siguen pendientes.

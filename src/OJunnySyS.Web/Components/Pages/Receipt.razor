@@ -3,6 +3,9 @@
 @inject StoreService Store
 @inject TenantSettingsService TenantConfig
 @inject OJunnySyS.Application.Abstractions.IBusinessClock Clock
+@inject OJunnySyS.Application.Services.PosPaymentMethodService PaymentMethods
+@inject Microsoft.AspNetCore.Components.Authorization.AuthenticationStateProvider AuthenticationState
+@inject ILogger<Receipt> Logger
 @inject IJSRuntime JS
 
 <PageTitle>Recibo · OJunnySyS</PageTitle>
@@ -36,14 +39,71 @@ else
         <footer>@(_settings?.ReceiptFooter is { Length: > 0 } ? _settings.ReceiptFooter : "Gracias por su compra.")<br /><small>Comprobante generado por OJunnySyS</small></footer>
         </div>
     </article>
+    @if (_receipt.Status == SaleStatus.Completed)
+    {
+        <section class="panel return-panel no-print">
+            <div><span class="eyebrow">POSTVENTA</span><h2>Devolución / nota de crédito</h2><p>Saldo por cobrar: <strong>@Money(_receipt.BalanceDue)</strong>. La devolución reintegra los artículos al almacén original.</p></div>
+            @if (!string.IsNullOrWhiteSpace(_returnError)) { <div class="inline-error">@_returnError</div> }
+            @if (!string.IsNullOrWhiteSpace(_returnNotice)) { <div class="success-banner">✓ @_returnNotice</div> }
+            <div class="table-wrap"><table><thead><tr><th>ARTÍCULO</th><th>VENDIDO</th><th>DEVUELTO</th><th>DISPONIBLE</th><th>CANTIDAD A DEVOLVER</th></tr></thead><tbody>
+                @foreach (var line in _receipt.Lines)
+                {
+                    var returned = Returned(line.SaleLineId);
+                    var remaining = line.Quantity - returned;
+                    <tr><td>@line.ProductName <small class="mono">@line.Sku</small></td><td>@line.Quantity</td><td>@returned</td><td>@remaining</td><td><input type="number" min="0" max="@remaining" step="1" @bind="_returnQuantities[line.SaleLineId]" @bind:after="ResetReturnKey" disabled="@(remaining == 0)" aria-label="Cantidad a devolver de @line.ProductName" /></td></tr>
+                }
+            </tbody></table></div>
+            <div class="return-actions">
+                <label>Medio de reembolso (solo si el valor ya fue pagado)<select @bind="_refundPaymentMethodId" @bind:after="ResetReturnKey"><option value="">Aplicar al saldo de la cuenta</option>@foreach (var method in _paymentMethods) { <option value="@method.Id">@method.Name</option> }</select></label>
+                <span>Crédito estimado: <strong>@Money(ReturnEstimate)</strong></span>
+                <button class="button button-primary" @onclick="SubmitReturnAsync" disabled="_returning || !HasReturnLines">@(_returning ? "Procesando…" : "Registrar devolución")</button>
+            </div>
+            @if (_receipt.Returns is { Count: > 0 })
+            {
+                <div class="return-history"><h3>Notas de crédito registradas</h3>@foreach (var item in _receipt.Returns.OrderByDescending(x => x.CreatedAtUtc)) { <p><strong class="mono">@item.Number</strong> · @item.CreatedAtUtc.ToLocalTime().ToString("dd/MM/yyyy HH:mm") · @Money(item.Total) @if (item.RefundAmount > 0) { <small>(reembolsado @Money(item.RefundAmount))</small> } else { <small>(aplicado a cartera)</small> }</p> }</div>
+            }
+        </section>
+    }
 }
 
 @code {
     [Parameter] public Guid SaleId { get; set; }
     private SaleReceiptDto? _receipt;
     private TenantBusinessSettingsDto? _settings;
+    private IReadOnlyList<TenantPaymentMethodDto> _paymentMethods = [];
+    private readonly Dictionary<Guid, int> _returnQuantities = [];
+    private Guid? _refundPaymentMethodId;
+    private Guid? _returnIdempotencyKey;
+    private string? _returnError, _returnNotice;
+    private bool _returning;
+    private bool HasReturnLines => _returnQuantities.Values.Any(x => x > 0);
+    private decimal ReturnEstimate => _receipt is null ? 0m : decimal.Round(_receipt.Lines.Sum(x => (decimal)_returnQuantities.GetValueOrDefault(x.SaleLineId) * x.UnitPrice) + _receipt.Lines.Sum(x => decimal.Round((decimal)_returnQuantities.GetValueOrDefault(x.SaleLineId) * x.UnitPrice * x.TaxRate, 2, MidpointRounding.AwayFromZero)), 2, MidpointRounding.AwayFromZero);
+    private int Returned(Guid saleLineId) => _receipt?.Returns?.SelectMany(x => x.Lines).Where(x => x.SaleLineId == saleLineId).Sum(x => x.Quantity) ?? 0;
     private bool _loading = true;
-    protected override async Task OnParametersSetAsync() { _loading = true; _receipt = await Store.GetSaleReceiptAsync(SaleId); _settings = await TenantConfig.GetAsync(); _loading = false; }
+    protected override async Task OnParametersSetAsync() { _loading = true; _receipt = await Store.GetSaleReceiptAsync(SaleId); _settings = await TenantConfig.GetAsync(); _paymentMethods = await PaymentMethods.GetAsync(false); _returnQuantities.Clear(); if (_receipt is not null) foreach (var line in _receipt.Lines) _returnQuantities[line.SaleLineId] = 0; _loading = false; }
+    private async Task SubmitReturnAsync()
+    {
+        if (_receipt is null || !HasReturnLines) return;
+        _returning = true; _returnError = null; _returnNotice = null;
+        try
+        {
+            var auth = await AuthenticationState.GetAuthenticationStateAsync();
+            var actor = auth.User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+            if (!Guid.TryParse(actor, out var actorId)) throw new DomainException("No se pudo identificar al usuario activo.");
+            var lines = _returnQuantities.Where(x => x.Value > 0).Select(x => new SaleReturnLineRequest(x.Key, x.Value)).ToArray();
+            _returnIdempotencyKey ??= Guid.NewGuid();
+            await Store.ReturnSaleAsync(SaleId, actorId, new CreateSaleReturnRequest(_returnIdempotencyKey.Value, lines, _refundPaymentMethodId));
+            _returnNotice = "Devolución registrada con su nota de crédito y movimiento contable.";
+            _receipt = await Store.GetSaleReceiptAsync(SaleId);
+            foreach (var line in _receipt!.Lines) _returnQuantities[line.SaleLineId] = 0;
+            _refundPaymentMethodId = null;
+            _returnIdempotencyKey = null;
+        }
+        catch (DomainException ex) { _returnError = ex.Message; }
+        catch (Exception ex) { Logger.LogError(ex, "No se pudo registrar la devolución de {SaleId}.", SaleId); _returnError = "No se pudo registrar la devolución. Verifica la caja y vuelve a intentar."; }
+        finally { _returning = false; }
+    }
+    private void ResetReturnKey() => _returnIdempotencyKey = null;
     private Task PrintAsync() => JS.InvokeVoidAsync("window.print").AsTask();
     private static string Money(decimal value) => DisplayFormat.Money(value, showCents: true);
 }

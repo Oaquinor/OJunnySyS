@@ -1,4 +1,4 @@
-param([switch]$NoLaunchProfile)
+param([switch]$NoLaunchProfile, [ValidateSet('Debug','Release','Review')][string]$Configuration = 'Debug', [ValidateRange(1,65535)][int]$Port = 5144)
 
 $ErrorActionPreference = 'Stop'
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
@@ -17,17 +17,18 @@ foreach ($required in 'MYSQL_DATABASE','MYSQL_USER','MYSQL_PASSWORD','BOOTSTRAP_
     if ([string]::IsNullOrWhiteSpace($settings[$required])) { throw "Define $required en .env." }
 }
 
-$port = if ($settings['MYSQL_PORT']) { $settings['MYSQL_PORT'] } else { '3306' }
-$env:ConnectionStrings__OjunnySyS = "Server=127.0.0.1;Port=$port;Database=$($settings['MYSQL_DATABASE']);User ID=$($settings['MYSQL_USER']);Password=$($settings['MYSQL_PASSWORD']);"
+$mysqlPort = if ($settings['MYSQL_PORT']) { $settings['MYSQL_PORT'] } else { '3306' }
+$env:ConnectionStrings__OjunnySyS = "Server=127.0.0.1;Port=$mysqlPort;Database=$($settings['MYSQL_DATABASE']);User ID=$($settings['MYSQL_USER']);Password=$($settings['MYSQL_PASSWORD']);"
 $env:BootstrapAdmin__Email = $settings['BOOTSTRAP_ADMIN_EMAIL']
 $env:BootstrapAdmin__Password = $settings['BOOTSTRAP_ADMIN_PASSWORD']
 $env:BootstrapAdmin__DisplayName = if ($settings['BOOTSTRAP_ADMIN_DISPLAY_NAME']) { $settings['BOOTSTRAP_ADMIN_DISPLAY_NAME'] } else { 'Administrador' }
 $env:ASPNETCORE_ENVIRONMENT = 'Development'
+$env:ASPNETCORE_URLS = "http://localhost:$Port"
 
 Push-Location $repoRoot
 try {
-    if ($NoLaunchProfile) { dotnet run --project src/OJunnySyS.Web --no-launch-profile --urls http://localhost:5144 }
-    else { dotnet run --project src/OJunnySyS.Web --launch-profile http }
+    if ($NoLaunchProfile) { dotnet run --project src/OJunnySyS.Web --configuration $Configuration --no-launch-profile --urls "http://localhost:$Port" }
+    else { dotnet run --project src/OJunnySyS.Web --configuration $Configuration --launch-profile http }
     if ($LASTEXITCODE -ne 0) { throw "La aplicación terminó con código $LASTEXITCODE." }
 }
 finally { Pop-Location }

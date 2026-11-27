@@ -15,7 +15,7 @@ using OJunnySyS.Infrastructure.Identity;
 
 namespace OJunnySyS.Infrastructure.Persistence;
 
-public sealed class EfStoreRepository(IDbContextFactory<StoreDbContext> contextFactory, ITenantContext tenantContext, ITenantAccessGuard tenantAccess, ILogger<EfStoreRepository> logger) : IStoreRepository
+public sealed class EfStoreRepository(IDbContextFactory<StoreDbContext> contextFactory, ITenantContext tenantContext, ITenantAccessGuard tenantAccess, IBusinessClock businessClock, ILogger<EfStoreRepository> logger) : IStoreRepository
 {
     public async Task<IReadOnlyList<Product>> SearchProductsAsync(string? query, bool includeInactive = false, CancellationToken cancellationToken = default)
     {
@@ -69,7 +69,7 @@ public sealed class EfStoreRepository(IDbContextFactory<StoreDbContext> contextF
     {
         await using var db = await CreateDbContextAsync(cancellationToken);
         return await db.Sales.AsNoTracking().Where(x => x.CustomerId == customerId)
-            .Include(x => x.Payments).Include(x => x.Receipts).OrderByDescending(x => x.CreatedAtUtc).Take(Math.Clamp(count, 1, 200)).ToListAsync(cancellationToken);
+            .Include(x => x.Payments).Include(x => x.Receipts).Include(x => x.Returns).OrderByDescending(x => x.CreatedAtUtc).Take(Math.Clamp(count, 1, 200)).ToListAsync(cancellationToken);
     }
 
     public async Task<CustomerStatementData> GetCustomerStatementDataAsync(Guid customerId, DateTimeOffset startUtc, DateTimeOffset endUtc, CancellationToken cancellationToken = default)
@@ -85,7 +85,11 @@ public sealed class EfStoreRepository(IDbContextFactory<StoreDbContext> contextF
                                      join sale in sales on new { receipt.TenantId, SaleId = receipt.SaleId } equals new { sale.TenantId, SaleId = sale.Id }
                                      where receipt.CreatedAtUtc < startUtc
                                      select (decimal?)receipt.Amount).SumAsync(cancellationToken) ?? 0m;
-        var opening = decimal.Round(openingDebits - openingSalePayments - openingReceipts, 2, MidpointRounding.AwayFromZero);
+        var openingReturns = await (from creditNote in db.SaleReturns.AsNoTracking()
+                                    join sale in sales on new { creditNote.TenantId, SaleId = creditNote.SaleId } equals new { sale.TenantId, SaleId = sale.Id }
+                                    where creditNote.CreatedAtUtc < startUtc
+                                    select (decimal?)creditNote.Total).SumAsync(cancellationToken) ?? 0m;
+        var opening = decimal.Round(openingDebits - openingSalePayments - openingReceipts - openingReturns, 2, MidpointRounding.AwayFromZero);
 
         var invoiceRows = await sales.Where(x => x.CreatedAtUtc >= startUtc && x.CreatedAtUtc < endUtc)
             .Select(x => new { x.Id, x.Number, x.CreatedAtUtc, x.DueDate, x.Total, x.PaymentMethod })
@@ -100,27 +104,34 @@ public sealed class EfStoreRepository(IDbContextFactory<StoreDbContext> contextF
                                  where receipt.CreatedAtUtc >= startUtc && receipt.CreatedAtUtc < endUtc
                                  select new { SaleId = sale.Id, sale.Number, receipt.CreatedAtUtc, receipt.Amount, receipt.MethodName, receipt.Reference })
             .ToListAsync(cancellationToken);
-        var movements = new List<CustomerStatementMovement>(invoiceRows.Count + salePaymentRows.Count + receiptRows.Count);
+        var creditNoteRows = await (from creditNote in db.SaleReturns.AsNoTracking()
+                                    join sale in sales on new { creditNote.TenantId, SaleId = creditNote.SaleId } equals new { sale.TenantId, SaleId = sale.Id }
+                                    where creditNote.CreatedAtUtc >= startUtc && creditNote.CreatedAtUtc < endUtc
+                                    select new { SaleId = sale.Id, creditNote.Number, creditNote.CreatedAtUtc, creditNote.Total })
+            .ToListAsync(cancellationToken);
+        var movements = new List<CustomerStatementMovement>(invoiceRows.Count + salePaymentRows.Count + receiptRows.Count + creditNoteRows.Count);
         movements.AddRange(invoiceRows.Select(x => new CustomerStatementMovement(x.Id, x.CreatedAtUtc, x.Number,
             CustomerStatementEntryType.Sale, x.PaymentMethod == PaymentMethod.Credit ? "Venta a crédito" : "Venta", x.DueDate, x.Total, 0m)));
         movements.AddRange(salePaymentRows.Select(x => new CustomerStatementMovement(x.SaleId, x.CreatedAtUtc, x.Number,
             CustomerStatementEntryType.Payment, $"Cobro · {x.MethodName}", null, 0m, x.Amount)));
         movements.AddRange(receiptRows.Select(x => new CustomerStatementMovement(x.SaleId, x.CreatedAtUtc, x.Number,
             CustomerStatementEntryType.Payment, $"Abono · {x.MethodName}{(string.IsNullOrWhiteSpace(x.Reference) ? "" : $" · {x.Reference}")}", null, 0m, x.Amount)));
+        movements.AddRange(creditNoteRows.Select(x => new CustomerStatementMovement(x.SaleId, x.CreatedAtUtc, x.Number,
+            CustomerStatementEntryType.CreditNote, "Nota de crédito por devolución", null, 0m, x.Total)));
         return new CustomerStatementData(opening, movements);
     }
 
     public async Task<IReadOnlyList<Sale>> GetRecentSalesAsync(int count, CancellationToken cancellationToken = default)
     {
         await using var db = await CreateDbContextAsync(cancellationToken);
-        return await db.Sales.AsNoTracking().Include(x => x.Payments).Include(x => x.Receipts).OrderByDescending(x => x.CreatedAtUtc).Take(Math.Clamp(count, 1, 100)).ToListAsync(cancellationToken);
+        return await db.Sales.AsNoTracking().Include(x => x.Payments).Include(x => x.Receipts).Include(x => x.Returns).OrderByDescending(x => x.CreatedAtUtc).Take(Math.Clamp(count, 1, 100)).ToListAsync(cancellationToken);
     }
 
     public async Task<IReadOnlyList<Sale>> GetSalesInPeriodAsync(DateTimeOffset from, DateTimeOffset to, Guid? warehouseId = null, Guid? sellerUserId = null, CancellationToken cancellationToken = default)
     {
         await using var db = await CreateDbContextAsync(cancellationToken);
-        var query = db.Sales.AsNoTracking().Include(x => x.Lines).Include(x => x.Payments).Include(x => x.Receipts)
-            .Where(x => x.CreatedAtUtc >= from && x.CreatedAtUtc < to);
+        var query = db.Sales.AsNoTracking().AsSplitQuery().Include(x => x.Lines).Include(x => x.Payments).Include(x => x.Receipts).Include(x => x.Returns).ThenInclude(x => x.Lines)
+            .Where(x => (x.CreatedAtUtc >= from && x.CreatedAtUtc < to) || x.Returns.Any(credit => credit.CreatedAtUtc >= from && credit.CreatedAtUtc < to));
         if (warehouseId is { } warehouse) query = query.Where(x => x.WarehouseId == warehouse);
         if (sellerUserId is { } seller) query = query.Where(x => x.SellerUserId == seller);
         return await query.ToListAsync(cancellationToken);
@@ -264,7 +275,7 @@ public sealed class EfStoreRepository(IDbContextFactory<StoreDbContext> contextF
         var tenantId = tenantContext.GetRequiredTenantId();
         await using var db = await CreateDbContextAsync(cancellationToken);
         await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
-        var priorSale = await db.Sales.AsNoTracking().Include(x => x.Lines).Include(x => x.Payments).Include(x => x.Receipts)
+        var priorSale = await db.Sales.AsNoTracking().AsSplitQuery().Include(x => x.Lines).Include(x => x.Payments).Include(x => x.Receipts).Include(x => x.Returns)
             .SingleOrDefaultAsync(x => x.IdempotencyKey == request.IdempotencyKey, cancellationToken);
         if (priorSale is not null)
         {
@@ -377,7 +388,7 @@ public sealed class EfStoreRepository(IDbContextFactory<StoreDbContext> contextF
 
     private static async Task<Sale?> LoadSaleByCheckoutKeyAsync(StoreDbContext db, Guid tenantId, Guid idempotencyKey, CancellationToken ct) =>
         await db.Sales.FromSqlInterpolated($"SELECT * FROM Sales WHERE TenantId = {tenantId} AND IdempotencyKey = {idempotencyKey} FOR UPDATE")
-            .AsSplitQuery().Include(x => x.Lines).Include(x => x.Payments).Include(x => x.Receipts).SingleOrDefaultAsync(ct);
+            .AsSplitQuery().Include(x => x.Lines).Include(x => x.Payments).Include(x => x.Receipts).Include(x => x.Returns).SingleOrDefaultAsync(ct);
 
     private static async Task<IReadOnlyList<PaymentAllocation>> ResolvePaymentAllocationsAsync(StoreDbContext db, Guid tenantId,
         CheckoutRequest request, decimal total, CancellationToken ct)
@@ -532,19 +543,23 @@ public sealed class EfStoreRepository(IDbContextFactory<StoreDbContext> contextF
     public async Task<SaleReceiptDto?> GetSaleReceiptAsync(Guid saleId, CancellationToken cancellationToken = default)
     {
         await using var db = await CreateDbContextAsync(cancellationToken);
-        var sale = await db.Sales.AsNoTracking().Include(x => x.Lines).Include(x => x.Payments).SingleOrDefaultAsync(x => x.Id == saleId, cancellationToken);
+        var sale = await db.Sales.AsNoTracking().AsSplitQuery().Include(x => x.Lines).Include(x => x.Payments).Include(x => x.Receipts)
+            .Include(x => x.Returns).ThenInclude(x => x.Lines).SingleOrDefaultAsync(x => x.Id == saleId, cancellationToken);
         if (sale is null) return null;
         var registerCode = sale.CashSessionId is { } sessionId
             ? await db.CashSessions.AsNoTracking().Where(x => x.Id == sessionId).Select(x => x.RegisterCode).SingleOrDefaultAsync(cancellationToken)
             : null;
-        var receiptLines = sale.Lines.Select(x => new ReceiptLineDto(x.Sku, x.ProductName, x.Quantity, x.UnitPrice, x.LineTotal, x.TaxRate, x.TaxAmount)).ToArray();
+        var receiptLines = sale.Lines.Select(x => new ReceiptLineDto(x.Id, x.Sku, x.ProductName, x.Quantity, x.UnitPrice, x.LineTotal, x.TaxRate, x.TaxAmount)).ToArray();
         var unallocatedTax = sale.TaxAmount - receiptLines.Sum(x => x.TaxAmount);
         if (receiptLines.Length > 0 && unallocatedTax != 0)
             receiptLines[^1] = receiptLines[^1] with { TaxAmount = receiptLines[^1].TaxAmount + unallocatedTax };
         return new SaleReceiptDto(sale.Id, sale.Number, sale.CustomerName, sale.Subtotal, sale.TaxRate, sale.TaxAmount, sale.Total,
             sale.PaymentMethod, sale.Status, sale.CreatedAtUtc, registerCode,
             receiptLines,
-            sale.Payments.Select(x => new SalePaymentDto(x.MethodName, x.Type, x.Amount, x.Reference)).ToArray(), sale.SellerName);
+            sale.Payments.Select(x => new SalePaymentDto(x.MethodName, x.Type, x.Amount, x.Reference)).ToArray(), sale.SellerName,
+            sale.Returns.OrderBy(x => x.CreatedAtUtc).Select(x => new SaleReturnDto(x.Id, x.Number, x.Subtotal, x.TaxAmount, x.Total,
+                x.ReceivableCredit, x.RefundAmount, x.CreatedAtUtc, x.Lines.Select(line => new SaleReturnLineDto(line.SaleLineId, line.Sku,
+                    line.ProductName, line.Quantity, line.UnitPrice, line.TaxRate, line.LineTotal, line.TaxAmount)).ToArray())).ToArray(), sale.BalanceDue);
     }
 
     private static async Task<CashSessionDto> MapCashSessionAsync(StoreDbContext db, CashSession session, CancellationToken cancellationToken)
@@ -653,7 +668,7 @@ public sealed class EfStoreRepository(IDbContextFactory<StoreDbContext> contextF
     {
         await using var db = await CreateDbContextAsync(cancellationToken);
         return await db.Sales.AsNoTracking().Where(x => x.PaymentMethod == PaymentMethod.Credit && x.Status == SaleStatus.Completed)
-            .Include(x => x.Lines).Include(x => x.Payments).Include(x => x.Receipts)
+            .AsSplitQuery().Include(x => x.Lines).Include(x => x.Payments).Include(x => x.Receipts).Include(x => x.Returns).ThenInclude(x => x.Lines)
             .OrderBy(x => x.DueDate).ThenByDescending(x => x.CreatedAtUtc).Take(500).ToListAsync(cancellationToken);
     }
 
@@ -668,12 +683,12 @@ public sealed class EfStoreRepository(IDbContextFactory<StoreDbContext> contextF
         {
             if (idempotent.SaleId != saleId || idempotent.Amount != decimal.Round(request.Amount, 2) || idempotent.PaymentMethodId != request.PaymentMethodId || idempotent.Reference != (string.IsNullOrWhiteSpace(request.Reference) ? null : request.Reference.Trim()))
                 throw new DomainException("La clave de idempotencia ya pertenece a otro recibo.");
-            var existingSale = await db.Sales.AsNoTracking().Include(x => x.Lines).Include(x => x.Payments).Include(x => x.Receipts).SingleAsync(x => x.Id == saleId, cancellationToken);
+            var existingSale = await db.Sales.AsNoTracking().Include(x => x.Lines).Include(x => x.Payments).Include(x => x.Receipts).Include(x => x.Returns).SingleAsync(x => x.Id == saleId, cancellationToken);
             await transaction.CommitAsync(cancellationToken);
             return existingSale;
         }
         var sale = await db.Sales.FromSqlInterpolated($"SELECT * FROM Sales WHERE TenantId = {tenantId} AND Id = {saleId} FOR UPDATE")
-            .AsSplitQuery().Include(x => x.Lines).Include(x => x.Payments).Include(x => x.Receipts).SingleOrDefaultAsync(cancellationToken)
+            .AsSplitQuery().Include(x => x.Lines).Include(x => x.Payments).Include(x => x.Receipts).Include(x => x.Returns).SingleOrDefaultAsync(cancellationToken)
             ?? throw new DomainException("La cuenta por cobrar no existe.");
         var racedReceipt = await db.CustomerReceipts.FromSqlInterpolated($"SELECT * FROM CustomerReceipts WHERE TenantId = {tenantId} AND IdempotencyKey = {request.IdempotencyKey} FOR UPDATE").AsNoTracking().SingleOrDefaultAsync(cancellationToken);
         if (racedReceipt is not null)
@@ -710,6 +725,133 @@ public sealed class EfStoreRepository(IDbContextFactory<StoreDbContext> contextF
         await db.SaveChangesAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);
         return sale;
+    }
+
+    public async Task<Sale> ReturnSaleAsync(Guid saleId, Guid actorId, CreateSaleReturnRequest request, CancellationToken cancellationToken = default)
+    {
+        if (actorId == Guid.Empty || request.IdempotencyKey == Guid.Empty || request.Lines.Count is < 1 or > 200 || request.Lines.Any(x => x.SaleLineId == Guid.Empty || x.Quantity <= 0))
+            throw new DomainException("La solicitud de devolución debe incluir usuario, clave y cantidades válidas.");
+        if (request.Lines.Select(x => x.SaleLineId).Distinct().Count() != request.Lines.Count)
+            throw new DomainException("Cada artículo vendido debe aparecer una sola vez en la devolución.");
+        var tenantId = tenantContext.GetRequiredTenantId();
+        var registerCode = PosRegister.NormalizeCode(request.RegisterCode);
+        await using var db = await CreateDbContextAsync(cancellationToken);
+        await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
+        var sale = await db.Sales.FromSqlInterpolated($"SELECT * FROM Sales WHERE TenantId = {tenantId} AND Id = {saleId} FOR UPDATE")
+            .AsSplitQuery().Include(x => x.Lines).Include(x => x.Payments).Include(x => x.Receipts).Include(x => x.Returns).ThenInclude(x => x.Lines)
+            .SingleOrDefaultAsync(cancellationToken) ?? throw new DomainException("La venta no existe en esta empresa.");
+        var priorReturn = await db.SaleReturns.AsNoTracking().Include(x => x.Lines)
+            .SingleOrDefaultAsync(x => x.IdempotencyKey == request.IdempotencyKey, cancellationToken);
+        if (priorReturn is not null)
+        {
+            EnsureSameSaleReturn(priorReturn, saleId, request);
+            await transaction.CommitAsync(cancellationToken);
+            return sale;
+        }
+        if (sale.Status != SaleStatus.Completed) throw new DomainException("No se puede devolver una venta anulada.");
+
+        var linesById = sale.Lines.ToDictionary(x => x.Id);
+        var returnedBySaleLine = sale.Returns.SelectMany(x => x.Lines).GroupBy(x => x.SaleLineId).ToDictionary(x => x.Key, x => x.Sum(line => line.Quantity));
+        var returnId = Guid.NewGuid();
+        var returnLines = new List<SaleReturnLine>(request.Lines.Count);
+        foreach (var requested in request.Lines)
+        {
+            if (!linesById.TryGetValue(requested.SaleLineId, out var original)) throw new DomainException("Uno de los artículos no pertenece a la venta seleccionada.");
+            var alreadyReturned = returnedBySaleLine.GetValueOrDefault(original.Id);
+            if (requested.Quantity > original.Quantity - alreadyReturned) throw new DomainException($"La cantidad a devolver supera lo vendido de {original.ProductName}.");
+            var remainingUncosted = Math.Max(0, original.UncostedQuantity - alreadyReturned);
+            var uncostedQuantity = Math.Min(requested.Quantity, remainingUncosted);
+            var costedQuantity = requested.Quantity - uncostedQuantity;
+            returnLines.Add(new SaleReturnLine(tenantId, Guid.NewGuid(), returnId, original.Id, original.ProductId, original.Sku,
+                original.ProductName, requested.Quantity, costedQuantity, original.UnitPrice, original.TaxRate, original.UnitCost));
+        }
+        var subtotal = returnLines.Sum(x => x.LineTotal);
+        var taxes = returnLines.Sum(x => x.TaxAmount);
+        var returnTotal = decimal.Round(subtotal + taxes, 2, MidpointRounding.AwayFromZero);
+        var receivableCredit = Math.Min(returnTotal, sale.BalanceDue);
+        var refundAmount = decimal.Round(returnTotal - receivableCredit, 2, MidpointRounding.AwayFromZero);
+
+        TenantPaymentMethod? refundMethod = null;
+        CashSession? cashSession = null;
+        if (refundAmount > 0)
+        {
+            if (request.RefundPaymentMethodId is not { } methodId) throw new DomainException("Selecciona el medio de pago para devolver el importe pagado.");
+            refundMethod = await db.TenantPaymentMethods.SingleOrDefaultAsync(x => x.Id == methodId && x.IsActive, cancellationToken)
+                ?? throw new DomainException("El medio de reembolso no existe o está inactivo.");
+            if (refundMethod.LedgerAccountId is not { } accountId) throw new DomainException("Configura la cuenta contable del medio de reembolso.");
+            var refundAccount = await db.ChartAccounts.SingleOrDefaultAsync(x => x.Id == accountId && x.IsActive && x.CanReceivePayments, cancellationToken);
+            if (refundAccount is null) throw new DomainException("La cuenta contable del reembolso debe ser una cuenta activa de efectivo, banco o saldo de pago.");
+            if (refundMethod.Type == PaymentMethodType.Cash)
+                cashSession = await db.CashSessions.FromSqlInterpolated($"SELECT * FROM CashSessions WHERE TenantId = {tenantId} AND RegisterCode = {registerCode} AND Status = {(int)CashSessionStatus.Open} FOR UPDATE").SingleOrDefaultAsync(cancellationToken)
+                    ?? throw new DomainException("Abre el turno de caja del terminal antes de devolver efectivo.");
+        }
+
+        foreach (var line in returnLines)
+        {
+            var product = await db.Products.FromSqlInterpolated($"SELECT * FROM Products WHERE TenantId = {tenantId} AND Id = {line.ProductId} FOR UPDATE").SingleOrDefaultAsync(cancellationToken)
+                ?? throw new DomainException("El producto de la venta ya no existe en el catálogo.");
+            var warehouseStock = await db.WarehouseStocks.FromSqlInterpolated($"SELECT * FROM WarehouseStocks WHERE TenantId = {tenantId} AND WarehouseId = {sale.WarehouseId} AND ProductId = {line.ProductId} FOR UPDATE").SingleOrDefaultAsync(cancellationToken)
+                ?? throw new DomainException("No existe saldo de inventario para el almacén original de la venta.");
+            warehouseStock.Adjust(line.Quantity);
+            product.RestockReturnedInventory(line.Quantity, line.CostedQuantity, line.UnitCost);
+            db.InventoryMovements.Add(new InventoryMovement(tenantId, product.Id, InventoryMovementType.SaleReturn, line.Quantity,
+                warehouseStock.Quantity, $"Devolución {sale.Number}", sale.WarehouseId));
+        }
+
+        var creditNote = new SaleReturn(tenantId, returnId, sale.Id,
+            $"NC-{DateTimeOffset.UtcNow:yyyyMMddHHmmss}-{Guid.NewGuid():N}"[..40], request.IdempotencyKey, returnLines,
+            receivableCredit, refundAmount, refundMethod?.Id, refundMethod?.Name, refundMethod?.LedgerAccountId,
+            refundMethod?.Type, cashSession?.Id);
+        sale.RecordReturn(creditNote);
+        db.SaleReturns.Add(creditNote);
+        await PostSaleReturnJournalEntryAsync(db, tenantId, sale, creditNote, actorId, cancellationToken);
+        if (cashSession is not null) db.CashMovements.Add(new CashMovement(tenantId, cashSession.Id, actorId, CashMovementKind.CashOut,
+            refundAmount, $"Reembolso · {creditNote.Number}"));
+        await db.SaveChangesAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
+        return sale;
+    }
+
+    private async Task PostSaleReturnJournalEntryAsync(StoreDbContext db, Guid tenantId, Sale sale, SaleReturn creditNote, Guid actorId, CancellationToken ct)
+    {
+        var codes = new[] { "1100", "1200", "2100", "4000", "5000" };
+        var accounts = await db.ChartAccounts.Where(x => x.IsActive && (codes.Contains(x.Code) || x.Id == creditNote.LedgerAccountId)).ToListAsync(ct);
+        var byCode = accounts.ToDictionary(x => x.Code);
+        var byId = accounts.ToDictionary(x => x.Id);
+        if (new[] { "1100", "1200", "2100", "4000", "5000" }.Except(byCode.Keys).Any() ||
+            (creditNote.LedgerAccountId is { } refundAccountId && !byId.ContainsKey(refundAccountId)))
+            throw new DomainException("Faltan las cuentas contables necesarias para emitir la nota de crédito.");
+        var lines = new List<JournalEntryLine>();
+        if (creditNote.ReceivableCredit > 0)
+            lines.Add(new JournalEntryLine(tenantId, byCode["1100"].Id, byCode["1100"].Code, byCode["1100"].Name, 0, creditNote.ReceivableCredit, $"Nota de crédito · {sale.CustomerName}"));
+        if (creditNote.RefundAmount > 0 && creditNote.LedgerAccountId is { } ledgerId)
+        {
+            var account = byId[ledgerId];
+            lines.Add(new JournalEntryLine(tenantId, account.Id, account.Code, account.Name, 0, creditNote.RefundAmount, $"Reembolso · {creditNote.PaymentMethodName}"));
+        }
+        if (creditNote.Subtotal > 0)
+            lines.Add(new JournalEntryLine(tenantId, byCode["4000"].Id, byCode["4000"].Code, byCode["4000"].Name, creditNote.Subtotal, 0, $"Devolución de venta · {sale.Number}"));
+        if (creditNote.TaxAmount > 0)
+            lines.Add(new JournalEntryLine(tenantId, byCode["2100"].Id, byCode["2100"].Code, byCode["2100"].Name, creditNote.TaxAmount, 0, $"Impuesto reversado · {sale.Number}"));
+        var cost = creditNote.Lines.Sum(x => x.CostTotal);
+        if (cost > 0)
+        {
+            lines.Add(new JournalEntryLine(tenantId, byCode["1200"].Id, byCode["1200"].Code, byCode["1200"].Name, cost, 0, $"Inventario reintegrado · {sale.Number}"));
+            lines.Add(new JournalEntryLine(tenantId, byCode["5000"].Id, byCode["5000"].Code, byCode["5000"].Name, 0, cost, $"Reverso de costo · {sale.Number}"));
+        }
+        var entryDate = DateOnly.FromDateTime(businessClock.ToBusinessTime(creditNote.CreatedAtUtc).DateTime);
+        var number = $"AUTO-{entryDate:yyyyMMdd}-{creditNote.Id:N}"[..36];
+        db.JournalEntries.Add(new JournalEntry(tenantId, number, entryDate, $"Nota de crédito {creditNote.Number}", actorId,
+            lines, "SALERETURN", creditNote.Id));
+    }
+
+    private static void EnsureSameSaleReturn(SaleReturn existing, Guid saleId, CreateSaleReturnRequest request)
+    {
+        var normalized = request.Lines.OrderBy(x => x.SaleLineId).ToArray();
+        var previous = existing.Lines.OrderBy(x => x.SaleLineId).ToArray();
+        if (existing.SaleId != saleId || (existing.RefundAmount > 0 && existing.PaymentMethodId != request.RefundPaymentMethodId) || previous.Length != normalized.Length ||
+            previous.Where((line, index) => line.SaleLineId != normalized[index].SaleLineId || line.Quantity != normalized[index].Quantity).Any())
+            throw new DomainException("La clave de idempotencia ya pertenece a otra devolución.");
     }
 
     public async Task<PurchaseOrder> CreatePurchaseOrderAsync(CreatePurchaseOrderRequest request, CancellationToken cancellationToken = default)

@@ -76,6 +76,21 @@ public sealed class Product : TenantEntity
         return new InventoryCostSnapshot(UnitCost, uncostedSold);
     }
 
+    public void RestockReturnedInventory(int quantity, int costedQuantity, decimal returnedUnitCost)
+    {
+        if (quantity <= 0 || costedQuantity < 0 || costedQuantity > quantity || returnedUnitCost < 0) throw new DomainException("La cantidad o el costo de la devolución no son válidos.");
+        if (quantity > int.MaxValue - StockOnHand) throw new DomainException($"Las existencias superan el límite permitido para {Name}.");
+        var currentCosted = StockOnHand - UncostedQuantity;
+        if (costedQuantity > 0)
+        {
+            var totalCosted = checked(currentCosted + costedQuantity);
+            UnitCost = decimal.Round(((UnitCost * currentCosted) + (returnedUnitCost * costedQuantity)) / totalCosted, 4, MidpointRounding.AwayFromZero);
+        }
+        UncostedQuantity = checked(UncostedQuantity + quantity - costedQuantity);
+        StockOnHand = checked(StockOnHand + quantity);
+        MarkChanged();
+    }
+
     public void Deactivate() { if (!IsActive) return; IsActive = false; MarkChanged(); }
     public void Reactivate() { if (IsActive) return; IsActive = true; MarkChanged(); }
     private void MarkChanged() { Revision++; MarkUpdated(); }

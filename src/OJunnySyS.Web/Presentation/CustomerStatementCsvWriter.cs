@@ -17,7 +17,7 @@ public static class CustomerStatementCsvWriter
         foreach (var entry in report.Entries)
             csv.Append(CsvText.Escape(clock.ToBusinessTime(entry.OccurredAtUtc).ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture))).Append(',')
                 .Append(CsvText.Escape(entry.Reference)).Append(',')
-                .Append(CsvText.Escape(entry.Type == CustomerStatementEntryType.Sale ? "Venta" : "Pago" )).Append(',')
+                .Append(CsvText.Escape(entry.Type switch { CustomerStatementEntryType.Sale => "Venta", CustomerStatementEntryType.CreditNote => "Nota de crédito", _ => "Pago" })).Append(',')
                 .Append(CsvText.Escape(entry.Description)).Append(',')
                 .Append(CsvText.Escape(entry.DueDate?.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture))).Append(',')
                 .Append(Amount(entry.Debit)).Append(',').Append(Amount(entry.Credit)).Append(',').Append(Amount(entry.Balance)).AppendLine();

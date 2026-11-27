@@ -77,9 +77,23 @@
 .statement-opening, .statement-total { background: #f6f8f5; font-weight: 700; }
 .statement-opening td, .statement-total td { color: #425448; }
 .statement-empty { padding: 13px 18px; margin: 0; border-bottom: 1px solid var(--line); color: var(--muted); font-size: 11px; }
+.return-panel { display: grid; gap: 16px; margin-top: 20px; padding: 22px; }
+.return-panel h2 { margin: 6px 0; color: var(--ink); font: 700 18px Manrope, sans-serif; }
+.return-panel > div:first-child p { margin: 0; color: var(--muted); font-size: 11px; }
+.return-panel table { min-width: 700px; }
+.return-panel td small { display: block; color: var(--muted); }
+.return-panel input, .return-actions select { min-height: 38px; width: 100%; border: 1px solid var(--line); border-radius: 10px; padding: 0 10px; background: #fff; color: var(--ink); }
+.return-panel input { max-width: 116px; }
+.return-actions { display: flex; justify-content: space-between; align-items: end; gap: 16px; flex-wrap: wrap; }
+.return-actions label { display: grid; gap: 7px; width: min(100%, 290px); color: #65756a; font-size: 10px; font-weight: 650; }
+.return-actions > span { color: var(--muted); font-size: 11px; }
+.return-history { padding-top: 14px; border-top: 1px solid var(--line); }
+.return-history h3 { margin: 0 0 8px; color: var(--ink); font-size: 12px; }
+.return-history p { margin: 5px 0; color: var(--muted); font-size: 10px; }
 
 @media print {
     .statement-filter, .statement-heading > a, .page-header-actions, .app-sidebar, .app-topbar { display: none !important; }
+    .no-print { display: none !important; }
     .statement-panel { border: 0; box-shadow: none; }
     .statement-panel table { min-width: 0; }
 }
@@ -103,4 +117,7 @@
     .statement-filter { grid-template-columns: 1fr; }
     .statement-filter .button { width: 100%; }
     .statement-heading { align-items: flex-start; flex-direction: column; }
+    .return-panel { padding: 17px; }
+    .return-actions { align-items: stretch; flex-direction: column; }
+    .return-actions label { width: 100%; }
 }

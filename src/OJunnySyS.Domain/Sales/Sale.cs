@@ -15,6 +15,7 @@ public sealed class Sale : TenantEntity
     private readonly List<SaleLine> _lines = [];
     private readonly List<SalePayment> _payments = [];
     private readonly List<CustomerReceipt> _receipts = [];
+    private readonly List<SaleReturn> _returns = [];
 
     public Sale(Guid tenantId, string number, Customer? customer, PaymentMethod paymentMethod, IEnumerable<SaleLine> lines, Guid? cashSessionId, Guid cashierUserId, decimal taxRate = 0.18m, Guid? idempotencyKey = null, string registerCode = "MAIN", Guid warehouseId = default, DateOnly? dueDate = null) : base(tenantId)
     {
@@ -60,8 +61,32 @@ public sealed class Sale : TenantEntity
     public IReadOnlyCollection<SaleLine> Lines => _lines;
     public IReadOnlyCollection<SalePayment> Payments => _payments;
     public IReadOnlyCollection<CustomerReceipt> Receipts => _receipts;
+    public IReadOnlyCollection<SaleReturn> Returns => _returns;
     public decimal AmountPaid => decimal.Round(_payments.Sum(x => x.Amount) + _receipts.Sum(x => x.Amount), 2);
-    public decimal BalanceDue => Status == SaleStatus.Voided ? 0m : decimal.Round(Total - AmountPaid, 2);
+    public decimal ReturnedTotal => decimal.Round(_returns.Sum(x => x.Total), 2);
+    public decimal BalanceDue => Status == SaleStatus.Voided ? 0m : Math.Max(0m, decimal.Round(Total - AmountPaid - ReturnedTotal, 2));
+
+    public void RecordReturn(SaleReturn saleReturn)
+    {
+        if (Status == SaleStatus.Voided) throw new DomainException("No se puede devolver una venta anulada.");
+        if (saleReturn.TenantId != TenantId || saleReturn.SaleId != Id) throw new DomainException("La devolución no pertenece a esta venta.");
+        if (_returns.Any(x => x.IdempotencyKey == saleReturn.IdempotencyKey)) throw new DomainException("Esta devolución ya fue registrada.");
+        if (saleReturn.Total > Total - ReturnedTotal) throw new DomainException("El importe devuelto supera el total de la venta disponible.");
+        foreach (var returnedLine in saleReturn.Lines)
+        {
+            var original = _lines.SingleOrDefault(x => x.Id == returnedLine.SaleLineId)
+                ?? throw new DomainException("El renglón devuelto no pertenece a esta venta.");
+            if (returnedLine.ProductId != original.ProductId || returnedLine.UnitPrice != original.UnitPrice || returnedLine.TaxRate != original.TaxRate || returnedLine.UnitCost != original.UnitCost)
+                throw new DomainException("La devolución debe conservar los datos históricos del artículo vendido.");
+            var priorQuantity = _returns.SelectMany(x => x.Lines).Where(x => x.SaleLineId == original.Id).Sum(x => x.Quantity);
+            if (returnedLine.Quantity > original.Quantity - priorQuantity) throw new DomainException("La cantidad devuelta supera la cantidad vendida disponible.");
+        }
+        var expectedReceivableCredit = Math.Min(saleReturn.Total, BalanceDue);
+        if (saleReturn.ReceivableCredit != expectedReceivableCredit || saleReturn.RefundAmount != saleReturn.Total - expectedReceivableCredit)
+            throw new DomainException("El importe debe aplicarse primero al saldo pendiente y reembolsarse solo después de cubrirlo.");
+        _returns.Add(saleReturn);
+        MarkUpdated();
+    }
 
     public void RecordReceivablePayment(CustomerReceipt receipt)
     {

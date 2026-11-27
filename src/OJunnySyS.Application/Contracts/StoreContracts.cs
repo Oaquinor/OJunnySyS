@@ -16,10 +16,12 @@ public sealed record CheckoutLine(Guid ProductId, int Quantity);
 public sealed record CheckoutPaymentLine(Guid PaymentMethodId, decimal Amount, string? Reference = null);
 public sealed record CheckoutRequest(Guid? CustomerId, PaymentMethod PaymentMethod, IReadOnlyCollection<CheckoutLine> Lines, Guid IdempotencyKey = default, string RegisterCode = "MAIN", IReadOnlyCollection<CheckoutPaymentLine>? Payments = null, Guid? SellerUserId = null, DateOnly? DueDate = null);
 public sealed record CustomerReceiptRequest(Guid IdempotencyKey, decimal Amount, Guid PaymentMethodId, string? Reference = null, string RegisterCode = "MAIN");
+public sealed record SaleReturnLineRequest(Guid SaleLineId, int Quantity);
+public sealed record CreateSaleReturnRequest(Guid IdempotencyKey, IReadOnlyCollection<SaleReturnLineRequest> Lines, Guid? RefundPaymentMethodId = null, string RegisterCode = "MAIN");
 public sealed record ReceivableDto(Guid SaleId, string Number, Guid CustomerId, string CustomerName, DateOnly? DueDate, DateTimeOffset IssuedAtUtc, decimal Total, decimal AmountPaid, decimal BalanceDue);
 public sealed record ReceivableAgingBucketDto(string Bucket, int Count, decimal Balance);
 public sealed record ReceivablesAgingReport(DateOnly AsOfDate, int OpenInvoices, decimal TotalBalance, IReadOnlyList<ReceivableAgingBucketDto> Bands, IReadOnlyList<ReceivableDto> Items);
-public enum CustomerStatementEntryType { Sale, Payment }
+public enum CustomerStatementEntryType { Sale, Payment, CreditNote }
 public sealed record CustomerStatementMovement(Guid SaleId, DateTimeOffset OccurredAtUtc, string Reference, CustomerStatementEntryType Type, string Description, DateOnly? DueDate, decimal Debit, decimal Credit);
 public sealed record CustomerStatementData(decimal OpeningBalance, IReadOnlyList<CustomerStatementMovement> Movements);
 public sealed record CustomerStatementLine(Guid SaleId, DateTimeOffset OccurredAtUtc, string Reference, CustomerStatementEntryType Type, string Description, DateOnly? DueDate, decimal Debit, decimal Credit, decimal Balance);
@@ -56,8 +58,10 @@ public sealed record OpenCashSessionRequest(string RegisterCode, decimal Opening
 public sealed record CashMovementRequest(CashMovementKind Kind, decimal Amount, string Description);
 public sealed record CloseCashSessionRequest(decimal CountedCash);
 public sealed record SalePaymentDto(string MethodName, PaymentMethodType Type, decimal Amount, string? Reference);
-public sealed record SaleReceiptDto(Guid Id, string Number, string CustomerName, decimal Subtotal, decimal TaxRate, decimal TaxAmount, decimal Total, PaymentMethod PaymentMethod, SaleStatus Status, DateTimeOffset CreatedAtUtc, string? RegisterCode, IReadOnlyList<ReceiptLineDto> Lines, IReadOnlyList<SalePaymentDto>? Payments = null, string? SellerName = null);
-public sealed record ReceiptLineDto(string Sku, string ProductName, int Quantity, decimal UnitPrice, decimal LineTotal, decimal TaxRate = 0m, decimal TaxAmount = 0m);
+public sealed record SaleReturnDto(Guid Id, string Number, decimal Subtotal, decimal TaxAmount, decimal Total, decimal ReceivableCredit, decimal RefundAmount, DateTimeOffset CreatedAtUtc, IReadOnlyList<SaleReturnLineDto> Lines);
+public sealed record SaleReturnLineDto(Guid SaleLineId, string Sku, string ProductName, int Quantity, decimal UnitPrice, decimal TaxRate, decimal LineTotal, decimal TaxAmount);
+public sealed record SaleReceiptDto(Guid Id, string Number, string CustomerName, decimal Subtotal, decimal TaxRate, decimal TaxAmount, decimal Total, PaymentMethod PaymentMethod, SaleStatus Status, DateTimeOffset CreatedAtUtc, string? RegisterCode, IReadOnlyList<ReceiptLineDto> Lines, IReadOnlyList<SalePaymentDto>? Payments = null, string? SellerName = null, IReadOnlyList<SaleReturnDto>? Returns = null, decimal BalanceDue = 0m);
+public sealed record ReceiptLineDto(Guid SaleLineId, string Sku, string ProductName, int Quantity, decimal UnitPrice, decimal LineTotal, decimal TaxRate = 0m, decimal TaxAmount = 0m);
 public sealed record SalesReport(DateOnly From, DateOnly To, int SalesCount, decimal Subtotal, decimal TaxAmount, decimal Total,
     IReadOnlyList<PaymentBreakdown> Payments, IReadOnlyList<ProductSalesSummary> TopProducts, IReadOnlyList<DailySalesSummary> DailySales,
     IReadOnlyList<SellerSalesSummary>? Sellers = null, IReadOnlyList<CustomerSalesSummary>? Customers = null,

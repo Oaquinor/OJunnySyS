@@ -93,6 +93,7 @@ builder.Services.AddAuthorization(options =>
     options.AddPolicy("ReceivablesRead", policy => policy.RequireRole(AppRoles.Administrator, AppRoles.Manager, AppRoles.Cashier));
     options.AddPolicy("CustomerStatementRead", policy => policy.RequireRole(AppRoles.Administrator, AppRoles.Manager, AppRoles.Cashier, AppRoles.Salesperson));
     options.AddPolicy("Checkout", policy => policy.RequireRole(AppRoles.Administrator, AppRoles.Manager, AppRoles.Cashier));
+    options.AddPolicy("SalesReturn", policy => policy.RequireRole(AppRoles.Administrator, AppRoles.Manager, AppRoles.Cashier));
     options.AddPolicy("PurchasingWrite", policy => policy.RequireRole(AppRoles.Administrator, AppRoles.Manager, AppRoles.PurchasingAgent));
     options.AddPolicy("SupplierPayments", policy => policy.RequireRole(AppRoles.Administrator, AppRoles.Manager));
     options.AddPolicy("CashManagement", policy => policy.RequireRole(AppRoles.Administrator, AppRoles.Manager, AppRoles.Cashier));
@@ -332,6 +333,11 @@ api.MapPost("/sales/{id:guid}/receipts", async (Guid id, CustomerReceiptRequest 
     try { return Results.Ok(await store.RecordCustomerReceiptAsync(id, CurrentActorId(user), request, ct)); }
     catch (DomainException ex) { return Results.BadRequest(new { error = ex.Message }); }
 }).RequireAuthorization("ReceivablesRead");
+api.MapPost("/sales/{id:guid}/returns", async (Guid id, CreateSaleReturnRequest request, ClaimsPrincipal user, StoreService store, CancellationToken ct) =>
+{
+    try { return Results.Ok(await store.ReturnSaleAsync(id, CurrentActorId(user), request, ct)); }
+    catch (DomainException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization("SalesReturn");
 api.MapPost("/customers", async (CreateCustomerRequest request, StoreService store, CancellationToken ct) =>
 {
     try { return Results.Created("/api/v1/customers", await store.CreateCustomerAsync(request.FirstName, request.LastName, request.Email, request.Phone, request.Company, ct)); }

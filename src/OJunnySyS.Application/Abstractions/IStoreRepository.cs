@@ -45,4 +45,5 @@ public interface IStoreRepository
     Task<IReadOnlyList<PayableBalanceDto>> GetOpenPayablesAsync(CancellationToken cancellationToken = default);
     Task<IReadOnlyList<Sale>> GetOpenReceivablesAsync(CancellationToken cancellationToken = default);
     Task<Sale> RecordCustomerReceiptAsync(Guid saleId, Guid actorId, CustomerReceiptRequest request, CancellationToken cancellationToken = default);
+    Task<Sale> ReturnSaleAsync(Guid saleId, Guid actorId, CreateSaleReturnRequest request, CancellationToken cancellationToken = default);
 }

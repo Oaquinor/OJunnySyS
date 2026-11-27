@@ -40,36 +40,7 @@ public sealed class StoreService(IStoreRepository repository, IBusinessClock clo
         if (to.DayNumber - from.DayNumber > 365) throw new OJunnySyS.Domain.Common.DomainException("El período máximo del informe es de 366 días.");
         var (startUtc, endUtc) = clock.GetUtcRange(from, to);
         var sales = await repository.GetSalesInPeriodAsync(startUtc, endUtc, warehouseId, sellerUserId, ct);
-        var completed = sales.Where(x => x.Status == SaleStatus.Completed).ToArray();
-        var payments = completed.SelectMany(sale => sale.Payments.Select(payment => (Sale: sale, Payment: payment)))
-            .GroupBy(x => x.Payment.MethodName)
-            .Select(group => new PaymentBreakdown(group.Key, group.Select(x => x.Sale.Id).Distinct().Count(), group.Sum(x => x.Payment.Amount)))
-            .OrderByDescending(x => x.Total).ToArray();
-        var topProducts = completed.SelectMany(x => x.Lines)
-            .GroupBy(x => x.ProductName)
-            .Select(group =>
-            {
-                var revenue = group.Sum(x => x.LineTotal);
-                var cost = group.Sum(x => x.CostTotal);
-                return new ProductSalesSummary(group.Key, group.Sum(x => x.Quantity), revenue, cost, revenue - cost, group.Sum(x => x.UncostedQuantity));
-            })
-            .OrderByDescending(x => x.Revenue).Take(5).ToArray();
-        var dailySales = completed.GroupBy(x => DateOnly.FromDateTime(clock.ToBusinessTime(x.CreatedAtUtc).DateTime))
-            .Select(group => new DailySalesSummary(group.Key, group.Sum(x => x.Total)))
-            .OrderBy(x => x.Date).ToArray();
-        var sellers = completed.GroupBy(x => x.SellerName ?? "Sin vendedor")
-            .Select(group => new SellerSalesSummary(group.Key, group.Count(), group.Sum(x => x.Total)))
-            .OrderByDescending(x => x.Revenue).ToArray();
-        var customers = completed.GroupBy(x => new { x.CustomerId, x.CustomerName })
-            .Select(group => new CustomerSalesSummary(group.Key.CustomerId, group.Key.CustomerName, group.Count(),
-                group.Sum(x => x.Subtotal), group.Sum(x => x.TaxAmount), group.Sum(x => x.Total)))
-            .OrderByDescending(x => x.Total).ToArray();
-        var warehouseSales = completed.GroupBy(x => x.WarehouseId)
-            .Select(group => new WarehouseSalesSummary(group.Key, group.Count(), group.Sum(x => x.Subtotal),
-                group.Sum(x => x.TaxAmount), group.Sum(x => x.Total)))
-            .OrderByDescending(x => x.Total).ToArray();
-        return new SalesReport(from, to, completed.Length, completed.Sum(x => x.Subtotal), completed.Sum(x => x.TaxAmount),
-            completed.Sum(x => x.Total), payments, topProducts, dailySales, sellers, customers, warehouseSales);
+        return SalesReportBuilder.Build(from, to, startUtc, endUtc, sales, clock);
     }
 
     public async Task<CustomerStatementReport> GetCustomerStatementAsync(Guid customerId, DateOnly from, DateOnly to, CancellationToken ct = default)
@@ -202,6 +173,9 @@ public sealed class StoreService(IStoreRepository repository, IBusinessClock clo
     public async Task<SaleDto> RecordCustomerReceiptAsync(Guid saleId, Guid actorId, CustomerReceiptRequest request, CancellationToken ct = default) =>
         Map(await repository.RecordCustomerReceiptAsync(saleId, actorId, request, ct));
 
+    public async Task<SaleDto> ReturnSaleAsync(Guid saleId, Guid actorId, CreateSaleReturnRequest request, CancellationToken ct = default) =>
+        Map(await repository.ReturnSaleAsync(saleId, actorId, request, ct));
+
     private static string AgingLabel(DateOnly? dueDate, DateOnly asOf)
     {
         var days = dueDate is { } due ? Math.Max(0, asOf.DayNumber - due.DayNumber) : 0;
@@ -214,7 +188,9 @@ public sealed class StoreService(IStoreRepository repository, IBusinessClock clo
         var sales = await repository.GetSalesInPeriodAsync(startUtc, endUtc, cancellationToken: ct);
         var products = await repository.SearchProductsAsync(null, cancellationToken: ct);
         var customers = await repository.SearchCustomersAsync(null, ct);
-        return new DashboardSummary(sales.Where(x => x.Status == SaleStatus.Completed).Sum(x => x.Total), sales.Count(x => x.Status == SaleStatus.Completed), customers.Count, products.Count(x => x.StockOnHand <= 5), (await repository.GetRecentSalesAsync(6, ct)).Select(Map).ToArray());
+        var issuedToday = sales.Where(x => x.Status == SaleStatus.Completed && x.CreatedAtUtc >= startUtc && x.CreatedAtUtc < endUtc).ToArray();
+        var returnsToday = sales.SelectMany(x => x.Returns).Where(x => x.CreatedAtUtc >= startUtc && x.CreatedAtUtc < endUtc).Sum(x => x.Total);
+        return new DashboardSummary(issuedToday.Sum(x => x.Total) - returnsToday, issuedToday.Length, customers.Count, products.Count(x => x.StockOnHand <= 5), (await repository.GetRecentSalesAsync(6, ct)).Select(Map).ToArray());
     }
 
     private static ProductDto Map(Product product) => new(product.Id, product.Sku, product.Name, product.Category, product.UnitPrice, product.StockOnHand, product.Barcode, product.IsActive, product.Revision, product.TaxRateOverride);
