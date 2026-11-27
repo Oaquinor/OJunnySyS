@@ -106,6 +106,24 @@ public sealed class EfAccountingRepository(
         return new TrialBalanceDto(asOfDate, lines, lines.Sum(x => x.Debit), lines.Sum(x => x.Credit));
     }
 
+    public async Task<IReadOnlyList<TrialBalanceLineDto>> GetTrialBalanceBetweenAsync(DateOnly from, DateOnly to, CancellationToken cancellationToken = default)
+    {
+        await using var db = await CreateDbContextAsync(cancellationToken);
+        var accounts = await db.ChartAccounts.AsNoTracking().OrderBy(x => x.Code).ToListAsync(cancellationToken);
+        var balances = await db.JournalEntryLines.AsNoTracking()
+            .Join(db.JournalEntries.AsNoTracking(), line => new { line.TenantId, line.JournalEntryId }, entry => new { entry.TenantId, JournalEntryId = entry.Id }, (line, entry) => new { line, entry })
+            .Where(x => x.entry.Status == JournalEntryStatus.Posted && x.entry.EntryDate >= from && x.entry.EntryDate <= to)
+            .GroupBy(x => x.line.AccountId)
+            .Select(items => new { AccountId = items.Key, Debit = items.Sum(x => x.line.Debit), Credit = items.Sum(x => x.line.Credit) })
+            .ToDictionaryAsync(x => x.AccountId, x => (x.Debit, x.Credit), cancellationToken);
+        return accounts.Select(account =>
+        {
+            var (debitBalance, creditBalance) = balances.GetValueOrDefault(account.Id);
+            var net = debitBalance - creditBalance;
+            return new TrialBalanceLineDto(account.Id, account.Code, account.Name, account.Type, Math.Max(net, 0m), Math.Max(-net, 0m));
+        }).Where(x => x.Debit != 0 || x.Credit != 0).ToArray();
+    }
+
     private async Task<Dictionary<Guid, (decimal Debit, decimal Credit)>> GetBalancesAsync(StoreDbContext db, DateOnly? asOfDate, CancellationToken ct)
     {
         var query = from line in db.JournalEntryLines.AsNoTracking()

@@ -60,8 +60,16 @@ public sealed class StoreService(IStoreRepository repository, IBusinessClock clo
         var sellers = completed.GroupBy(x => x.SellerName ?? "Sin vendedor")
             .Select(group => new SellerSalesSummary(group.Key, group.Count(), group.Sum(x => x.Total)))
             .OrderByDescending(x => x.Revenue).ToArray();
+        var customers = completed.GroupBy(x => new { x.CustomerId, x.CustomerName })
+            .Select(group => new CustomerSalesSummary(group.Key.CustomerId, group.Key.CustomerName, group.Count(),
+                group.Sum(x => x.Subtotal), group.Sum(x => x.TaxAmount), group.Sum(x => x.Total)))
+            .OrderByDescending(x => x.Total).ToArray();
+        var warehouseSales = completed.GroupBy(x => x.WarehouseId)
+            .Select(group => new WarehouseSalesSummary(group.Key, group.Count(), group.Sum(x => x.Subtotal),
+                group.Sum(x => x.TaxAmount), group.Sum(x => x.Total)))
+            .OrderByDescending(x => x.Total).ToArray();
         return new SalesReport(from, to, completed.Length, completed.Sum(x => x.Subtotal), completed.Sum(x => x.TaxAmount),
-            completed.Sum(x => x.Total), payments, topProducts, dailySales, sellers);
+            completed.Sum(x => x.Total), payments, topProducts, dailySales, sellers, customers, warehouseSales);
     }
 
     public async Task<CustomerDto> CreateCustomerAsync(string firstName, string lastName, string email, string phone, string? company, CancellationToken ct = default)

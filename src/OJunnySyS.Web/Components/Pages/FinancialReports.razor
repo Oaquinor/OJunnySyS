@@ -1,0 +1,79 @@
+@page "/app/reports/financial-statements"
+@attribute [Authorize(Roles = "Administrator,Manager")]
+@inject AccountingService Accounting
+@inject TenantSettingsService TenantSettings
+@inject OJunnySyS.Application.Abstractions.IBusinessClock Clock
+
+<PageTitle>Estados financieros · OJunnySyS</PageTitle>
+<PageHeader Eyebrow="ANÁLISIS / CONTABILIDAD" Title="Estados financieros" Description="Consulta resultados por período y la situación financiera al corte desde los asientos publicados." />
+
+<div class="accounting-shortcuts" aria-label="Estados financieros">
+    <a class="button button-secondary" href="#resultados">Estado de resultados</a>
+    <a class="button button-secondary" href="#situacion">Estado de situación financiera</a>
+    <a class="button button-secondary" href="/app/accounting#balance">Balance de comprobación</a>
+</div>
+<section class="panel report-filter">
+    <label>Desde<InputDate @bind-Value="_from" /></label>
+    <label>Hasta / corte<InputDate @bind-Value="_to" /></label>
+    <button class="button button-primary" @onclick="LoadAsync" disabled="@_loading">@(_loading ? "Generando…" : "Actualizar estados")</button>
+    <small class="report-filter-note">Solo se incluyen asientos publicados del libro contable de esta empresa.</small>
+</section>
+@if (_error is not null) { <div class="inline-error" role="alert">@_error</div> }
+@if (_profit is not null && _position is not null)
+{
+    <section class="panel accounting-section" id="resultados">
+        <div class="panel-heading"><div><span class="eyebrow">@_profit.From.ToString("dd/MM/yyyy") — @_profit.To.ToString("dd/MM/yyyy")</span><h2>Estado de resultados</h2><p>Ingresos y gastos netos contabilizados dentro del período.</p></div></div>
+        <div class="stats-grid report-stats">
+            <MetricCard Label="INGRESOS" Value="@Money(_profit.TotalRevenue)" Icon="↗" Tone="green" />
+            <MetricCard Label="GASTOS" Value="@Money(_profit.TotalExpenses)" Icon="↘" Tone="amber" />
+            <MetricCard Label="UTILIDAD / PÉRDIDA" Value="@Money(_profit.NetIncome)" Icon="◈" Tone="blue" />
+        </div>
+        <div class="report-grid">
+            <StatementTable Title="Ingresos" Lines="_profit.Revenue" Total="_profit.TotalRevenue" CurrencyCode="_currencyCode" />
+            <StatementTable Title="Gastos" Lines="_profit.Expenses" Total="_profit.TotalExpenses" CurrencyCode="_currencyCode" />
+        </div>
+    </section>
+    <section class="panel accounting-section" id="situacion">
+        <div class="panel-heading"><div><span class="eyebrow">AL @(_position.AsOfDate.ToString("dd/MM/yyyy"))</span><h2>Estado de situación financiera</h2><p>Activos = pasivos + patrimonio, incluido el resultado acumulado de las cuentas de ingreso y gasto.</p></div></div>
+        <div class="report-grid">
+            <StatementTable Title="Activos" Lines="_position.Assets" Total="_position.TotalAssets" CurrencyCode="_currencyCode" />
+            <StatementTable Title="Pasivos" Lines="_position.Liabilities" Total="_position.TotalLiabilities" CurrencyCode="_currencyCode" />
+            <StatementTable Title="Patrimonio" Lines="_position.Equity" Total="_position.TotalEquity" CurrencyCode="_currencyCode" />
+        </div>
+        <div class="report-row"><div><strong>Resultado acumulado</strong><small>Ingresos menos gastos contabilizados al corte</small></div><strong>@Money(_position.CurrentAndAccumulatedResult)</strong></div>
+        <div class="report-row"><div><strong>Pasivos + patrimonio</strong><small>Debe cuadrar con el total de activos</small></div><strong>@Money(_position.TotalLiabilities + _position.TotalEquity)</strong></div>
+        <div class="account-entry-actions"><span class="@(_position.TotalAssets == _position.TotalLiabilities + _position.TotalEquity ? "balanced" : "unbalanced")">@(_position.TotalAssets == _position.TotalLiabilities + _position.TotalEquity ? "Estado cuadrado" : "El estado presenta una diferencia; revisa el libro y las cuentas")</span></div>
+    </section>
+}
+
+@code {
+    private DateOnly _from, _to;
+    private string _currencyCode = "DOP";
+    private string? _error;
+    private bool _loading;
+    private ProfitAndLossDto? _profit;
+    private FinancialPositionDto? _position;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _to = DateOnly.FromDateTime(Clock.ToBusinessTime(Clock.UtcNow).DateTime);
+        _from = new DateOnly(_to.Year, _to.Month, 1);
+        _currencyCode = (await TenantSettings.GetAsync()).CurrencyCode;
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        _loading = true;
+        _error = null;
+        try
+        {
+            _profit = await Accounting.GetProfitAndLossAsync(_from, _to);
+            _position = await Accounting.GetFinancialPositionAsync(_to);
+        }
+        catch (DomainException ex) { _profit = null; _position = null; _error = ex.Message; }
+        finally { _loading = false; }
+    }
+
+    private string Money(decimal value) => DisplayFormat.Money(value, _currencyCode);
+}

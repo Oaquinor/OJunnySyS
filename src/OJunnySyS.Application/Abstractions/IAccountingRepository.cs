@@ -10,4 +10,5 @@ public interface IAccountingRepository
     Task<JournalEntryDto> CreateJournalEntryAsync(CreateJournalEntryRequest request, Guid postedByUserId, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<JournalEntryDto>> GetJournalEntriesAsync(DateOnly? from = null, DateOnly? to = null, int take = 100, CancellationToken cancellationToken = default);
     Task<TrialBalanceDto> GetTrialBalanceAsync(DateOnly asOfDate, CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<TrialBalanceLineDto>> GetTrialBalanceBetweenAsync(DateOnly from, DateOnly to, CancellationToken cancellationToken = default);
 }

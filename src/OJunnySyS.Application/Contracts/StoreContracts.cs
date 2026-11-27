@@ -21,6 +21,8 @@ public sealed record ProductSalesSummary(string ProductName, int Quantity, decim
 public sealed record InventoryValuationDto(decimal CostedInventoryValue, int UncostedUnits);
 public sealed record SellerSalesSummary(string SellerName, int Sales, decimal Revenue);
 public sealed record DailySalesSummary(DateOnly Date, decimal Total);
+public sealed record CustomerSalesSummary(Guid? CustomerId, string CustomerName, int Sales, decimal Subtotal, decimal TaxAmount, decimal Total);
+public sealed record WarehouseSalesSummary(Guid WarehouseId, int Sales, decimal Subtotal, decimal TaxAmount, decimal Total);
 public sealed record SupplierDto(Guid Id, string Name, string? TaxIdentifier, string Email, string Phone, string? Notes, long Revision);
 public sealed record PurchaseLineDto(Guid Id, Guid ProductId, string Sku, string ProductName, int Quantity, int ReceivedQuantity, decimal UnitCost, decimal LineTotal, decimal TaxRate = 0m, decimal TaxAmount = 0m);
 public sealed record PurchaseOrderDto(Guid Id, string Number, string SupplierName, string? Reference, DateOnly? DueDate, PurchaseStatus Status, decimal Total, decimal AmountPaid, decimal BalanceDue, DateTimeOffset CreatedAtUtc, IReadOnlyList<PurchaseLineDto> Lines, IReadOnlyList<SupplierPaymentDto> Payments, Guid WarehouseId, decimal Subtotal = 0m, decimal TaxAmount = 0m);
@@ -49,7 +51,8 @@ public sealed record SaleReceiptDto(Guid Id, string Number, string CustomerName,
 public sealed record ReceiptLineDto(string Sku, string ProductName, int Quantity, decimal UnitPrice, decimal LineTotal, decimal TaxRate = 0m, decimal TaxAmount = 0m);
 public sealed record SalesReport(DateOnly From, DateOnly To, int SalesCount, decimal Subtotal, decimal TaxAmount, decimal Total,
     IReadOnlyList<PaymentBreakdown> Payments, IReadOnlyList<ProductSalesSummary> TopProducts, IReadOnlyList<DailySalesSummary> DailySales,
-    IReadOnlyList<SellerSalesSummary>? Sellers = null);
+    IReadOnlyList<SellerSalesSummary>? Sellers = null, IReadOnlyList<CustomerSalesSummary>? Customers = null,
+    IReadOnlyList<WarehouseSalesSummary>? Warehouses = null);
 public sealed record CashSessionReport(DateOnly From, DateOnly To, int Sessions, int OpenSessions, decimal CashSales, decimal CashIn,
     decimal CashOut, decimal CountedDifference, IReadOnlyList<CashSessionDto> Items);
 public sealed record OpportunityDto(Guid Id, Guid CustomerId, string CustomerName, string Title, decimal ExpectedValue, DateOnly? ExpectedCloseDate, string? Description, OpportunityStage Stage, DateTimeOffset CreatedAtUtc, Guid? AssignedToUserId = null, string? AssignedToName = null);

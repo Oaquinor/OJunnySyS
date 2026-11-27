@@ -13,3 +13,9 @@ public sealed record JournalEntryDto(Guid Id, string Number, DateOnly EntryDate,
     decimal TotalDebit, decimal TotalCredit, DateTimeOffset CreatedAtUtc, IReadOnlyList<JournalEntryLineDto> Lines);
 public sealed record TrialBalanceLineDto(Guid AccountId, string Code, string Name, AccountType Type, decimal Debit, decimal Credit);
 public sealed record TrialBalanceDto(DateOnly AsOfDate, IReadOnlyList<TrialBalanceLineDto> Lines, decimal TotalDebit, decimal TotalCredit);
+public sealed record FinancialStatementLineDto(string Code, string Name, AccountType Type, decimal Amount);
+public sealed record ProfitAndLossDto(DateOnly From, DateOnly To, IReadOnlyList<FinancialStatementLineDto> Revenue,
+    IReadOnlyList<FinancialStatementLineDto> Expenses, decimal TotalRevenue, decimal TotalExpenses, decimal NetIncome);
+public sealed record FinancialPositionDto(DateOnly AsOfDate, IReadOnlyList<FinancialStatementLineDto> Assets,
+    IReadOnlyList<FinancialStatementLineDto> Liabilities, IReadOnlyList<FinancialStatementLineDto> Equity,
+    decimal TotalAssets, decimal TotalLiabilities, decimal TotalEquity, decimal CurrentAndAccumulatedResult);
