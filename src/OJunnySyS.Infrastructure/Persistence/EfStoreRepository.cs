@@ -290,30 +290,36 @@ public sealed class EfStoreRepository(IDbContextFactory<StoreDbContext> contextF
     {
         if (sale.Total <= 0) return;
 
-        var codes = sale.TaxAmount > 0 ? new[] { "1000", "1200", "2100", "4000", "5000" } : new[] { "1000", "1200", "4000", "5000" };
-        var accounts = await db.ChartAccounts.Where(x => codes.Contains(x.Code) && x.IsActive)
-            .ToDictionaryAsync(x => x.Code, ct);
-        if (accounts.Count != codes.Length)
+        var paymentAccountIds = sale.Payments.Select(x => x.LedgerAccountId).Distinct().ToArray();
+        var codes = sale.TaxAmount > 0 ? new[] { "1200", "2100", "4000", "5000" } : new[] { "1200", "4000", "5000" };
+        var accounts = await db.ChartAccounts.Where(x => (codes.Contains(x.Code) || paymentAccountIds.Contains(x.Id)) && x.IsActive)
+            .ToListAsync(ct);
+        var accountsByCode = accounts.ToDictionary(x => x.Code);
+        var accountsById = accounts.ToDictionary(x => x.Id);
+        if (codes.Any(code => !accountsByCode.ContainsKey(code)) || paymentAccountIds.Any(id => !accountsById.ContainsKey(id)))
             throw new DomainException("Faltan las cuentas contables base para registrar la venta. Revisa el catálogo contable.");
+        if (paymentAccountIds.Any(id => !accountsById[id].CanReceivePayments))
+            throw new DomainException("Los medios de pago deben usar cuentas de caja, banco o saldo de pago.");
 
-        var lines = new List<JournalEntryLine>
+        var lines = sale.Payments.GroupBy(x => x.LedgerAccountId).Select(group =>
         {
-            new(tenantId, accounts["1000"].Id, accounts["1000"].Code, accounts["1000"].Name,
-                sale.Total, 0, $"Cobro de venta {sale.Number}")
-        };
+            var account = accountsById[group.Key];
+            return new JournalEntryLine(tenantId, account.Id, account.Code, account.Name,
+                group.Sum(x => x.Amount), 0, $"Cobro de venta {sale.Number} · {string.Join(", ", group.Select(x => x.MethodName).Distinct())}");
+        }).ToList();
         if (sale.Subtotal > 0)
-            lines.Add(new JournalEntryLine(tenantId, accounts["4000"].Id, accounts["4000"].Code,
-                accounts["4000"].Name, 0, sale.Subtotal, $"Venta {sale.Number}"));
+            lines.Add(new JournalEntryLine(tenantId, accountsByCode["4000"].Id, accountsByCode["4000"].Code,
+                accountsByCode["4000"].Name, 0, sale.Subtotal, $"Venta {sale.Number}"));
         if (sale.TaxAmount > 0)
-            lines.Add(new JournalEntryLine(tenantId, accounts["2100"].Id, accounts["2100"].Code,
-                accounts["2100"].Name, 0, sale.TaxAmount, $"Impuesto de venta {sale.Number}"));
+            lines.Add(new JournalEntryLine(tenantId, accountsByCode["2100"].Id, accountsByCode["2100"].Code,
+                accountsByCode["2100"].Name, 0, sale.TaxAmount, $"Impuesto de venta {sale.Number}"));
         var costOfGoods = sale.Lines.Sum(x => x.CostTotal);
         if (costOfGoods > 0)
         {
-            lines.Add(new JournalEntryLine(tenantId, accounts["5000"].Id, accounts["5000"].Code,
-                accounts["5000"].Name, costOfGoods, 0, $"Costo de productos vendidos {sale.Number}"));
-            lines.Add(new JournalEntryLine(tenantId, accounts["1200"].Id, accounts["1200"].Code,
-                accounts["1200"].Name, 0, costOfGoods, $"Salida de inventario {sale.Number}"));
+            lines.Add(new JournalEntryLine(tenantId, accountsByCode["5000"].Id, accountsByCode["5000"].Code,
+                accountsByCode["5000"].Name, costOfGoods, 0, $"Costo de productos vendidos {sale.Number}"));
+            lines.Add(new JournalEntryLine(tenantId, accountsByCode["1200"].Id, accountsByCode["1200"].Code,
+                accountsByCode["1200"].Name, 0, costOfGoods, $"Salida de inventario {sale.Number}"));
         }
 
         var entryDate = DateOnly.FromDateTime(sale.CreatedAtUtc.UtcDateTime);
@@ -344,7 +350,8 @@ public sealed class EfStoreRepository(IDbContextFactory<StoreDbContext> contextF
             var method = await db.TenantPaymentMethods.AsNoTracking().Where(x => x.IsActive && x.Type == kind)
                 .OrderBy(x => x.Code == defaultCode ? 0 : 1).ThenBy(x => x.Name).FirstOrDefaultAsync(ct)
                 ?? throw new DomainException("Ese medio de pago no está activo. Actualiza el POS y elige otra forma de pago.");
-            return [new PaymentAllocation(method.Id, method.Name, method.Type, total)];
+            if (method.LedgerAccountId is not { } ledgerAccountId) throw new DomainException("Configura una cuenta contable activa para este medio de pago.");
+            return [new PaymentAllocation(method.Id, method.Name, method.Type, total, ledgerAccountId)];
         }
 
         if (request.Payments.Count is < 1 or > 10) throw new DomainException("Selecciona entre uno y diez medios de pago.");
@@ -355,12 +362,14 @@ public sealed class EfStoreRepository(IDbContextFactory<StoreDbContext> contextF
         {
             var method = await db.TenantPaymentMethods.AsNoTracking().SingleOrDefaultAsync(x => x.Id == payment.PaymentMethodId && x.IsActive, ct)
                 ?? throw new DomainException("Uno de los medios de pago ya no está disponible. Actualiza el POS.");
+            if (method.LedgerAccountId is not { } ledgerAccountId || !await db.ChartAccounts.AnyAsync(x => x.Id == ledgerAccountId && x.IsActive && x.Type == AccountType.Asset && x.Code.StartsWith("10"), ct))
+                throw new DomainException("Configura una cuenta activa de caja, banco o saldo de pago para cada medio antes de cobrar.");
             methods.Add(method.Id, method);
         }
         return request.Payments.Select(payment =>
         {
             var method = methods[payment.PaymentMethodId];
-            return new PaymentAllocation(method.Id, method.Name, method.Type, payment.Amount, payment.Reference);
+            return new PaymentAllocation(method.Id, method.Name, method.Type, payment.Amount, method.LedgerAccountId!.Value, payment.Reference);
         }).ToArray();
     }
 

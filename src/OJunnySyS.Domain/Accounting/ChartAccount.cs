@@ -23,6 +23,7 @@ public sealed class ChartAccount : TenantEntity
     public string Code { get; private set; } = "";
     public string Name { get; private set; } = "";
     public AccountType Type { get; private set; }
+    public bool CanReceivePayments => Type == AccountType.Asset && Code.StartsWith("10", StringComparison.Ordinal);
     public string? Description { get; private set; }
     public bool IsSystem { get; private set; }
     public bool IsActive { get; private set; }

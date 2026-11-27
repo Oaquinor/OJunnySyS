@@ -36,6 +36,8 @@ public sealed class EfAccountingRepository(
         await using var db = await CreateDbContextAsync(cancellationToken);
         var account = await db.ChartAccounts.SingleOrDefaultAsync(x => x.Id == accountId, cancellationToken)
             ?? throw new DomainException("La cuenta no existe en la empresa activa.");
+        if (!request.IsActive && account.IsActive && await db.TenantPaymentMethods.AnyAsync(x => x.IsActive && x.LedgerAccountId == accountId, cancellationToken))
+            throw new DomainException("Asigna primero otra cuenta a los medios de pago activos antes de desactivar esta cuenta.");
         account.SetActive(request.IsActive, request.ExpectedRevision);
         try { await db.SaveChangesAsync(cancellationToken); }
         catch (DbUpdateConcurrencyException) { throw new ConcurrencyConflictException("La cuenta cambió en otra sesión. Recarga antes de guardar."); }

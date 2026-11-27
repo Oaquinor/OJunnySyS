@@ -78,7 +78,8 @@ public sealed class Sale : TenantEntity
             throw new DomainException("Indica el nombre de cada medio de pago.");
         if (items.Sum(x => x.Amount) != Total)
             throw new DomainException("La suma de los medios de pago debe coincidir exactamente con el total de la venta.");
-        foreach (var item in items) _payments.Add(new SalePayment(TenantId, Id, item.PaymentMethodId, item.MethodName, item.Type, item.Amount, item.Reference));
+        foreach (var item in items) _payments.Add(new SalePayment(TenantId, Id, item.PaymentMethodId, item.MethodName,
+            item.Type, item.Amount, item.Reference, item.LedgerAccountId));
         PaymentMethod = items.Length > 1 ? PaymentMethod.Other : items[0].Type switch
         {
             PaymentMethodType.Cash => PaymentMethod.Cash,

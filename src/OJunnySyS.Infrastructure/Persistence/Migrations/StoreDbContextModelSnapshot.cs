@@ -1369,6 +1369,9 @@ namespace OJunnySyS.Infrastructure.Persistence.Migrations
                     b.Property<DateTimeOffset>("CreatedAtUtc")
                         .HasColumnType("datetime");
 
+                    b.Property<Guid>("LedgerAccountId")
+                        .HasColumnType("char(36)");
+
                     b.Property<string>("MethodName")
                         .IsRequired()
                         .HasMaxLength(80)
@@ -1394,6 +1397,8 @@ namespace OJunnySyS.Infrastructure.Persistence.Migrations
                         .HasColumnType("datetime");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("TenantId", "LedgerAccountId");
 
                     b.HasIndex("TenantId", "SaleId");
 
@@ -1431,6 +1436,9 @@ namespace OJunnySyS.Infrastructure.Persistence.Migrations
                     b.Property<bool>("IsActive")
                         .HasColumnType("tinyint(1)");
 
+                    b.Property<Guid?>("LedgerAccountId")
+                        .HasColumnType("char(36)");
+
                     b.Property<string>("Name")
                         .IsRequired()
                         .HasMaxLength(80)
@@ -1459,6 +1467,8 @@ namespace OJunnySyS.Infrastructure.Persistence.Migrations
 
                     b.HasIndex("TenantId", "Code")
                         .IsUnique();
+
+                    b.HasIndex("TenantId", "LedgerAccountId");
 
                     b.HasIndex("TenantId", "Name")
                         .IsUnique();
@@ -2135,6 +2145,13 @@ namespace OJunnySyS.Infrastructure.Persistence.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
+                    b.HasOne("OJunnySyS.Domain.Accounting.ChartAccount", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "LedgerAccountId")
+                        .HasPrincipalKey("TenantId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
                     b.HasOne("OJunnySyS.Domain.Sales.TenantPaymentMethod", null)
                         .WithMany()
                         .HasForeignKey("TenantId", "PaymentMethodId")
@@ -2157,6 +2174,12 @@ namespace OJunnySyS.Infrastructure.Persistence.Migrations
                         .HasForeignKey("TenantId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
+
+                    b.HasOne("OJunnySyS.Domain.Accounting.ChartAccount", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "LedgerAccountId")
+                        .HasPrincipalKey("TenantId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict);
                 });
 
             modelBuilder.Entity("OJunnySyS.Infrastructure.Identity.ApplicationUser", b =>

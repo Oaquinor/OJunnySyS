@@ -10,12 +10,14 @@ public sealed class TenantPaymentMethod : TenantEntity
     private TenantPaymentMethod() { }
 
     public TenantPaymentMethod(Guid tenantId, string code, string name, PaymentMethodType type,
-        string? instructions = null, string? accountLabel = null, string? accountReference = null, string? qrPayload = null) : base(tenantId)
+        string? instructions = null, string? accountLabel = null, string? accountReference = null, string? qrPayload = null,
+        Guid? ledgerAccountId = null) : base(tenantId)
     {
         Code = NormalizeCode(code);
         Name = NormalizeName(name);
         if (!Enum.IsDefined(type)) throw new DomainException("El tipo de medio de pago no es válido.");
         Type = type;
+        LedgerAccountId = NormalizeLedgerAccountId(ledgerAccountId);
         UpdateDetails(instructions, accountLabel, accountReference, qrPayload);
         IsActive = true;
     }
@@ -27,14 +29,17 @@ public sealed class TenantPaymentMethod : TenantEntity
     public string? AccountLabel { get; private set; }
     public string? AccountReference { get; private set; }
     public string? QrPayload { get; private set; }
+    public Guid? LedgerAccountId { get; private set; }
     public bool IsActive { get; private set; }
     public long Revision { get; private set; }
 
-    public void Update(string name, string? instructions, string? accountLabel, string? accountReference, string? qrPayload, long expectedRevision)
+    public void Update(string name, string? instructions, string? accountLabel, string? accountReference, string? qrPayload,
+        Guid? ledgerAccountId, long expectedRevision)
     {
         EnsureRevision(expectedRevision);
         Name = NormalizeName(name);
         UpdateDetails(instructions, accountLabel, accountReference, qrPayload);
+        LedgerAccountId = NormalizeLedgerAccountId(ledgerAccountId);
         Revision = checked(Revision + 1);
         MarkUpdated();
     }
@@ -55,6 +60,8 @@ public sealed class TenantPaymentMethod : TenantEntity
         AccountReference = NormalizeOptional(accountReference, 100, "La referencia de cuenta");
         QrPayload = NormalizeOptional(qrPayload, 2000, "El contenido QR");
     }
+
+    private static Guid? NormalizeLedgerAccountId(Guid? accountId) => accountId == Guid.Empty ? null : accountId;
 
     private static string NormalizeName(string? name)
     {
@@ -89,15 +96,16 @@ public sealed class SalePayment : TenantEntity
     private SalePayment() { }
 
     public SalePayment(Guid tenantId, Guid saleId, Guid paymentMethodId, string methodName, PaymentMethodType type,
-        decimal amount, string? reference) : base(tenantId)
+        decimal amount, string? reference, Guid ledgerAccountId) : base(tenantId)
     {
         if (saleId == Guid.Empty || paymentMethodId == Guid.Empty) throw new DomainException("La forma de pago no está vinculada correctamente a la venta.");
         if (string.IsNullOrWhiteSpace(methodName) || methodName.Trim().Length > 80) throw new DomainException("El nombre del medio de pago no es válido.");
         if (!Enum.IsDefined(type)) throw new DomainException("El tipo de medio de pago no es válido.");
+        if (ledgerAccountId == Guid.Empty) throw new DomainException("La cuenta contable del pago es obligatoria.");
         if (amount <= 0 || amount != decimal.Round(amount, 2)) throw new DomainException("Cada importe de pago debe ser positivo y tener hasta dos decimales.");
         if (reference?.Trim().Length > 120) throw new DomainException("La referencia del pago no puede superar 120 caracteres.");
         SaleId = saleId; PaymentMethodId = paymentMethodId; MethodName = methodName.Trim(); Type = type;
-        Amount = amount; Reference = string.IsNullOrWhiteSpace(reference) ? null : reference.Trim();
+        Amount = amount; Reference = string.IsNullOrWhiteSpace(reference) ? null : reference.Trim(); LedgerAccountId = ledgerAccountId;
     }
 
     public Guid SaleId { get; private set; }
@@ -106,6 +114,8 @@ public sealed class SalePayment : TenantEntity
     public PaymentMethodType Type { get; private set; }
     public decimal Amount { get; private set; }
     public string? Reference { get; private set; }
+    public Guid LedgerAccountId { get; private set; }
 }
 
-public sealed record PaymentAllocation(Guid PaymentMethodId, string MethodName, PaymentMethodType Type, decimal Amount, string? Reference = null);
+public sealed record PaymentAllocation(Guid PaymentMethodId, string MethodName, PaymentMethodType Type, decimal Amount,
+    Guid LedgerAccountId, string? Reference = null);

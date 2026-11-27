@@ -40,8 +40,8 @@ public sealed class TenantOnboardingService(
         await db.SaveChangesAsync(cancellationToken);
         db.PosRegisters.Add(new PosRegister(tenant.Id, "MAIN", "Caja principal", warehouse.Id));
         await db.SaveChangesAsync(cancellationToken);
-        await TenantPaymentMethodDefaults.EnsureAsync(db, tenant.Id, cancellationToken);
         await ChartAccountDefaults.EnsureAsync(db, tenant.Id, cancellationToken);
+        await TenantPaymentMethodDefaults.EnsureAsync(db, tenant.Id, cancellationToken);
 
         var user = new ApplicationUser
         {

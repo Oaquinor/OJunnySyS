@@ -41,6 +41,7 @@ public static class IdentityInitializer
             db.PosRegisters.Add(new PosRegister(tenant.Id, "MAIN", "Caja principal", warehouse.Id));
             await db.SaveChangesAsync(ct);
         }
+        await ChartAccountDefaults.EnsureAsync(db, tenant.Id, ct);
         await TenantPaymentMethodDefaults.EnsureAsync(db, tenant.Id, ct);
 
         foreach (var role in AppRoles.All)

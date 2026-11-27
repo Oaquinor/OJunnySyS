@@ -16,10 +16,36 @@ public static class TenantPaymentMethodDefaults
 
     public static async Task EnsureAsync(StoreDbContext db, Guid tenantId, CancellationToken cancellationToken = default)
     {
-        var existing = await db.TenantPaymentMethods.Where(x => x.TenantId == tenantId).Select(x => x.Code).ToListAsync(cancellationToken);
-        foreach (var method in Defaults.Where(x => !existing.Contains(x.Code, StringComparer.OrdinalIgnoreCase)))
-            db.TenantPaymentMethods.Add(new TenantPaymentMethod(tenantId, method.Code, method.Name, method.Type));
-        if (Defaults.Any(x => !existing.Contains(x.Code, StringComparer.OrdinalIgnoreCase)))
-            await db.SaveChangesAsync(cancellationToken);
+        var accounts = await db.ChartAccounts.Where(x => x.TenantId == tenantId && x.IsActive)
+            .ToDictionaryAsync(x => x.Code, cancellationToken);
+        var methods = await db.TenantPaymentMethods.Where(x => x.TenantId == tenantId).ToListAsync(cancellationToken);
+        foreach (var definition in Defaults)
+        {
+            var accountCode = LedgerAccountCode(definition.Type);
+            if (!accounts.TryGetValue(accountCode, out var account))
+                throw new InvalidOperationException($"No existe la cuenta contable base {accountCode} para configurar los medios de pago.");
+
+            var method = methods.SingleOrDefault(x => x.Code == definition.Code);
+            if (method is null)
+            {
+                method = new TenantPaymentMethod(tenantId, definition.Code, definition.Name, definition.Type, ledgerAccountId: account.Id);
+                db.TenantPaymentMethods.Add(method);
+                methods.Add(method);
+            }
+            else if (method.LedgerAccountId is null)
+            {
+                method.Update(method.Name, method.Instructions, method.AccountLabel, method.AccountReference, method.QrPayload,
+                    account.Id, method.Revision);
+            }
+        }
+        await db.SaveChangesAsync(cancellationToken);
     }
+
+    public static string LedgerAccountCode(PaymentMethodType type) => type switch
+    {
+        PaymentMethodType.Cash => "1000",
+        PaymentMethodType.Card => "1020",
+        PaymentMethodType.Transfer => "1010",
+        _ => "1030"
+    };
 }
