@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
 using OJunnySyS.Domain.Catalog;
@@ -468,5 +469,29 @@ public sealed class StoreDbContext(DbContextOptions<StoreDbContext> options)
             entity.Property(x => x.Reference).HasMaxLength(100);
             entity.Property(x => x.RegisterCode).HasMaxLength(40).IsRequired();
         });
+
+        // Oracle's MySQL EF provider reads DATE columns as DateTime. Keep the
+        // domain model's DateOnly semantics while converting at the provider edge.
+        var dateOnlyConverter = new ValueConverter<DateOnly, DateTime>(
+            value => value.ToDateTime(TimeOnly.MinValue),
+            value => DateOnly.FromDateTime(value));
+        var nullableDateOnlyConverter = new ValueConverter<DateOnly?, DateTime?>(
+            value => value.HasValue ? value.Value.ToDateTime(TimeOnly.MinValue) : null,
+            value => value.HasValue ? DateOnly.FromDateTime(value.Value) : null);
+
+        foreach (var entityType in modelBuilder.Model.GetEntityTypes())
+        foreach (var property in entityType.GetProperties())
+        {
+            if (property.ClrType == typeof(DateOnly))
+            {
+                property.SetValueConverter(dateOnlyConverter);
+                property.SetColumnType("date");
+            }
+            else if (Nullable.GetUnderlyingType(property.ClrType) == typeof(DateOnly))
+            {
+                property.SetValueConverter(nullableDateOnlyConverter);
+                property.SetColumnType("date");
+            }
+        }
     }
 }

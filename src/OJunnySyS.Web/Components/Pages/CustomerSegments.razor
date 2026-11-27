@@ -31,10 +31,10 @@
     <EditForm Model="_form" OnValidSubmit="SaveAsync"><DataAnnotationsValidator /><div class="form-grid">
         <label class="full-span">Nombre del segmento<InputText @bind-Value="_form.Name" maxlength="100" placeholder="Ej. Clientes frecuentes" /></label>
         <label class="full-span">Etiqueta requerida<InputSelect @bind-Value="_form.RequiredTagId"><option value="">Cualquier etiqueta</option>@foreach (var tag in _tags) { <option value="@tag.Id">@tag.Name · @tag.CustomerCount clientes</option> }</InputSelect></label>
-        <label>Valor histórico mínimo<InputNumber @bind-Value="_form.MinimumLifetimeValue" min="0" step="0.01" /></label>
-        <label>Valor histórico máximo<InputNumber @bind-Value="_form.MaximumLifetimeValue" min="0" step="0.01" /></label>
-        <label>Mínimo de compras<InputNumber @bind-Value="_form.MinimumSalesCount" min="1" max="100000" /></label>
-        <label>Compró en últimos (días)<InputNumber @bind-Value="_form.PurchasedWithinDays" min="1" max="3650" /></label>
+        <label>Valor histórico mínimo<NumericInput @bind-Value="_form.MinimumLifetimeValue" min="0" step="0.01" /></label>
+        <label>Valor histórico máximo<NumericInput @bind-Value="_form.MaximumLifetimeValue" min="0" step="0.01" /></label>
+        <label>Mínimo de compras<NumericInput @bind-Value="_form.MinimumSalesCount" min="1" max="100000" /></label>
+        <label>Compró en últimos (días)<NumericInput @bind-Value="_form.PurchasedWithinDays" min="1" max="3650" /></label>
         <label class="full-span segment-active-filter"><InputCheckbox @bind-Value="_form.ActiveCustomersOnly" /> Incluir únicamente clientes activos</label>
     </div><ValidationSummary />@if (!string.IsNullOrWhiteSpace(_formError)) { <div class="inline-error">@_formError</div> }<div class="modal-actions"><button type="button" class="button button-secondary" @onclick="CloseForm">Cancelar</button><button class="button button-primary" disabled="@_saving">@(_saving ? "Guardando…" : "Guardar segmento")</button></div></EditForm>
 </section></div> }

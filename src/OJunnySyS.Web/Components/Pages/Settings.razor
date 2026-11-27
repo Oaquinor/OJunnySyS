@@ -19,7 +19,7 @@ else if (_model is not null)
             <div class="form-grid">
                 <label>Zona horaria<InputText @bind-Value="_model.TimeZoneId" placeholder="America/Santo_Domingo" /></label>
                 <label>Moneda (código ISO)<InputText @bind-Value="_model.CurrencyCode" maxlength="3" /></label>
-                <label>Tasa general de impuesto (%)<InputNumber @bind-Value="_model.TaxPercent" min="0" max="100" step="0.01" /></label>
+                <label>Tasa general de impuesto (%)<NumericInput @bind-Value="_model.TaxPercent" min="0" max="100" step="0.01" /></label>
             </div>
             <h2 class="settings-section-title">Identidad y formato del recibo</h2>
             <div class="form-grid">
@@ -36,8 +36,8 @@ else if (_model is not null)
                 <label>Diseño<InputSelect @bind-Value="_model.ReceiptDesign"><option value="classic">Clásico</option><option value="minimal">Minimalista</option><option value="detailed">Detallado</option></InputSelect></label>
                 <label>Tipografía<InputSelect @bind-Value="_model.ReceiptFontFamily"><option value="classic">Clásica · monoespaciada</option><option value="modern">Moderna</option><option value="compact">Compacta</option></InputSelect></label>
                 <label>Tamaño de letra<InputSelect @bind-Value="_model.ReceiptFontSize"><option value="11">Pequeña</option><option value="12">Mediana</option><option value="13">Grande</option></InputSelect></label>
-                <label>Margen izquierdo (mm)<InputNumber @bind-Value="_model.ReceiptMarginLeftMm" min="0" max="10" /></label>
-                <label>Margen derecho (mm)<InputNumber @bind-Value="_model.ReceiptMarginRightMm" min="0" max="10" /></label>
+                <label>Margen izquierdo (mm)<NumericInput @bind-Value="_model.ReceiptMarginLeftMm" min="0" max="10" /></label>
+                <label>Margen derecho (mm)<NumericInput @bind-Value="_model.ReceiptMarginRightMm" min="0" max="10" /></label>
             </div>
             <div class="receipt-options">
                 <label><InputCheckbox @bind-Value="_model.ReceiptCompactLineSpacing" /> Interlineado reducido</label>

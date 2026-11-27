@@ -99,9 +99,8 @@ public sealed class EfAccountingRepository(
         {
             var (debitBalance, creditBalance) = balances.GetValueOrDefault(account.Id);
             var netDebit = debitBalance - creditBalance;
-            var normalDebit = account.Type is AccountType.Asset or AccountType.Expense;
-            var debit = normalDebit ? Math.Max(netDebit, 0m) : Math.Max(-netDebit, 0m);
-            var credit = normalDebit ? Math.Max(-netDebit, 0m) : Math.Max(netDebit, 0m);
+            var debit = Math.Max(netDebit, 0m);
+            var credit = Math.Max(-netDebit, 0m);
             return new TrialBalanceLineDto(account.Id, account.Code, account.Name, account.Type, debit, credit);
         }).Where(x => x.Debit != 0 || x.Credit != 0).ToList();
         return new TrialBalanceDto(asOfDate, lines, lines.Sum(x => x.Debit), lines.Sum(x => x.Credit));
