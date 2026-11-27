@@ -278,6 +278,10 @@ namespace OJunnySyS.Infrastructure.Persistence.Migrations
                     b.Property<int>("StockOnHand")
                         .HasColumnType("int");
 
+                    b.Property<decimal?>("TaxRateOverride")
+                        .HasPrecision(5, 4)
+                        .HasColumnType("decimal(5,4)");
+
                     b.Property<Guid>("TenantId")
                         .HasColumnType("char(36)");
 
@@ -1134,6 +1138,10 @@ namespace OJunnySyS.Infrastructure.Persistence.Migrations
                         .IsRequired()
                         .HasMaxLength(40)
                         .HasColumnType("varchar(40)");
+
+                    b.Property<decimal>("TaxRate")
+                        .HasPrecision(5, 4)
+                        .HasColumnType("decimal(5,4)");
 
                     b.Property<decimal>("UnitPrice")
                         .HasPrecision(12, 2)

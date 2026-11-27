@@ -5,8 +5,8 @@ using OJunnySyS.Domain.Crm;
 
 namespace OJunnySyS.Application.Contracts;
 
-public sealed record ProductDto(Guid Id, string Sku, string Name, string Category, decimal UnitPrice, int StockOnHand, string? Barcode, bool IsActive = true, long Revision = 0);
-public sealed record UpdateProductRequest(string Sku, string Name, string Category, decimal UnitPrice, string? Barcode, long ExpectedRevision);
+public sealed record ProductDto(Guid Id, string Sku, string Name, string Category, decimal UnitPrice, int StockOnHand, string? Barcode, bool IsActive = true, long Revision = 0, decimal? TaxRateOverride = null);
+public sealed record UpdateProductRequest(string Sku, string Name, string Category, decimal UnitPrice, string? Barcode, long ExpectedRevision, decimal? TaxRateOverride = null);
 public sealed record SetProductActiveRequest(bool IsActive, long ExpectedRevision);
 public sealed record CustomerDto(Guid Id, string Name, string Email, string Phone, string? Company, decimal LifetimeValue, long Revision, string FirstName, string LastName, DateTimeOffset CreatedAtUtc = default);
 public sealed record UpdateCustomerRequest(string FirstName, string LastName, string Email, string Phone, string? Company, long ExpectedRevision);
@@ -45,7 +45,7 @@ public sealed record CashMovementRequest(CashMovementKind Kind, decimal Amount, 
 public sealed record CloseCashSessionRequest(decimal CountedCash);
 public sealed record SalePaymentDto(string MethodName, PaymentMethodType Type, decimal Amount, string? Reference);
 public sealed record SaleReceiptDto(Guid Id, string Number, string CustomerName, decimal Subtotal, decimal TaxRate, decimal TaxAmount, decimal Total, PaymentMethod PaymentMethod, SaleStatus Status, DateTimeOffset CreatedAtUtc, string? RegisterCode, IReadOnlyList<ReceiptLineDto> Lines, IReadOnlyList<SalePaymentDto>? Payments = null, string? SellerName = null);
-public sealed record ReceiptLineDto(string Sku, string ProductName, int Quantity, decimal UnitPrice, decimal LineTotal);
+public sealed record ReceiptLineDto(string Sku, string ProductName, int Quantity, decimal UnitPrice, decimal LineTotal, decimal TaxRate = 0m, decimal TaxAmount = 0m);
 public sealed record SalesReport(DateOnly From, DateOnly To, int SalesCount, decimal Subtotal, decimal TaxAmount, decimal Total,
     IReadOnlyList<PaymentBreakdown> Payments, IReadOnlyList<ProductSalesSummary> TopProducts, IReadOnlyList<DailySalesSummary> DailySales,
     IReadOnlyList<SellerSalesSummary>? Sellers = null);

@@ -1,0 +1,80 @@
+.cash-open-banner {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 32px;
+    padding: 24px 26px;
+    margin: 4px 0 20px;
+    border: 1px solid var(--line);
+    border-radius: 16px;
+    background: linear-gradient(115deg, #fff 62%, #f5faf5);
+}
+
+.cash-open-banner > div:first-child { min-width: 0; flex: 1; }
+.cash-open-banner h2 { margin: 8px 0 5px; color: var(--ink); font: 700 22px Manrope, sans-serif; }
+.cash-open-banner p { max-width: 510px; margin: 0; color: var(--muted); font-size: 12px; line-height: 1.6; }
+.cash-open-banner form { flex: 0 1 400px; }
+
+.cash-open-form {
+    display: grid;
+    grid-template-columns: minmax(150px, 1fr) auto;
+    align-items: end;
+    gap: 12px;
+}
+
+.cash-open-form label,
+.cash-close-card form > label {
+    display: grid;
+    gap: 8px;
+    color: #58685e;
+    font-size: 11px;
+    font-weight: 650;
+}
+
+.cash-open-form input,
+.cash-close-card form > label input { width: 100%; min-height: 42px; padding: 0 13px; font-size: 13px; }
+.cash-open-form .button { min-height: 42px; padding-inline: 18px; border-radius: 11px; white-space: nowrap; }
+
+.cash-status-bar { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 14px 17px; margin: 4px 0 17px; border: 1px solid #dcebe0; border-radius: 12px; background: #f5faf5; }
+.cash-status-bar > div { display: flex; align-items: center; gap: 10px; }
+.cash-status-bar > div > div { display: grid; gap: 3px; }
+.cash-status-bar strong { color: #375343; font-size: 11px; }
+.cash-status-bar small { color: var(--muted); font-size: 10px; }
+.cash-summary-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin-bottom: 17px; }
+.cash-summary-grid article { display: grid; gap: 9px; min-width: 0; padding: 17px 18px; border: 1px solid var(--line); border-radius: 13px; background: #fff; }
+.cash-summary-grid article > span { color: #8c9a90; font-size: 9px; font-weight: 700; letter-spacing: .07em; }
+.cash-summary-grid article > strong { color: var(--ink); font: 700 19px Manrope, sans-serif; overflow-wrap: anywhere; }
+.cash-summary-grid .cash-expected { border-color: #dcebe0; background: #f5faf5; }
+.cash-actions-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; align-items: stretch; }
+.cash-action-card { min-width: 0; padding: 22px; border-radius: 15px; }
+.cash-action-card h2 { margin: 7px 0 6px; color: var(--ink); font: 700 17px Manrope, sans-serif; }
+.cash-action-card > p { margin: 0 0 18px; color: var(--muted); font-size: 11px; line-height: 1.65; }
+.cash-action-card .form-grid { gap: 16px; margin-bottom: 15px; }
+.cash-action-card .form-grid input,
+.cash-action-card .form-grid select { width: 100%; min-height: 40px; padding-inline: 12px; font-size: 11px; }
+.cash-action-card .form-grid label { gap: 8px; }
+.cash-action-card > form > .button { min-height: 39px; border-radius: 10px; }
+.cash-reconcile { display: grid; grid-template-columns: 1fr auto; gap: 11px 14px; margin: 18px 0; padding: 15px; border: 1px solid #edf1ec; border-radius: 12px; background: #f8faf7; }
+.cash-reconcile span { color: #77857b; font-size: 10px; }
+.cash-reconcile strong { color: #36493c; font-size: 11px; text-align: right; }
+.cash-history { margin-top: 19px; border-radius: 14px; }
+.cash-history .empty-state { padding: 30px 20px; }
+.cash-error { margin: 14px 0; }
+
+@media (max-width: 1100px) {
+    .cash-open-banner { align-items: stretch; flex-direction: column; gap: 20px; }
+    .cash-open-banner form { flex-basis: auto; width: min(100%, 440px); }
+    .cash-summary-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .cash-actions-grid { grid-template-columns: 1fr; }
+}
+
+@media (max-width: 620px) {
+    .cash-open-banner { padding: 19px; border-radius: 13px; }
+    .cash-open-banner h2 { font-size: 19px; }
+    .cash-open-form { grid-template-columns: 1fr; }
+    .cash-open-form .button { width: 100%; }
+    .cash-action-card { padding: 17px; }
+    .cash-summary-grid article { padding: 14px; }
+    .cash-summary-grid article > strong { font-size: 17px; }
+    .cash-status-bar { align-items: flex-start; flex-direction: column; }
+}

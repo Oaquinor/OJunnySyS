@@ -26,7 +26,7 @@
                 var inCart = _cart.GetValueOrDefault(product.Id);
                 <button class="pos-product-card" @onclick="() => Add(product)" disabled="@(inCart >= product.StockOnHand)">
                     <span class="pos-product-art @ArtClass(product.Category)">@ProductIcon(product.Category)<span class="add-product">＋</span></span>
-                    <span class="pos-product-info"><strong>@product.Name</strong><small>@product.Category · @_cart.GetValueOrDefault(product.Id) en orden</small><b>@Money(product.UnitPrice)</b></span>
+                    <span class="pos-product-info"><strong>@product.Name</strong><small>@product.Category · @_cart.GetValueOrDefault(product.Id) en orden · @TaxLabel(product)</small><b>@Money(product.UnitPrice)</b></span>
                     @if (product.StockOnHand <= 5) { <span class="stock-hint">Quedan @product.StockOnHand</span> }
                 </button>
             }
@@ -80,7 +80,7 @@
     private IEnumerable<ProductDto> _filteredProducts => _products.Where(x => (_category is null || x.Category == _category) && x.StockOnHand > 0);
     private IEnumerable<(ProductDto Product, int Quantity)> CartLines => _cart.Select(x => (_products.FirstOrDefault(p => p.Id == x.Key), x.Value)).Where(x => x.Item1 is not null).Select(x => (x.Item1!, x.Value));
     private decimal Subtotal => CartLines.Sum(x => x.Product.UnitPrice * x.Quantity);
-    private decimal Tax => decimal.Round(Subtotal * _taxRate, 2);
+    private decimal Tax => CartLines.Sum(x => decimal.Round(x.Product.UnitPrice * x.Quantity * (x.Product.TaxRateOverride ?? _taxRate), 2));
     private decimal Total => Subtotal + Tax;
     private decimal TenderBalance => decimal.Round(Total - _tenders.Sum(x => x.Amount), 2);
     private bool CashOpen => _cashSession?.Status == CashSessionStatus.Open;
@@ -99,6 +99,7 @@
     private sealed class TenderForm(Guid paymentMethodId, decimal amount) { public Guid PaymentMethodId { get; set; } = paymentMethodId; public decimal Amount { get; set; } = amount; public string? Reference { get; set; } }
     private string CategoryClass(string? value) => _category == value ? "category-tab active" : "category-tab";
     private static string Money(decimal amount) => DisplayFormat.Money(amount, showCents: true);
+    private string TaxLabel(ProductDto product) => product.TaxRateOverride is { } rate ? rate == 0 ? "Exento" : $"Impuesto {rate * 100m:0.##}%" : $"Impuesto general {_taxRate * 100m:0.##}%";
     private static string ProductIcon(string category) => category.Contains("Café", StringComparison.OrdinalIgnoreCase) ? "☕" : category.Contains("Bebida", StringComparison.OrdinalIgnoreCase) ? "◉" : category.Contains("Accesorio", StringComparison.OrdinalIgnoreCase) ? "◌" : "✳";
     private static string ArtClass(string category) => category.Contains("Café", StringComparison.OrdinalIgnoreCase) ? "art-coffee" : category.Contains("Bebida", StringComparison.OrdinalIgnoreCase) ? "art-drink" : category.Contains("Accesorio", StringComparison.OrdinalIgnoreCase) ? "art-accessory" : "art-gift";
 }

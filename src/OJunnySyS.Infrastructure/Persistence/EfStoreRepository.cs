@@ -114,10 +114,10 @@ public sealed class EfStoreRepository(IDbContextFactory<StoreDbContext> contextF
         return customer;
     }
 
-    public async Task<Product> CreateProductAsync(string sku, string name, string category, decimal unitPrice, int stock, string? barcode, CancellationToken cancellationToken = default)
+    public async Task<Product> CreateProductAsync(string sku, string name, string category, decimal unitPrice, int stock, string? barcode, decimal? taxRateOverride = null, CancellationToken cancellationToken = default)
     {
         var tenantId = tenantContext.GetRequiredTenantId();
-        var product = new Product(tenantId, sku, name, category, unitPrice, stock, barcode);
+        var product = new Product(tenantId, sku, name, category, unitPrice, stock, barcode, taxRateOverride);
         await using var db = await CreateDbContextAsync(cancellationToken);
         await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
         _ = await db.Tenants.FromSqlInterpolated($"SELECT * FROM Tenants WHERE Id = {tenantId} FOR UPDATE").SingleOrDefaultAsync(cancellationToken)
@@ -142,7 +142,7 @@ public sealed class EfStoreRepository(IDbContextFactory<StoreDbContext> contextF
             ?? throw new DomainException("El producto no existe en esta empresa.");
         if (product.Revision != request.ExpectedRevision)
             throw new ConcurrencyConflictException("El producto cambió en otra sesión. Recarga el catálogo antes de guardar.");
-        product.UpdateCatalog(request.Sku, request.Name, request.Category, request.UnitPrice, request.Barcode);
+        product.UpdateCatalog(request.Sku, request.Name, request.Category, request.UnitPrice, request.Barcode, request.TaxRateOverride);
         if (await db.Products.AnyAsync(x => x.Id != productId && (x.Sku == product.Sku || (product.Barcode != null && x.Barcode == product.Barcode)), cancellationToken))
             throw new DomainException("Ya existe un producto con ese SKU o código de barras.");
         try { await db.SaveChangesAsync(cancellationToken); }
@@ -255,7 +255,7 @@ public sealed class EfStoreRepository(IDbContextFactory<StoreDbContext> contextF
             warehouseStock.Adjust(-quantity);
             product.AdjustStock(-quantity);
             stockMovements.Add((product, quantity, warehouseStock.Quantity));
-            lines.Add(new SaleLine(product.Id, product.Sku, product.Name, product.UnitPrice, quantity));
+            lines.Add(new SaleLine(product.Id, product.Sku, product.Name, product.UnitPrice, quantity, product.TaxRateOverride ?? tenant.DefaultTaxRate));
         }
 
         var sale = new Sale(tenantId, $"V-{DateTimeOffset.UtcNow:yyyyMMddHHmmss}-{Guid.NewGuid():N}", customer, request.PaymentMethod, lines, cashSession.Id, cashierUserId, tenant.DefaultTaxRate, request.IdempotencyKey, registerCode, warehouseId);
@@ -428,9 +428,13 @@ public sealed class EfStoreRepository(IDbContextFactory<StoreDbContext> contextF
         var registerCode = sale.CashSessionId is { } sessionId
             ? await db.CashSessions.AsNoTracking().Where(x => x.Id == sessionId).Select(x => x.RegisterCode).SingleOrDefaultAsync(cancellationToken)
             : null;
+        var receiptLines = sale.Lines.Select(x => new ReceiptLineDto(x.Sku, x.ProductName, x.Quantity, x.UnitPrice, x.LineTotal, x.TaxRate, x.TaxAmount)).ToArray();
+        var unallocatedTax = sale.TaxAmount - receiptLines.Sum(x => x.TaxAmount);
+        if (receiptLines.Length > 0 && unallocatedTax != 0)
+            receiptLines[^1] = receiptLines[^1] with { TaxAmount = receiptLines[^1].TaxAmount + unallocatedTax };
         return new SaleReceiptDto(sale.Id, sale.Number, sale.CustomerName, sale.Subtotal, sale.TaxRate, sale.TaxAmount, sale.Total,
             sale.PaymentMethod, sale.Status, sale.CreatedAtUtc, registerCode,
-            sale.Lines.Select(x => new ReceiptLineDto(x.Sku, x.ProductName, x.Quantity, x.UnitPrice, x.LineTotal)).ToArray(),
+            receiptLines,
             sale.Payments.Select(x => new SalePaymentDto(x.MethodName, x.Type, x.Amount, x.Reference)).ToArray(), sale.SellerName);
     }
 

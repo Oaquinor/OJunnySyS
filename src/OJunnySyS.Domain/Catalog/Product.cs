@@ -6,12 +6,12 @@ public sealed class Product : TenantEntity
 {
     private Product() { }
 
-    public Product(Guid tenantId, string sku, string name, string category, decimal unitPrice, int stockOnHand, string? barcode = null) : base(tenantId)
+    public Product(Guid tenantId, string sku, string name, string category, decimal unitPrice, int stockOnHand, string? barcode = null, decimal? taxRateOverride = null) : base(tenantId)
     {
         if (string.IsNullOrWhiteSpace(sku)) throw new DomainException("El SKU es obligatorio.");
         if (sku.Trim().Length > 40) throw new DomainException("El SKU no puede superar 40 caracteres.");
         Sku = sku.Trim().ToUpperInvariant();
-        UpdateDetails(name, category, unitPrice, barcode);
+        UpdateDetails(name, category, unitPrice, barcode, taxRateOverride);
         if (stockOnHand < 0) throw new DomainException("El inventario no puede ser negativo.");
         StockOnHand = stockOnHand; IsActive = true;
     }
@@ -21,25 +21,28 @@ public sealed class Product : TenantEntity
     public string Category { get; private set; } = "";
     public string? Barcode { get; private set; }
     public decimal UnitPrice { get; private set; }
+    public decimal? TaxRateOverride { get; private set; }
     public int StockOnHand { get; private set; }
     public bool IsActive { get; private set; }
     public long Revision { get; private set; }
 
-    public void UpdateDetails(string name, string category, decimal unitPrice, string? barcode)
+    public void UpdateDetails(string name, string category, decimal unitPrice, string? barcode, decimal? taxRateOverride = null)
     {
         if (string.IsNullOrWhiteSpace(name)) throw new DomainException("El nombre del producto es obligatorio.");
         category = string.IsNullOrWhiteSpace(category) ? "General" : category;
         if (name.Trim().Length > 160 || category.Trim().Length > 80 || (barcode?.Trim().Length ?? 0) > 64) throw new DomainException("Los datos del producto superan el largo permitido.");
         if (unitPrice < 0) throw new DomainException("El precio no puede ser negativo.");
+        if (taxRateOverride is < 0 or > 1) throw new DomainException("El impuesto del producto debe estar entre 0 y 100 por ciento.");
         Name = name.Trim(); Category = category.Trim(); UnitPrice = decimal.Round(unitPrice, 2);
+        TaxRateOverride = taxRateOverride;
         Barcode = string.IsNullOrWhiteSpace(barcode) ? null : barcode.Trim(); MarkChanged();
     }
 
-    public void UpdateCatalog(string sku, string name, string category, decimal unitPrice, string? barcode)
+    public void UpdateCatalog(string sku, string name, string category, decimal unitPrice, string? barcode, decimal? taxRateOverride = null)
     {
         if (string.IsNullOrWhiteSpace(sku) || sku.Trim().Length > 40) throw new DomainException("El SKU es obligatorio y no puede superar 40 caracteres.");
         Sku = sku.Trim().ToUpperInvariant();
-        UpdateDetails(name, category, unitPrice, barcode);
+        UpdateDetails(name, category, unitPrice, barcode, taxRateOverride);
     }
 
     public void AdjustStock(int delta)

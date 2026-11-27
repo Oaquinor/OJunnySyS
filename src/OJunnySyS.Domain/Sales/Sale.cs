@@ -30,7 +30,7 @@ public sealed class Sale : TenantEntity
         PaymentMethod = paymentMethod; TaxRate = taxRate; IdempotencyKey = idempotencyKey;
         _lines.AddRange(lines);
         if (_lines.Count == 0) throw new DomainException("La venta debe contener al menos un producto.");
-        Subtotal = _lines.Sum(x => x.LineTotal); TaxAmount = decimal.Round(Subtotal * TaxRate, 2); Total = Subtotal + TaxAmount;
+        Subtotal = _lines.Sum(x => x.LineTotal); TaxAmount = _lines.Sum(x => x.TaxAmount); Total = Subtotal + TaxAmount;
         Status = SaleStatus.Completed;
     }
 
@@ -94,12 +94,13 @@ public sealed class Sale : TenantEntity
 public sealed class SaleLine
 {
     private SaleLine() { }
-    public SaleLine(Guid productId, string sku, string productName, decimal unitPrice, int quantity)
+    public SaleLine(Guid productId, string sku, string productName, decimal unitPrice, int quantity, decimal taxRate = 0m)
     {
         if (quantity <= 0) throw new DomainException("La cantidad debe ser mayor que cero.");
         if (unitPrice < 0) throw new DomainException("El precio no puede ser negativo.");
+        if (taxRate is < 0 or > 1) throw new DomainException("La tasa de impuesto del artículo debe estar entre 0 y 100 por ciento.");
         ProductId = productId; Sku = sku; ProductName = productName; UnitPrice = unitPrice; Quantity = quantity;
-        LineTotal = decimal.Round(unitPrice * quantity, 2);
+        LineTotal = decimal.Round(unitPrice * quantity, 2); TaxRate = taxRate;
     }
     public Guid Id { get; private set; } = Guid.NewGuid();
     public Guid SaleId { get; private set; }
@@ -109,4 +110,6 @@ public sealed class SaleLine
     public decimal UnitPrice { get; private set; }
     public int Quantity { get; private set; }
     public decimal LineTotal { get; private set; }
+    public decimal TaxRate { get; private set; }
+    public decimal TaxAmount => decimal.Round(LineTotal * TaxRate, 2);
 }
