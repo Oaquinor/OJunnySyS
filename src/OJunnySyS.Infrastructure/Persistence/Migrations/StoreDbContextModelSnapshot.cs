@@ -625,6 +625,9 @@ namespace OJunnySyS.Infrastructure.Persistence.Migrations
                     b.Property<int>("StockOnHand")
                         .HasColumnType("int");
 
+                    b.Property<Guid?>("TaxProfileId")
+                        .HasColumnType("char(36)");
+
                     b.Property<decimal?>("TaxRateOverride")
                         .HasPrecision(5, 4)
                         .HasColumnType("decimal(5,4)");
@@ -658,9 +661,59 @@ namespace OJunnySyS.Infrastructure.Persistence.Migrations
                     b.HasIndex("TenantId", "Sku")
                         .IsUnique();
 
+                    b.HasIndex("TenantId", "TaxProfileId");
+
                     b.HasIndex("TenantId", "IsActive", "Name");
 
                     b.ToTable("Products");
+                });
+
+            modelBuilder.Entity("OJunnySyS.Domain.Catalog.TaxProfile", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("char(36)");
+
+                    b.Property<string>("Code")
+                        .IsRequired()
+                        .HasMaxLength(24)
+                        .HasColumnType("varchar(24)");
+
+                    b.Property<DateTimeOffset>("CreatedAtUtc")
+                        .HasColumnType("datetime");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("tinyint(1)");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(80)
+                        .HasColumnType("varchar(80)");
+
+                    b.Property<decimal>("Rate")
+                        .HasPrecision(5, 4)
+                        .HasColumnType("decimal(5,4)");
+
+                    b.Property<long>("Revision")
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint")
+                        .HasDefaultValue(0L);
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("char(36)");
+
+                    b.Property<DateTimeOffset?>("UpdatedAtUtc")
+                        .HasColumnType("datetime");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TenantId", "Code")
+                        .IsUnique();
+
+                    b.HasIndex("TenantId", "IsActive", "Name");
+
+                    b.ToTable("TaxProfiles");
                 });
 
             modelBuilder.Entity("OJunnySyS.Domain.Crm.CrmActivity", b =>
@@ -2373,6 +2426,23 @@ namespace OJunnySyS.Infrastructure.Persistence.Migrations
                 });
 
             modelBuilder.Entity("OJunnySyS.Domain.Catalog.Product", b =>
+                {
+                    b.HasOne("OJunnySyS.Domain.Tenancy.Tenant", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("OJunnySyS.Domain.Catalog.TaxProfile", "TaxProfile")
+                        .WithMany()
+                        .HasForeignKey("TenantId", "TaxProfileId")
+                        .HasPrincipalKey("TenantId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.Navigation("TaxProfile");
+                });
+
+            modelBuilder.Entity("OJunnySyS.Domain.Catalog.TaxProfile", b =>
                 {
                     b.HasOne("OJunnySyS.Domain.Tenancy.Tenant", null)
                         .WithMany()

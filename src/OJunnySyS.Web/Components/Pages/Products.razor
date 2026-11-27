@@ -2,6 +2,7 @@
 @attribute [Authorize(Roles = "Administrator,Manager")]
 @inject StoreService Store
 @inject TenantSettingsService TenantSettings
+@inject TaxProfileService TaxProfiles
 @inject ILogger<Products> Logger
 
 <PageTitle>Productos · OjunnySyS</PageTitle>
@@ -17,12 +18,13 @@
     </tbody></table></div>
     @if (_products.Count == 0) { <div class="empty-state"><strong>No hay productos que coincidan</strong><p>Prueba otra búsqueda o crea el primer artículo de tu catálogo.</p></div> }
 </div>
-    @if (_showForm) { <div class="modal-backdrop" @onclick="CloseForm"><section class="modal-card" @onclick:stopPropagation="true"><div class="modal-heading"><div><span class="eyebrow">INVENTARIO · CATÁLOGO</span><h2>@(_form.Id == Guid.Empty ? "Agregar producto" : "Editar producto")</h2><p>@(_form.Id == Guid.Empty ? "Define el artículo y registra las existencias iniciales." : "El stock se mantiene por movimientos de inventario y no se altera al editar el catálogo.")</p></div><button class="icon-button" @onclick="CloseForm">×</button></div><EditForm Model="_form" OnValidSubmit="SaveAsync"><DataAnnotationsValidator /><div class="form-grid"><label>Nombre<InputText @bind-Value="_form.Name" placeholder="Nombre del producto" /></label><label>SKU<InputText @bind-Value="_form.Sku" placeholder="Ej. CAF-006" /></label><label>Categoría<InputText @bind-Value="_form.Category" placeholder="Ej. Café" /></label><label>Código de barras <span class="optional">Opcional</span><InputText @bind-Value="_form.Barcode" placeholder="EAN / UPC" /></label><label>Precio de venta<NumericInput @bind-Value="_form.UnitPrice" min="0" step="0.01" /></label><label class="full-span receipt-option"><InputCheckbox @bind-Value="_form.UseDefaultTaxRate" /> Usar impuesto general de la empresa (@($"{_defaultTaxRate * 100m:0.##}%"))</label>@if (!_form.UseDefaultTaxRate) { <label>Impuesto del producto (%)<NumericInput @bind-Value="_form.TaxRatePercent" min="0" max="100" step="0.01" /></label> }@if (_form.Id == Guid.Empty) { <label>Existencias iniciales<NumericInput @bind-Value="_form.Stock" min="0" /></label><label>Costo unitario inicial <span class="optional">Opcional si lo conoces</span><NumericInput @bind-Value="_form.InitialUnitCost" min="0" step="0.01" /></label>}</div><ValidationSummary />@if (!string.IsNullOrWhiteSpace(_formError)) { <div class="inline-error">@_formError</div> }<div class="modal-actions"><button type="button" class="button button-secondary" @onclick="CloseForm">Cancelar</button><button type="submit" class="button button-primary" disabled="@_saving">@(_saving ? "Guardando…" : "Guardar producto")</button></div></EditForm></section></div> }
+    @if (_showForm) { <div class="modal-backdrop" @onclick="CloseForm"><section class="modal-card" @onclick:stopPropagation="true"><div class="modal-heading"><div><span class="eyebrow">INVENTARIO · CATÁLOGO</span><h2>@(_form.Id == Guid.Empty ? "Agregar producto" : "Editar producto")</h2><p>@(_form.Id == Guid.Empty ? "Define el artículo y registra las existencias iniciales." : "El stock se mantiene por movimientos de inventario y no se altera al editar el catálogo.")</p></div><button class="icon-button" @onclick="CloseForm">×</button></div><EditForm Model="_form" OnValidSubmit="SaveAsync"><DataAnnotationsValidator /><div class="form-grid"><label>Nombre<InputText @bind-Value="_form.Name" placeholder="Nombre del producto" /></label><label>SKU<InputText @bind-Value="_form.Sku" placeholder="Ej. CAF-006" /></label><label>Categoría<InputText @bind-Value="_form.Category" placeholder="Ej. Café" /></label><label>Código de barras <span class="optional">Opcional</span><InputText @bind-Value="_form.Barcode" placeholder="EAN / UPC" /></label><label>Precio de venta<NumericInput @bind-Value="_form.UnitPrice" min="0" step="0.01" /></label><label>Impuesto<InputSelect @bind-Value="_form.TaxSelection"><option value="">Impuesto general de la empresa · @($"{_defaultTaxRate * 100m:0.##}%")</option>@foreach (var profile in _taxProfiles) { <option value="@profile.Id">@profile.Name · @($"{profile.Rate * 100m:0.##}%")</option> }<option value="custom">Tasa personalizada</option></InputSelect></label>@if (_form.TaxSelection == "custom") { <label>Tasa personalizada (%)<NumericInput @bind-Value="_form.TaxRatePercent" min="0" max="100" step="0.01" /></label> }@if (_form.Id == Guid.Empty) { <label>Existencias iniciales<NumericInput @bind-Value="_form.Stock" min="0" /></label><label>Costo unitario inicial <span class="optional">Opcional si lo conoces</span><NumericInput @bind-Value="_form.InitialUnitCost" min="0" step="0.01" /></label>}</div><small class="report-filter-note">Los perfiles guardados se reutilizan en productos. Cada venta conserva la tasa aplicada aunque luego se edite el perfil.</small><ValidationSummary />@if (!string.IsNullOrWhiteSpace(_formError)) { <div class="inline-error">@_formError</div> }<div class="modal-actions"><button type="button" class="button button-secondary" @onclick="CloseForm">Cancelar</button><button type="submit" class="button button-primary" disabled="@_saving">@(_saving ? "Guardando…" : "Guardar producto")</button></div></EditForm></section></div> }
 @if (_pendingStatus is { } pending) { <div class="modal-backdrop" @onclick="() => _pendingStatus = null"><section class="modal-card confirm-card" @onclick:stopPropagation="true"><div class="modal-heading"><div><span class="eyebrow">INVENTARIO · ESTADO</span><h2>@(pending.IsActive ? "Desactivar producto" : "Reactivar producto")</h2><p>@(pending.IsActive ? $"«{pending.Name}» dejará de aparecer para nuevas ventas y compras. Su stock y sus referencias históricas se conservarán." : $"«{pending.Name}» volverá a estar disponible en ventas y compras.")</p></div><button class="icon-button" @onclick="() => _pendingStatus = null">×</button></div>@if (!string.IsNullOrWhiteSpace(_error)) { <div class="inline-error">@_error</div> }<div class="modal-actions"><button class="button button-secondary" @onclick="() => _pendingStatus = null">Cancelar</button><button class="button button-primary" disabled="@_saving" @onclick="ChangeStatusAsync">@(pending.IsActive ? "Desactivar" : "Reactivar")</button></div></section></div> }
 @if (!string.IsNullOrWhiteSpace(_notice)) { <div class="toast">✓ @_notice</div> }
 
 @code {
     private List<ProductDto> _products = [];
+    private IReadOnlyList<TaxProfileDto> _taxProfiles = [];
     private ProductDto? _pendingStatus;
     private string _search = "";
     private bool _includeInactive, _showForm, _saving;
@@ -30,7 +32,7 @@
     private ProductForm _form = new();
     private int LowStock => _products.Count(x => x.IsActive && x.StockOnHand <= 5);
     private decimal _defaultTaxRate = 0.18m;
-    protected override async Task OnInitializedAsync() { _defaultTaxRate = (await TenantSettings.GetAsync()).DefaultTaxRate; await LoadAsync(); }
+    protected override async Task OnInitializedAsync() { _defaultTaxRate = (await TenantSettings.GetAsync()).DefaultTaxRate; _taxProfiles = await TaxProfiles.GetAsync(); await LoadAsync(); }
     private InventoryValuationDto _valuation = new(0m, 0);
     private async Task LoadAsync()
     {
@@ -38,12 +40,12 @@
         _valuation = await Store.GetInventoryValuationAsync();
     }
     private void OpenCreate() { _form = new() { TaxRatePercent = _defaultTaxRate * 100m }; _formError = null; _showForm = true; }
-    private void OpenEdit(ProductDto product) { _form = new() { Id = product.Id, ExpectedRevision = product.Revision, Sku = product.Sku, Name = product.Name, Category = product.Category, Barcode = product.Barcode, UnitPrice = product.UnitPrice, UseDefaultTaxRate = product.TaxRateOverride is null, TaxRatePercent = (product.TaxRateOverride ?? _defaultTaxRate) * 100m }; _formError = null; _showForm = true; }
+    private void OpenEdit(ProductDto product) { _form = new() { Id = product.Id, ExpectedRevision = product.Revision, Sku = product.Sku, Name = product.Name, Category = product.Category, Barcode = product.Barcode, UnitPrice = product.UnitPrice, TaxSelection = product.TaxProfileId?.ToString() ?? (product.TaxRateOverride is null ? "" : "custom"), TaxRatePercent = (product.TaxRateOverride ?? product.TaxProfileRate ?? _defaultTaxRate) * 100m }; _formError = null; _showForm = true; }
     private void CloseForm() => _showForm = false;
     private async Task SaveAsync()
     {
         _saving = true; _formError = null;
-        try { if (_form.Id == Guid.Empty) await Store.CreateProductAsync(_form.Sku, _form.Name, _form.Category, _form.UnitPrice, _form.Stock, _form.Barcode, _form.UseDefaultTaxRate ? null : _form.TaxRatePercent / 100m, _form.InitialUnitCost); else await Store.UpdateProductAsync(_form.Id, new(_form.Sku, _form.Name, _form.Category, _form.UnitPrice, _form.Barcode, _form.ExpectedRevision, _form.UseDefaultTaxRate ? null : _form.TaxRatePercent / 100m)); _showForm = false; _notice = _form.Id == Guid.Empty ? "Producto agregado correctamente" : "Producto actualizado correctamente"; _error = null; await LoadAsync(); }
+        try { decimal? taxOverride = _form.TaxSelection == "custom" ? _form.TaxRatePercent / 100m : null; var taxProfileId = Guid.TryParse(_form.TaxSelection, out var parsedTaxId) ? parsedTaxId : (Guid?)null; if (_form.Id == Guid.Empty) await Store.CreateProductAsync(_form.Sku, _form.Name, _form.Category, _form.UnitPrice, _form.Stock, _form.Barcode, taxOverride, _form.InitialUnitCost, taxProfileId); else await Store.UpdateProductAsync(_form.Id, new(_form.Sku, _form.Name, _form.Category, _form.UnitPrice, _form.Barcode, _form.ExpectedRevision, taxOverride, taxProfileId)); _showForm = false; _notice = _form.Id == Guid.Empty ? "Producto agregado correctamente" : "Producto actualizado correctamente"; _error = null; await LoadAsync(); }
         catch (DomainException ex) { _formError = ex.Message; }
         catch (ConcurrencyConflictException ex) { _formError = ex.Message; await LoadAsync(); }
         catch (Exception ex) { Logger.LogError(ex, "No se pudo guardar el producto."); _formError = "No se pudo guardar el producto. Inténtalo de nuevo."; }
@@ -58,7 +60,7 @@
         catch (Exception ex) { Logger.LogError(ex, "No se pudo cambiar el estado del producto {ProductId}.", product.Id); _error = "No se pudo actualizar el producto."; }
         finally { _saving = false; }
     }
-    private string TaxLabel(ProductDto product) => product.TaxRateOverride is { } rate ? rate == 0 ? "Exento · 0%" : $"{rate * 100m:0.##}% · específico" : $"General · {_defaultTaxRate * 100m:0.##}%";
+    private string TaxLabel(ProductDto product) => product.TaxProfileId is not null ? $"{product.TaxProfileName ?? "Perfil"} · {((product.TaxProfileRate ?? _defaultTaxRate) * 100m):0.##}%" : product.TaxRateOverride is { } rate ? rate == 0 ? "Exento · 0%" : $"{rate * 100m:0.##}% · personalizado" : $"General · {_defaultTaxRate * 100m:0.##}%";
     private static string Money(decimal amount) => DisplayFormat.Money(amount);
     private static string ProductIcon(string category) => category.Contains("Café", StringComparison.OrdinalIgnoreCase) ? "☕" : category.Contains("Bebida", StringComparison.OrdinalIgnoreCase) ? "◉" : "✳";
     private sealed class ProductForm
@@ -71,7 +73,7 @@
         [System.ComponentModel.DataAnnotations.StringLength(64)] public string? Barcode { get; set; }
         [System.ComponentModel.DataAnnotations.Range(typeof(decimal), "0", "999999999999")] public decimal UnitPrice { get; set; }
         [System.ComponentModel.DataAnnotations.Range(typeof(decimal), "0", "9999999999.9999")] public decimal? InitialUnitCost { get; set; }
-        public bool UseDefaultTaxRate { get; set; } = true;
+        public string TaxSelection { get; set; } = string.Empty;
         [System.ComponentModel.DataAnnotations.Range(typeof(decimal), "0", "100", ErrorMessage = "El impuesto debe estar entre 0 y 100 %.")] public decimal TaxRatePercent { get; set; } = 18m;
         [System.ComponentModel.DataAnnotations.Range(0, int.MaxValue)] public int Stock { get; set; }
     }

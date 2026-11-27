@@ -20,7 +20,7 @@ public sealed class EfStoreRepository(IDbContextFactory<StoreDbContext> contextF
     public async Task<IReadOnlyList<Product>> SearchProductsAsync(string? query, bool includeInactive = false, CancellationToken cancellationToken = default)
     {
         await using var db = await CreateDbContextAsync(cancellationToken);
-        var products = db.Products.AsNoTracking();
+        IQueryable<Product> products = db.Products.AsNoTracking().Include(x => x.TaxProfile);
         if (!includeInactive) products = products.Where(x => x.IsActive);
         if (!string.IsNullOrWhiteSpace(query)) products = products.Where(x => x.Name.Contains(query) || x.Sku.Contains(query) || (x.Barcode != null && x.Barcode.Contains(query)));
         return await products.OrderBy(x => x.Name).Take(100).ToListAsync(cancellationToken);
@@ -182,14 +182,16 @@ public sealed class EfStoreRepository(IDbContextFactory<StoreDbContext> contextF
         return customer;
     }
 
-    public async Task<Product> CreateProductAsync(string sku, string name, string category, decimal unitPrice, int stock, string? barcode, decimal? taxRateOverride = null, decimal? initialUnitCost = null, CancellationToken cancellationToken = default)
+    public async Task<Product> CreateProductAsync(string sku, string name, string category, decimal unitPrice, int stock, string? barcode, decimal? taxRateOverride = null, decimal? initialUnitCost = null, Guid? taxProfileId = null, CancellationToken cancellationToken = default)
     {
         var tenantId = tenantContext.GetRequiredTenantId();
-        var product = new Product(tenantId, sku, name, category, unitPrice, stock, barcode, taxRateOverride, initialUnitCost);
         await using var db = await CreateDbContextAsync(cancellationToken);
         await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
         _ = await db.Tenants.FromSqlInterpolated($"SELECT * FROM Tenants WHERE Id = {tenantId} FOR UPDATE").SingleOrDefaultAsync(cancellationToken)
             ?? throw new DomainException("La empresa activa no existe.");
+        if (taxProfileId is { } selectedTaxId && !await db.TaxProfiles.AnyAsync(x => x.Id == selectedTaxId && x.IsActive, cancellationToken))
+            throw new DomainException("El perfil de impuesto seleccionado no existe o está inactivo en esta empresa.");
+        var product = new Product(tenantId, sku, name, category, unitPrice, stock, barcode, taxRateOverride, initialUnitCost, taxProfileId);
         if (await db.Products.AnyAsync(x => x.Sku == product.Sku || (product.Barcode != null && x.Barcode == product.Barcode), cancellationToken))
             throw new DomainException("Ya existe un producto con ese SKU o código de barras.");
         var warehouses = await db.Warehouses.Where(x => x.IsActive).OrderBy(x => x.Code).ToListAsync(cancellationToken);
@@ -199,6 +201,7 @@ public sealed class EfStoreRepository(IDbContextFactory<StoreDbContext> contextF
             db.WarehouseStocks.Add(new WarehouseStock(tenantId, warehouse.Id, product.Id, warehouse.Id == mainWarehouse.Id ? stock : 0));
         if (stock > 0) db.InventoryMovements.Add(new InventoryMovement(tenantId, product.Id, InventoryMovementType.StockAdjustment, stock, stock, "Existencias iniciales del producto", mainWarehouse.Id));
         await db.SaveChangesAsync(cancellationToken);
+        if (product.TaxProfileId is not null) await db.Entry(product).Reference(x => x.TaxProfile).LoadAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);
         return product;
     }
@@ -210,7 +213,9 @@ public sealed class EfStoreRepository(IDbContextFactory<StoreDbContext> contextF
             ?? throw new DomainException("El producto no existe en esta empresa.");
         if (product.Revision != request.ExpectedRevision)
             throw new ConcurrencyConflictException("El producto cambió en otra sesión. Recarga el catálogo antes de guardar.");
-        product.UpdateCatalog(request.Sku, request.Name, request.Category, request.UnitPrice, request.Barcode, request.TaxRateOverride);
+        if (request.TaxProfileId is { } taxProfileId && !await db.TaxProfiles.AnyAsync(x => x.Id == taxProfileId && x.IsActive, cancellationToken))
+            throw new DomainException("El perfil de impuesto seleccionado no existe o está inactivo en esta empresa.");
+        product.UpdateCatalog(request.Sku, request.Name, request.Category, request.UnitPrice, request.Barcode, request.TaxRateOverride, request.TaxProfileId);
         if (await db.Products.AnyAsync(x => x.Id != productId && (x.Sku == product.Sku || (product.Barcode != null && x.Barcode == product.Barcode)), cancellationToken))
             throw new DomainException("Ya existe un producto con ese SKU o código de barras.");
         try { await db.SaveChangesAsync(cancellationToken); }
@@ -220,6 +225,7 @@ public sealed class EfStoreRepository(IDbContextFactory<StoreDbContext> contextF
             logger.LogWarning(ex, "No se pudo actualizar el producto {ProductId} por una clave única duplicada.", productId);
             throw new DomainException("Ya existe un producto con ese SKU o código de barras.");
         }
+        if (product.TaxProfileId is not null) await db.Entry(product).Reference(x => x.TaxProfile).LoadAsync(cancellationToken);
         return product;
     }
 
@@ -230,6 +236,8 @@ public sealed class EfStoreRepository(IDbContextFactory<StoreDbContext> contextF
             ?? throw new DomainException("El producto no existe en esta empresa.");
         if (product.Revision != request.ExpectedRevision)
             throw new ConcurrencyConflictException("El producto cambió en otra sesión. Recarga el catálogo antes de actualizar su estado.");
+        if (request.IsActive && product.TaxProfileId is { } taxProfileId && !await db.TaxProfiles.AnyAsync(x => x.Id == taxProfileId && x.IsActive, cancellationToken))
+            throw new DomainException("Activa o cambia el perfil de impuesto del producto antes de reactivarlo.");
         if (request.IsActive) product.Reactivate(); else product.Deactivate();
         try { await db.SaveChangesAsync(cancellationToken); }
         catch (DbUpdateConcurrencyException) { throw new ConcurrencyConflictException("El producto cambió en otra sesión. Recarga el catálogo antes de actualizar su estado."); }
@@ -314,6 +322,7 @@ public sealed class EfStoreRepository(IDbContextFactory<StoreDbContext> contextF
             ?? throw new DomainException("No se encontró la empresa activa.");
         var lines = new List<SaleLine>();
         var stockMovements = new List<(Product Product, int Quantity, int WarehouseBalance)>();
+        var taxProfilesById = await db.TaxProfiles.AsNoTracking().ToDictionaryAsync(x => x.Id, cancellationToken);
         foreach (var groupedLine in request.Lines.GroupBy(x => x.ProductId).OrderBy(x => x.Key))
         {
             var quantity = SumQuantities(groupedLine.Select(x => x.Quantity));
@@ -325,8 +334,11 @@ public sealed class EfStoreRepository(IDbContextFactory<StoreDbContext> contextF
             warehouseStock.Adjust(-quantity);
             var costSnapshot = product.ConsumeInventory(quantity);
             stockMovements.Add((product, quantity, warehouseStock.Quantity));
+            var taxRate = product.TaxProfileId is not null
+                ? taxProfilesById.GetValueOrDefault(product.TaxProfileId.Value)?.Rate ?? throw new DomainException("El perfil de impuesto del producto no está disponible.")
+                : product.TaxRateOverride ?? tenant.DefaultTaxRate;
             lines.Add(new SaleLine(product.Id, product.Sku, product.Name, product.UnitPrice, quantity,
-                product.TaxRateOverride ?? tenant.DefaultTaxRate, costSnapshot.UnitCost, costSnapshot.UncostedQuantity));
+                taxRate, costSnapshot.UnitCost, costSnapshot.UncostedQuantity));
         }
 
         if (request.PaymentMethod == PaymentMethod.Credit && (customer is null || request.DueDate is null)) throw new DomainException("Selecciona un cliente y una fecha de vencimiento para vender a crédito.");

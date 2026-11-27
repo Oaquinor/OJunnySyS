@@ -6,12 +6,12 @@ public sealed class Product : TenantEntity
 {
     private Product() { }
 
-    public Product(Guid tenantId, string sku, string name, string category, decimal unitPrice, int stockOnHand, string? barcode = null, decimal? taxRateOverride = null, decimal? initialUnitCost = null) : base(tenantId)
+    public Product(Guid tenantId, string sku, string name, string category, decimal unitPrice, int stockOnHand, string? barcode = null, decimal? taxRateOverride = null, decimal? initialUnitCost = null, Guid? taxProfileId = null) : base(tenantId)
     {
         if (string.IsNullOrWhiteSpace(sku)) throw new DomainException("El SKU es obligatorio.");
         if (sku.Trim().Length > 40) throw new DomainException("El SKU no puede superar 40 caracteres.");
         Sku = sku.Trim().ToUpperInvariant();
-        UpdateDetails(name, category, unitPrice, barcode, taxRateOverride);
+        UpdateDetails(name, category, unitPrice, barcode, taxRateOverride, taxProfileId);
         if (stockOnHand < 0) throw new DomainException("El inventario no puede ser negativo.");
         if (initialUnitCost is < 0 or > 9999999999.9999m) throw new DomainException("El costo unitario inicial no es válido.");
         UnitCost = decimal.Round(initialUnitCost ?? 0m, 4, MidpointRounding.AwayFromZero);
@@ -27,27 +27,32 @@ public sealed class Product : TenantEntity
     public decimal UnitCost { get; private set; }
     public int UncostedQuantity { get; private set; }
     public decimal? TaxRateOverride { get; private set; }
+    public Guid? TaxProfileId { get; private set; }
+    public TaxProfile? TaxProfile { get; private set; }
     public int StockOnHand { get; private set; }
     public bool IsActive { get; private set; }
     public long Revision { get; private set; }
 
-    public void UpdateDetails(string name, string category, decimal unitPrice, string? barcode, decimal? taxRateOverride = null)
+    public void UpdateDetails(string name, string category, decimal unitPrice, string? barcode, decimal? taxRateOverride = null, Guid? taxProfileId = null)
     {
         if (string.IsNullOrWhiteSpace(name)) throw new DomainException("El nombre del producto es obligatorio.");
         category = string.IsNullOrWhiteSpace(category) ? "General" : category;
         if (name.Trim().Length > 160 || category.Trim().Length > 80 || (barcode?.Trim().Length ?? 0) > 64) throw new DomainException("Los datos del producto superan el largo permitido.");
         if (unitPrice < 0) throw new DomainException("El precio no puede ser negativo.");
         if (taxRateOverride is < 0 or > 1) throw new DomainException("El impuesto del producto debe estar entre 0 y 100 por ciento.");
+        if (taxProfileId == Guid.Empty) throw new DomainException("Selecciona un perfil de impuesto válido.");
+        if (taxProfileId is not null && taxRateOverride is not null) throw new DomainException("Usa un perfil guardado o una tasa personalizada, no ambos.");
         Name = name.Trim(); Category = category.Trim(); UnitPrice = decimal.Round(unitPrice, 2);
         TaxRateOverride = taxRateOverride;
+        TaxProfileId = taxProfileId;
         Barcode = string.IsNullOrWhiteSpace(barcode) ? null : barcode.Trim(); MarkChanged();
     }
 
-    public void UpdateCatalog(string sku, string name, string category, decimal unitPrice, string? barcode, decimal? taxRateOverride = null)
+    public void UpdateCatalog(string sku, string name, string category, decimal unitPrice, string? barcode, decimal? taxRateOverride = null, Guid? taxProfileId = null)
     {
         if (string.IsNullOrWhiteSpace(sku) || sku.Trim().Length > 40) throw new DomainException("El SKU es obligatorio y no puede superar 40 caracteres.");
         Sku = sku.Trim().ToUpperInvariant();
-        UpdateDetails(name, category, unitPrice, barcode, taxRateOverride);
+        UpdateDetails(name, category, unitPrice, barcode, taxRateOverride, taxProfileId);
     }
 
     public void AdjustStock(int delta)

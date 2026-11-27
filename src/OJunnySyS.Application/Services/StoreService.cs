@@ -68,9 +68,9 @@ public sealed class StoreService(IStoreRepository repository, IBusinessClock clo
     public async Task<CustomerDto> DeactivateCustomerAsync(Guid id, long expectedRevision, CancellationToken ct = default) =>
         Map(await repository.DeactivateCustomerAsync(id, expectedRevision, ct));
 
-    public async Task<ProductDto> CreateProductAsync(string sku, string name, string category, decimal unitPrice, int stock, string? barcode, decimal? taxRateOverride = null, decimal? initialUnitCost = null, CancellationToken ct = default)
+    public async Task<ProductDto> CreateProductAsync(string sku, string name, string category, decimal unitPrice, int stock, string? barcode, decimal? taxRateOverride = null, decimal? initialUnitCost = null, Guid? taxProfileId = null, CancellationToken ct = default)
     {
-        var product = await repository.CreateProductAsync(sku, name, category, unitPrice, stock, barcode, taxRateOverride, initialUnitCost, ct);
+        var product = await repository.CreateProductAsync(sku, name, category, unitPrice, stock, barcode, taxRateOverride, initialUnitCost, taxProfileId, ct);
         return Map(product);
     }
 
@@ -194,7 +194,8 @@ public sealed class StoreService(IStoreRepository repository, IBusinessClock clo
         return new DashboardSummary(issuedToday.Sum(x => x.Total) - returnsToday, issuedToday.Length, customers.Count, products.Count(x => x.StockOnHand <= 5), (await repository.GetRecentSalesAsync(6, ct)).Select(Map).ToArray());
     }
 
-    private static ProductDto Map(Product product) => new(product.Id, product.Sku, product.Name, product.Category, product.UnitPrice, product.StockOnHand, product.Barcode, product.IsActive, product.Revision, product.TaxRateOverride);
+    private static ProductDto Map(Product product) => new(product.Id, product.Sku, product.Name, product.Category, product.UnitPrice, product.StockOnHand,
+        product.Barcode, product.IsActive, product.Revision, product.TaxRateOverride, product.TaxProfileId, product.TaxProfile?.Name, product.TaxProfile?.Rate);
     private static CustomerDto Map(Customer customer) => new(customer.Id, customer.FullName, customer.Email, customer.Phone, customer.Company, customer.LifetimeValue, customer.Revision, customer.FirstName, customer.LastName, customer.CreatedAtUtc);
     private static SaleDto Map(Sale sale) => new(sale.Id, sale.Number, sale.CustomerName, sale.Subtotal, sale.TaxAmount, sale.Total, sale.PaymentMethod, sale.CreatedAtUtc, sale.Status,
         sale.Payments.Count == 0 ? (sale.PaymentMethod == PaymentMethod.Credit ? "Crédito" : null) : string.Join(" + ", sale.Payments.Select(x => x.MethodName).Distinct()), sale.SellerName,

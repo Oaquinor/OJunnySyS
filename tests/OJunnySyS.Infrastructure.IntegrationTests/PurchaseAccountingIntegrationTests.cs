@@ -4,9 +4,12 @@ using OJunnySyS.Application.Abstractions;
 using OJunnySyS.Application.Contracts;
 using OJunnySyS.Domain.Accounting;
 using OJunnySyS.Domain.Catalog;
+using OJunnySyS.Domain.Cash;
 using OJunnySyS.Domain.Common;
 using OJunnySyS.Domain.Inventory;
+using OJunnySyS.Domain.Pos;
 using OJunnySyS.Domain.Purchasing;
+using OJunnySyS.Domain.Sales;
 using OJunnySyS.Domain.Tenancy;
 using OJunnySyS.Infrastructure.Identity;
 using OJunnySyS.Infrastructure.Persistence;
@@ -16,6 +19,69 @@ namespace OJunnySyS.Infrastructure.IntegrationTests;
 [TestClass]
 public sealed class PurchaseAccountingIntegrationTests
 {
+    [TestMethod]
+    public async Task ProductTaxProfile_IsAppliedByPosAndHistoricalSaleKeepsRateSnapshot()
+    {
+        var connectionString = Environment.GetEnvironmentVariable("OJUNNYSYS_TEST_CONNECTION");
+        if (string.IsNullOrWhiteSpace(connectionString)) Assert.Inconclusive("Define OJUNNYSYS_TEST_CONNECTION para ejecutar pruebas MySQL aisladas.");
+        var options = new DbContextOptionsBuilder<StoreDbContext>().UseMySQL(connectionString!).Options;
+        var date = DateOnly.FromDateTime(DateTime.UtcNow);
+        var tenant = new Tenant("Empresa POS impuestos", "tax-pos-it", "tax-pos-it@example.test", "America/Santo_Domingo");
+        var user = new ApplicationUser
+        {
+            Id = Guid.NewGuid(), TenantId = tenant.Id, DisplayName = "Cajero de prueba",
+            UserName = "tax-pos-it@example.test", NormalizedUserName = "TAX-POS-IT@EXAMPLE.TEST",
+            Email = "tax-pos-it@example.test", NormalizedEmail = "TAX-POS-IT@EXAMPLE.TEST",
+            SecurityStamp = Guid.NewGuid().ToString(), ConcurrencyStamp = Guid.NewGuid().ToString()
+        };
+        var profile = new TaxProfile(tenant.Id, "TAX-REDUCED", "Tasa reducida", .10m);
+        var warehouse = new Warehouse(tenant.Id, "MAIN", "Almacén principal");
+        var product = new Product(tenant.Id, "TAX-ITEM", "Artículo gravado", "Pruebas", 100m, 10, initialUnitCost: 20m, taxProfileId: profile.Id);
+        var register = new PosRegister(tenant.Id, "MAIN", "Caja principal", warehouse.Id);
+        var cashSession = new CashSession(tenant.Id, register.Code, 500m, user.Id);
+        var accounts = new[]
+        {
+            new ChartAccount(tenant.Id, "1000", "Caja", AccountType.Asset),
+            new ChartAccount(tenant.Id, "1200", "Inventario", AccountType.Asset),
+            new ChartAccount(tenant.Id, "2100", "Impuesto por pagar", AccountType.Liability),
+            new ChartAccount(tenant.Id, "4000", "Ventas", AccountType.Revenue),
+            new ChartAccount(tenant.Id, "5000", "Costo de ventas", AccountType.Expense)
+        };
+        var cash = new TenantPaymentMethod(tenant.Id, "cash", "Efectivo", PaymentMethodType.Cash, ledgerAccountId: accounts[0].Id);
+        await using (var db = new StoreDbContext(options))
+        {
+            await db.Database.MigrateAsync();
+            db.CurrentTenantId = tenant.Id;
+            db.Tenants.Add(tenant); db.Users.Add(user); db.TaxProfiles.Add(profile); db.Warehouses.Add(warehouse);
+            db.Products.Add(product); db.PosRegisters.Add(register); db.CashSessions.Add(cashSession);
+            db.WarehouseStocks.Add(new WarehouseStock(tenant.Id, warehouse.Id, product.Id, 10));
+            db.ChartAccounts.AddRange(accounts); db.TenantPaymentMethods.Add(cash);
+            await db.SaveChangesAsync();
+        }
+
+        var clock = new FixedClock(date);
+        var tenantContext = new PurchaseTestTenantContext(tenant.Id, user.Id);
+        var factory = new PurchaseTestContextFactory(options);
+        var repository = new EfStoreRepository(factory, tenantContext, new TenantAccessGuard(factory, clock), clock,
+            NullLogger<EfStoreRepository>.Instance);
+        var first = await repository.CheckoutAsync(new CheckoutRequest(null, PaymentMethod.Cash,
+            [new CheckoutLine(product.Id, 1)], Guid.NewGuid(), register.Code), user.Id);
+        Assert.AreEqual(10m, first.TaxAmount);
+        Assert.AreEqual(110m, first.Total);
+        Assert.AreEqual(.10m, first.Lines.Single().TaxRate);
+
+        var profileRepository = new EfTaxProfileRepository(factory, tenantContext, new TenantAccessGuard(factory, clock));
+        await profileRepository.UpdateAsync(profile.Id, new UpdateTaxProfileRequest("Tasa reducida actualizada", .05m, profile.Revision));
+        var second = await repository.CheckoutAsync(new CheckoutRequest(null, PaymentMethod.Cash,
+            [new CheckoutLine(product.Id, 1)], Guid.NewGuid(), register.Code), user.Id);
+        Assert.AreEqual(5m, second.TaxAmount);
+        await using var verify = new StoreDbContext(options);
+        verify.CurrentTenantId = tenant.Id;
+        var historicalSale = await verify.Sales.Include(x => x.Lines).SingleAsync(x => x.Id == first.Id);
+        Assert.AreEqual(.10m, historicalSale.Lines.Single().TaxRate, "Cambiar el catálogo no modifica el impuesto de ventas pasadas.");
+        Assert.AreEqual(8, (await verify.WarehouseStocks.SingleAsync(x => x.WarehouseId == warehouse.Id && x.ProductId == product.Id)).Quantity);
+    }
+
     [TestMethod]
     public async Task PartialReceiptsAndSupplierPayments_PostBalancedEntriesAndUpdateInventoryAndPayables()
     {

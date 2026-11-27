@@ -5,8 +5,12 @@ using OJunnySyS.Domain.Crm;
 
 namespace OJunnySyS.Application.Contracts;
 
-public sealed record ProductDto(Guid Id, string Sku, string Name, string Category, decimal UnitPrice, int StockOnHand, string? Barcode, bool IsActive = true, long Revision = 0, decimal? TaxRateOverride = null);
-public sealed record UpdateProductRequest(string Sku, string Name, string Category, decimal UnitPrice, string? Barcode, long ExpectedRevision, decimal? TaxRateOverride = null);
+public sealed record ProductDto(Guid Id, string Sku, string Name, string Category, decimal UnitPrice, int StockOnHand, string? Barcode, bool IsActive = true, long Revision = 0, decimal? TaxRateOverride = null, Guid? TaxProfileId = null, string? TaxProfileName = null, decimal? TaxProfileRate = null);
+public sealed record UpdateProductRequest(string Sku, string Name, string Category, decimal UnitPrice, string? Barcode, long ExpectedRevision, decimal? TaxRateOverride = null, Guid? TaxProfileId = null);
+public sealed record TaxProfileDto(Guid Id, string Code, string Name, decimal Rate, bool IsActive, long Revision);
+public sealed record CreateTaxProfileRequest(string Code, string Name, decimal Rate);
+public sealed record UpdateTaxProfileRequest(string Name, decimal Rate, long ExpectedRevision);
+public sealed record SetTaxProfileActiveRequest(bool IsActive, long ExpectedRevision);
 public sealed record SetProductActiveRequest(bool IsActive, long ExpectedRevision);
 public sealed record CustomerDto(Guid Id, string Name, string Email, string Phone, string? Company, decimal LifetimeValue, long Revision, string FirstName, string LastName, DateTimeOffset CreatedAtUtc = default);
 public sealed record UpdateCustomerRequest(string FirstName, string LastName, string Email, string Phone, string? Company, long ExpectedRevision);

@@ -1,0 +1,109 @@
+@page "/app/settings/taxes"
+@attribute [Authorize(Roles = "Administrator,Manager")]
+@inject TaxProfileService TaxProfileCatalog
+@inject ILogger<TaxProfiles> Logger
+
+<PageTitle>Impuestos · OJunnySyS</PageTitle>
+<PageHeader Eyebrow="CONFIGURACIÓN FISCAL" Title="Perfiles de impuesto" Description="Guarda tasas reutilizables y asígnalas a productos. Las ventas conservan la tasa aplicada en su fecha." />
+
+<div class="tax-profile-layout">
+    <section class="panel list-panel">
+        <div class="modal-heading"><div><span class="eyebrow">CATÁLOGO DE LA EMPRESA</span><h2>@(_editingId is null ? "Nuevo perfil" : "Editar perfil")</h2><p>El código debe ser único dentro de esta empresa.</p></div></div>
+        <EditForm Model="_form" OnValidSubmit="SaveAsync">
+            <DataAnnotationsValidator />
+            <div class="form-grid">
+                <label>Código interno<InputText @bind-Value="_form.Code" maxlength="24" placeholder="Ej. TASA-GENERAL" disabled="@(_editingId is not null)" /></label>
+                <label>Nombre visible<InputText @bind-Value="_form.Name" maxlength="80" placeholder="Ej. Impuesto general" /></label>
+                <label>Tasa (%)<NumericInput @bind-Value="_form.RatePercent" min="0" max="100" step="0.01" /></label>
+            </div>
+            <small class="report-filter-note">Define nombres y tasas según la configuración validada para tu negocio. Este catálogo no emite comprobantes fiscales ni determina por sí solo el tratamiento legal de un producto.</small>
+            <ValidationSummary />
+            @if (_error is not null) { <div class="inline-error">@_error</div> }
+            <div class="supplier-form-actions">
+                <button class="button button-primary" type="submit" disabled="@_saving">@(_saving ? "Guardando…" : _editingId is null ? "Crear perfil" : "Guardar cambios")</button>
+                @if (_editingId is not null) { <button class="button button-secondary" type="button" @onclick="ResetForm" disabled="@_saving">Cancelar edición</button> }
+            </div>
+        </EditForm>
+    </section>
+
+    <section class="panel list-panel">
+        <div class="modal-heading"><div><span class="eyebrow">PERFILES GUARDADOS</span><h2>Impuestos de esta empresa</h2><p>@_profiles.Count(x => x.IsActive) activos · @(_profiles.Count - _profiles.Count(x => x.IsActive)) inactivos</p></div></div>
+        @if (_profiles.Count == 0)
+        {
+            <div class="empty-state"><strong>Aún no hay perfiles guardados</strong><p>Agrega aquí tasas que puedas reutilizar en varios productos.</p></div>
+        }
+        else
+        {
+            <div class="table-wrap"><table><thead><tr><th>CÓDIGO</th><th>NOMBRE</th><th class="align-right">TASA</th><th>ESTADO</th><th class="align-right">ACCIONES</th></tr></thead><tbody>
+                @foreach (var profile in _profiles)
+                {
+                    <tr class="@(!profile.IsActive ? "product-inactive-row" : "")"><td class="mono">@profile.Code</td><td><strong>@profile.Name</strong></td><td class="align-right amount">@($"{profile.Rate * 100m:0.####}%")</td><td><span class="@(profile.IsActive ? "status-pill" : "status-pill status-inactive")"><i></i>@(profile.IsActive ? "Activo" : "Inactivo")</span></td><td class="align-right"><div class="product-row-actions"><button class="button button-secondary button-small" @onclick="() => Edit(profile)">Editar</button><button class="button @(profile.IsActive ? "button-quiet-danger" : "button-quiet-success") button-small" @onclick="() => ToggleAsync(profile)" disabled="@_saving">@(profile.IsActive ? "Desactivar" : "Activar")</button></div></td></tr>
+                }
+            </tbody></table></div>
+        }
+        @if (_notice is not null) { <div class="toast">✓ @_notice</div> }
+    </section>
+</div>
+
+@code {
+    private IReadOnlyList<TaxProfileDto> _profiles = [];
+    private TaxProfileForm _form = new();
+    private Guid? _editingId;
+    private long _expectedRevision;
+    private bool _saving;
+    private string? _error, _notice;
+
+    protected override Task OnInitializedAsync() => LoadAsync();
+    private async Task LoadAsync() => _profiles = await TaxProfileCatalog.GetAsync(includeInactive: true);
+
+    private async Task SaveAsync()
+    {
+        _saving = true; _error = null; _notice = null;
+        try
+        {
+            if (_editingId is { } id)
+                await TaxProfileCatalog.UpdateAsync(id, new UpdateTaxProfileRequest(_form.Name, _form.RatePercent / 100m, _expectedRevision));
+            else
+                await TaxProfileCatalog.CreateAsync(new CreateTaxProfileRequest(_form.Code, _form.Name, _form.RatePercent / 100m));
+            ResetForm();
+            _notice = "El perfil de impuesto se guardó correctamente.";
+            await LoadAsync();
+        }
+        catch (DomainException ex) { _error = ex.Message; }
+        catch (ConcurrencyConflictException ex) { _error = ex.Message; await LoadAsync(); }
+        catch (Exception ex) { Logger.LogError(ex, "No se pudo guardar el perfil de impuesto."); _error = "No se pudo guardar el perfil. Inténtalo de nuevo."; }
+        finally { _saving = false; }
+    }
+
+    private async Task ToggleAsync(TaxProfileDto profile)
+    {
+        _saving = true; _error = null; _notice = null;
+        try
+        {
+            await TaxProfileCatalog.SetActiveAsync(profile.Id, new SetTaxProfileActiveRequest(!profile.IsActive, profile.Revision));
+            _notice = profile.IsActive ? "El perfil se desactivó." : "El perfil se activó.";
+            await LoadAsync();
+        }
+        catch (DomainException ex) { _error = ex.Message; }
+        catch (ConcurrencyConflictException ex) { _error = ex.Message; await LoadAsync(); }
+        catch (Exception ex) { Logger.LogError(ex, "No se pudo cambiar el estado del perfil {TaxProfileId}.", profile.Id); _error = "No se pudo actualizar el perfil."; }
+        finally { _saving = false; }
+    }
+
+    private void Edit(TaxProfileDto profile)
+    {
+        _editingId = profile.Id; _expectedRevision = profile.Revision;
+        _form = new TaxProfileForm { Code = profile.Code, Name = profile.Name, RatePercent = profile.Rate * 100m };
+        _error = null; _notice = null;
+    }
+
+    private void ResetForm() { _editingId = null; _expectedRevision = 0; _form = new(); _error = null; }
+
+    private sealed class TaxProfileForm
+    {
+        [Required, StringLength(24, MinimumLength = 2), RegularExpression("^[A-Za-z0-9][A-Za-z0-9_-]*$", ErrorMessage = "Usa letras, números, guiones y guiones bajos.")]
+        public string Code { get; set; } = string.Empty;
+        [Required, StringLength(80, MinimumLength = 2)] public string Name { get; set; } = string.Empty;
+        [Range(typeof(decimal), "0", "100", ErrorMessage = "La tasa debe estar entre 0 y 100 por ciento.")] public decimal RatePercent { get; set; }
+    }
+}

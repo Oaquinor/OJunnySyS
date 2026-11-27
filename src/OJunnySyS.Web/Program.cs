@@ -117,6 +117,7 @@ builder.Services.AddScoped<CustomerSegmentService>();
 builder.Services.AddScoped<PosRegisterService>();
 builder.Services.AddScoped<WarehouseService>();
 builder.Services.AddScoped<PosPaymentMethodService>();
+builder.Services.AddScoped<TaxProfileService>();
 builder.Services.AddScoped<AccountingService>();
 builder.Services.AddScoped<BankingService>();
 
@@ -163,6 +164,25 @@ paymentMethods.MapPatch("/{id:guid}/activation", async (Guid id, SetPaymentMetho
     try { return Results.Ok(await service.SetActiveAsync(id, request, ct)); }
     catch (ConcurrencyConflictException ex) { return Results.Conflict(new { error = ex.Message }); }
     catch (DomainException ex) { return Results.ValidationProblem(new Dictionary<string, string[]> { ["paymentMethod"] = [ex.Message] }); }
+});
+var taxProfiles = app.MapGroup("/api/v1/tax-profiles").RequireAuthorization("CatalogWrite");
+taxProfiles.MapGet("/", async (bool? includeInactive, TaxProfileService service, CancellationToken ct) => Results.Ok(await service.GetAsync(includeInactive ?? false, ct)));
+taxProfiles.MapPost("/", async (CreateTaxProfileRequest request, TaxProfileService service, CancellationToken ct) =>
+{
+    try { var profile = await service.CreateAsync(request, ct); return Results.Created($"/api/v1/tax-profiles/{profile.Id}", profile); }
+    catch (DomainException ex) { return Results.ValidationProblem(new Dictionary<string, string[]> { ["taxProfile"] = [ex.Message] }); }
+}).RequireAuthorization();
+taxProfiles.MapPut("/{id:guid}", async (Guid id, UpdateTaxProfileRequest request, TaxProfileService service, CancellationToken ct) =>
+{
+    try { return Results.Ok(await service.UpdateAsync(id, request, ct)); }
+    catch (ConcurrencyConflictException ex) { return Results.Conflict(new { error = ex.Message }); }
+    catch (DomainException ex) { return Results.ValidationProblem(new Dictionary<string, string[]> { ["taxProfile"] = [ex.Message] }); }
+});
+taxProfiles.MapPatch("/{id:guid}/activation", async (Guid id, SetTaxProfileActiveRequest request, TaxProfileService service, CancellationToken ct) =>
+{
+    try { return Results.Ok(await service.SetActiveAsync(id, request, ct)); }
+    catch (ConcurrencyConflictException ex) { return Results.Conflict(new { error = ex.Message }); }
+    catch (DomainException ex) { return Results.ValidationProblem(new Dictionary<string, string[]> { ["taxProfile"] = [ex.Message] }); }
 });
 var api = app.MapGroup("/api/v1").RequireAuthorization();
 var tenantUsers = api.MapGroup("/users").RequireAuthorization("TenantUserManagement");
@@ -358,7 +378,7 @@ api.MapDelete("/customers/{id:guid}", async (Guid id, long expectedRevision, Sto
 }).RequireAuthorization("CrmWrite");
 api.MapPost("/products", async (CreateProductRequest request, StoreService store, CancellationToken ct) =>
 {
-    try { var product = await store.CreateProductAsync(request.Sku, request.Name, request.Category, request.UnitPrice, request.StockOnHand, request.Barcode, request.TaxRateOverride, request.InitialUnitCost, ct); return Results.Created($"/api/v1/products/{product.Id}", product); }
+    try { var product = await store.CreateProductAsync(request.Sku, request.Name, request.Category, request.UnitPrice, request.StockOnHand, request.Barcode, request.TaxRateOverride, request.InitialUnitCost, request.TaxProfileId, ct); return Results.Created($"/api/v1/products/{product.Id}", product); }
     catch (DomainException ex) { return Results.ValidationProblem(new Dictionary<string, string[]> { ["product"] = [ex.Message] }); }
 }).RequireAuthorization("CatalogWrite");
 api.MapPut("/products/{id:guid}", async (Guid id, UpdateProductRequest request, StoreService store, CancellationToken ct) =>
@@ -456,4 +476,4 @@ app.MapRazorComponents<App>()
 app.Run();
 
 public sealed record CreateCustomerRequest(string FirstName, string LastName, string Email, string Phone, string? Company);
-public sealed record CreateProductRequest(string Sku, string Name, string Category, decimal UnitPrice, int StockOnHand, string? Barcode, decimal? TaxRateOverride = null, decimal? InitialUnitCost = null);
+public sealed record CreateProductRequest(string Sku, string Name, string Category, decimal UnitPrice, int StockOnHand, string? Barcode, decimal? TaxRateOverride = null, decimal? InitialUnitCost = null, Guid? TaxProfileId = null);

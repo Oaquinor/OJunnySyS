@@ -13,7 +13,7 @@
 .cash-open-banner > div:first-child { min-width: 0; flex: 1; }
 .cash-open-banner h2 { margin: 8px 0 5px; color: var(--ink); font: 700 22px Manrope, sans-serif; }
 .cash-open-banner p { max-width: 510px; margin: 0; color: var(--muted); font-size: 12px; line-height: 1.6; }
-.cash-open-banner form { flex: 0 1 400px; }
+.cash-open-banner form { flex: 0 1 460px; min-width: 0; }
 
 .cash-open-form {
     display: grid;
@@ -30,6 +30,21 @@
     font-size: 11px;
     font-weight: 650;
 }
+
+.cash-register-select select,
+.cash-open-form input,
+.cash-action-card .form-grid select,
+.cash-close-ledger-grid select {
+    border: 1px solid #dce5dd;
+    border-radius: 11px;
+    background-color: #fff;
+    color: #35463a;
+    outline-color: #78a984;
+}
+
+.cash-open-form label { min-width: 0; }
+.cash-open-form .numeric-input,
+.cash-open-form input { box-sizing: border-box; }
 
 .cash-open-form input,
 .cash-close-card form > label input { width: 100%; min-height: 42px; padding: 0 13px; font-size: 13px; }
@@ -98,9 +113,9 @@
     .statement-panel table { min-width: 0; }
 }
 
-@media (max-width: 1100px) {
+@media (max-width: 1280px) {
     .cash-open-banner { align-items: stretch; flex-direction: column; gap: 20px; }
-    .cash-open-banner form { flex-basis: auto; width: min(100%, 440px); }
+    .cash-open-banner form { flex-basis: auto; width: min(100%, 560px); }
     .cash-summary-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
     .cash-actions-grid { grid-template-columns: 1fr; }
 }
