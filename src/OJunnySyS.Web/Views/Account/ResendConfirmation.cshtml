@@ -1,0 +1,16 @@
+@model ResendConfirmationInput
+@{
+    Layout = null;
+    ViewData["Title"] = "Solicitar confirmación · OJunnySyS";
+}
+<!DOCTYPE html>
+<html lang="es"><head>
+    <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" /><meta name="robots" content="noindex,nofollow" />
+    <title>@ViewData["Title"]</title><link rel="stylesheet" href="~/lib/bootstrap/dist/css/bootstrap.min.css" />
+    <style>body{min-height:100vh;margin:0;display:grid;place-items:center;background:#f4f7f5;color:#18251f;font:16px/1.55 system-ui,sans-serif}main{width:min(100% - 32px,480px);padding:38px;background:white;border:1px solid #e3e9e5;border-radius:18px;box-shadow:0 20px 70px #183d2a12}.mark{width:48px;height:48px;display:grid;place-items:center;background:#236c4d;color:white;border-radius:14px;font-weight:750;font-size:23px}.brand{display:flex;align-items:center;gap:12px;margin-bottom:30px}.brand strong,.brand small{display:block}.brand small{color:#6e7b73;font-size:12px;letter-spacing:.1em}h1{font-size:27px}.form-control{min-height:46px;border-color:#e3e9e5}.btn-primary{width:100%;min-height:48px;background:#236c4d;border-color:#236c4d}a{color:#236c4d}.validation-summary-errors{color:#842029;background:#f8d7da;padding:12px;border-radius:8px}</style>
+</head><body><main>
+    <div class="brand"><div class="mark">O.</div><div><strong>OJunnySyS</strong><small>GESTIÓN COMERCIAL</small></div></div>
+    <h1>Solicita otro enlace</h1><p>Te enviaremos instrucciones si existe un espacio pendiente de confirmar para ese correo.</p>
+    <form method="post" action="/account/resend-confirmation">@Html.AntiForgeryToken()<div asp-validation-summary="ModelOnly" role="alert"></div><label asp-for="Email" class="form-label">Correo electrónico</label><input asp-for="Email" class="form-control mb-3" autocomplete="email" /><span asp-validation-for="Email" class="text-danger"></span><button type="submit" class="btn btn-primary">Enviar instrucciones</button></form>
+    <p class="mt-3"><a href="/account/login">Volver a iniciar sesión</a></p>
+</main></body></html>

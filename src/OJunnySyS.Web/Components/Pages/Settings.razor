@@ -4,7 +4,7 @@
 @inject ILogger<Settings> Logger
 
 <PageTitle>Empresa e impuestos · OJunnySyS</PageTitle>
-<PageHeader Eyebrow="CONFIGURACIÓN" Title="Empresa e impuestos" Description="Define la zona horaria, moneda y tasa general que usa el punto de venta." />
+<PageHeader Eyebrow="CONFIGURACIÓN" Title="Empresa e impresión" Description="Configura los impuestos, datos fiscales y preferencias de tus comprobantes." />
 
 @if (_loading)
 {
@@ -21,6 +21,17 @@ else if (_model is not null)
                 <label>Moneda (código ISO)<InputText @bind-Value="_model.CurrencyCode" maxlength="3" /></label>
                 <label>Tasa general de impuesto (%)<InputNumber @bind-Value="_model.TaxPercent" min="0" max="100" step="0.01" /></label>
             </div>
+            <h2 class="settings-section-title">Identidad y formato del recibo</h2>
+            <div class="form-grid">
+                <label>Nombre legal<InputText @bind-Value="_model.LegalName" maxlength="160" /></label>
+                <label>RNC / identificación fiscal<InputText @bind-Value="_model.TaxIdentifier" maxlength="40" /></label>
+                <label>Teléfono<InputText @bind-Value="_model.BusinessPhone" maxlength="40" /></label>
+                <label>Dirección<InputText @bind-Value="_model.BusinessAddress" maxlength="240" /></label>
+                <label>Encabezado<InputText @bind-Value="_model.ReceiptHeader" maxlength="240" /></label>
+                <label>Mensaje al pie<InputText @bind-Value="_model.ReceiptFooter" maxlength="240" /></label>
+                <label>Ancho de papel<InputSelect @bind-Value="_model.ReceiptPaperWidthMm"><option value="58">58 mm · compacto</option><option value="80">80 mm · estándar</option><option value="210">210 mm · A4</option></InputSelect></label>
+            </div>
+            <div class="receipt-options"><label><InputCheckbox @bind-Value="_model.ReceiptShowCustomer" /> Mostrar cliente</label><label><InputCheckbox @bind-Value="_model.ReceiptShowSku" /> Mostrar SKU</label><label><InputCheckbox @bind-Value="_model.ReceiptShowTax" /> Mostrar impuestos</label></div>
             <p class="muted-foot">Esta tasa se calcula en el servidor y queda guardada en cada venta como snapshot. Configura el porcentaje que corresponda a tu negocio; los comprobantes fiscales oficiales requieren una integración DGII aparte.</p>
             <ValidationSummary />
             @if (_error is not null) { <div class="inline-error">@_error</div> }
@@ -45,7 +56,10 @@ else
         {
             var settings = await TenantConfig.GetAsync();
             _model = new SettingsForm { Name = settings.Name, Slug = settings.Slug, TimeZoneId = settings.TimeZoneId,
-                CurrencyCode = settings.CurrencyCode, TaxPercent = settings.DefaultTaxRate * 100m };
+                CurrencyCode = settings.CurrencyCode, TaxPercent = settings.DefaultTaxRate * 100m, LegalName = settings.LegalName,
+                TaxIdentifier = settings.TaxIdentifier, BusinessPhone = settings.BusinessPhone, BusinessAddress = settings.BusinessAddress,
+                ReceiptHeader = settings.ReceiptHeader, ReceiptFooter = settings.ReceiptFooter, ReceiptPaperWidthMm = settings.ReceiptPaperWidthMm,
+                ReceiptShowCustomer = settings.ReceiptShowCustomer, ReceiptShowSku = settings.ReceiptShowSku, ReceiptShowTax = settings.ReceiptShowTax };
         }
         catch (Exception ex)
         {
@@ -62,7 +76,9 @@ else
         try
         {
             var result = await TenantConfig.UpdateAsync(new UpdateTenantBusinessSettingsRequest(_model.TimeZoneId,
-                _model.CurrencyCode, _model.TaxPercent / 100m));
+                _model.CurrencyCode, _model.TaxPercent / 100m, _model.LegalName, _model.TaxIdentifier, _model.BusinessPhone,
+                _model.BusinessAddress, _model.ReceiptHeader, _model.ReceiptFooter, _model.ReceiptPaperWidthMm,
+                _model.ReceiptShowCustomer, _model.ReceiptShowSku, _model.ReceiptShowTax));
             _model.CurrencyCode = result.CurrencyCode;
             _notice = "La configuración se guardó correctamente.";
         }
@@ -82,5 +98,15 @@ else
         [Required, StringLength(100)] public string TimeZoneId { get; set; } = "America/Santo_Domingo";
         [Required, RegularExpression("^[A-Za-z]{3}$", ErrorMessage = "Usa un código de moneda de tres letras.")] public string CurrencyCode { get; set; } = "DOP";
         [Range(typeof(decimal), "0", "100", ErrorMessage = "La tasa debe estar entre 0 y 100 por ciento.")] public decimal TaxPercent { get; set; } = 18m;
+        [StringLength(160)] public string LegalName { get; set; } = string.Empty;
+        [StringLength(40)] public string TaxIdentifier { get; set; } = string.Empty;
+        [StringLength(40)] public string BusinessPhone { get; set; } = string.Empty;
+        [StringLength(240)] public string BusinessAddress { get; set; } = string.Empty;
+        [StringLength(240)] public string ReceiptHeader { get; set; } = string.Empty;
+        [StringLength(240)] public string ReceiptFooter { get; set; } = "Gracias por su compra.";
+        [Range(58, 210)] public int ReceiptPaperWidthMm { get; set; } = 80;
+        public bool ReceiptShowCustomer { get; set; } = true;
+        public bool ReceiptShowSku { get; set; } = true;
+        public bool ReceiptShowTax { get; set; } = true;
     }
 }

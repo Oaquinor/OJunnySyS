@@ -1,0 +1,48 @@
+@model RegisterInput
+@{
+    Layout = null;
+    ViewData["Title"] = "Crea el espacio de tu empresa · OJunnySyS";
+}
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="description" content="Crea el espacio de tu empresa en OJunnySyS y empieza a organizar ventas, clientes e inventario." />
+    <title>@ViewData["Title"]</title>
+    <link rel="stylesheet" href="~/lib/bootstrap/dist/css/bootstrap.min.css" />
+    <style>
+        :root { color-scheme: light; --ink: #18251f; --muted: #6e7b73; --green: #236c4d; --line: #e3e9e5; }
+        body { min-height: 100vh; margin: 0; display: grid; place-items: center; padding: 24px 0; background: #f4f7f5; color: var(--ink); font: 16px/1.5 system-ui, sans-serif; }
+        main { width: min(100% - 32px, 520px); padding: 36px 40px; background: #fff; border: 1px solid var(--line); border-radius: 18px; box-shadow: 0 20px 70px #183d2a12; }
+        .brand { display: flex; align-items: center; gap: 12px; margin-bottom: 28px; }.mark { width: 46px; height: 46px; display: grid; place-items: center; border-radius: 14px; background: var(--green); color: white; font-size: 24px; font-weight: 750; }
+        .brand strong { display: block; font-size: 19px; }.brand small { color: var(--muted); font-size: 12px; letter-spacing: .1em; }
+        h1 { margin: 0 0 6px; font-size: 27px; }.intro { margin: 0 0 24px; color: var(--muted); }.form-label { font-weight: 620; }.form-control,.form-select { min-height: 46px; border-color: var(--line); }
+        .btn-primary { width: 100%; min-height: 48px; border-color: var(--green); background: var(--green); font-weight: 650; }.hint { color: var(--muted); font-size: 13px; }.auth-links { display: flex; justify-content: space-between; gap: 12px; margin-top: 20px; font-size: 14px; }
+        a { color: var(--green); }.validation-summary-errors { margin-bottom: 16px; padding: 12px 14px; color: #842029; background: #f8d7da; border-radius: 8px; }.validation-summary-errors ul { margin: 0; padding-left: 20px; }
+        @@media (max-width: 480px) { main { padding: 28px 22px; } }
+    </style>
+</head>
+<body>
+<main>
+    <div class="brand"><div class="mark">O.</div><div><strong>OJunnySyS</strong><small>GESTIÓN COMERCIAL</small></div></div>
+    <h1>Crea el espacio de tu empresa</h1>
+    <p class="intro">Empieza tu prueba y configura después a tu equipo, productos e impuestos.</p>
+    <form method="post" action="/account/register" autocomplete="on">
+        @Html.AntiForgeryToken()
+        <div asp-validation-summary="ModelOnly" role="alert"></div>
+        <div class="mb-3"><label asp-for="CompanyName" class="form-label">Nombre de la empresa</label><input asp-for="CompanyName" class="form-control" autocomplete="organization" maxlength="160" autofocus /><span asp-validation-for="CompanyName" class="text-danger"></span></div>
+        <div class="mb-3"><label asp-for="OwnerName" class="form-label">Nombre del responsable</label><input asp-for="OwnerName" class="form-control" autocomplete="name" maxlength="160" /><span asp-validation-for="OwnerName" class="text-danger"></span></div>
+        <div class="mb-3"><label asp-for="Email" class="form-label">Correo electrónico</label><input asp-for="Email" class="form-control" autocomplete="email" maxlength="254" /><span asp-validation-for="Email" class="text-danger"></span></div>
+        <div class="row g-3 mb-3">
+            <div class="col-sm-6"><label asp-for="CurrencyCode" class="form-label">Moneda principal</label><select asp-for="CurrencyCode" class="form-select"><option value="DOP">DOP · Peso dominicano</option><option value="USD">USD · Dólar estadounidense</option></select></div>
+            <div class="col-sm-6"><label asp-for="TimeZoneId" class="form-label">Zona horaria</label><select asp-for="TimeZoneId" class="form-select"><option value="America/Santo_Domingo">Santo Domingo</option></select></div>
+        </div>
+        <div class="mb-3"><label asp-for="Password" class="form-label">Contraseña</label><input asp-for="Password" class="form-control" autocomplete="new-password" /><div class="hint mt-1">Mínimo 12 caracteres, con mayúscula, minúscula, número y símbolo.</div><span asp-validation-for="Password" class="text-danger"></span></div>
+        <div class="mb-3"><label asp-for="ConfirmPassword" class="form-label">Confirma la contraseña</label><input asp-for="ConfirmPassword" class="form-control" autocomplete="new-password" /><span asp-validation-for="ConfirmPassword" class="text-danger"></span></div>
+        <button type="submit" class="btn btn-primary">Crear espacio de prueba</button>
+    </form>
+    <div class="auth-links"><a href="/">Volver al sitio</a><span>¿Ya tienes espacio? <a href="/account/login">Inicia sesión</a></span></div>
+</main>
+</body>
+</html>

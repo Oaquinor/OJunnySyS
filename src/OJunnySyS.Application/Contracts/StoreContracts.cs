@@ -43,6 +43,8 @@ public sealed record SaleReceiptDto(Guid Id, string Number, string CustomerName,
 public sealed record ReceiptLineDto(string Sku, string ProductName, int Quantity, decimal UnitPrice, decimal LineTotal);
 public sealed record SalesReport(DateOnly From, DateOnly To, int SalesCount, decimal Subtotal, decimal TaxAmount, decimal Total,
     IReadOnlyList<PaymentBreakdown> Payments, IReadOnlyList<ProductSalesSummary> TopProducts, IReadOnlyList<DailySalesSummary> DailySales);
+public sealed record CashSessionReport(DateOnly From, DateOnly To, int Sessions, int OpenSessions, decimal CashSales, decimal CashIn,
+    decimal CashOut, decimal CountedDifference, IReadOnlyList<CashSessionDto> Items);
 public sealed record OpportunityDto(Guid Id, Guid CustomerId, string CustomerName, string Title, decimal ExpectedValue, DateOnly? ExpectedCloseDate, string? Description, OpportunityStage Stage, DateTimeOffset CreatedAtUtc, Guid? AssignedToUserId = null, string? AssignedToName = null);
 public sealed record CreateOpportunityRequest(Guid CustomerId, string Title, decimal ExpectedValue, DateOnly? ExpectedCloseDate, string? Description, Guid? AssignedToUserId = null);
 public sealed record MoveOpportunityRequest(OpportunityStage Stage);

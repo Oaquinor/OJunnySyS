@@ -989,6 +989,20 @@ namespace OJunnySyS.Infrastructure.Persistence.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("char(36)");
 
+                    b.Property<string>("BusinessAddress")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(240)
+                        .HasColumnType("varchar(240)")
+                        .HasDefaultValue("");
+
+                    b.Property<string>("BusinessPhone")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(40)
+                        .HasColumnType("varchar(40)")
+                        .HasDefaultValue("");
+
                     b.Property<DateTimeOffset>("CreatedAtUtc")
                         .HasColumnType("datetime");
 
@@ -1002,6 +1016,13 @@ namespace OJunnySyS.Infrastructure.Persistence.Migrations
                         .HasPrecision(5, 4)
                         .HasColumnType("decimal(5,4)")
                         .HasDefaultValue(0.18m);
+
+                    b.Property<string>("LegalName")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(160)
+                        .HasColumnType("varchar(160)")
+                        .HasDefaultValue("");
 
                     b.Property<string>("Name")
                         .IsRequired()
@@ -1018,6 +1039,40 @@ namespace OJunnySyS.Infrastructure.Persistence.Migrations
                         .HasMaxLength(40)
                         .HasColumnType("varchar(40)");
 
+                    b.Property<string>("ReceiptFooter")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(240)
+                        .HasColumnType("varchar(240)")
+                        .HasDefaultValue("Gracias por su compra.");
+
+                    b.Property<string>("ReceiptHeader")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(240)
+                        .HasColumnType("varchar(240)")
+                        .HasDefaultValue("");
+
+                    b.Property<int>("ReceiptPaperWidthMm")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int")
+                        .HasDefaultValue(80);
+
+                    b.Property<bool>("ReceiptShowCustomer")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("tinyint(1)")
+                        .HasDefaultValue(true);
+
+                    b.Property<bool>("ReceiptShowSku")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("tinyint(1)")
+                        .HasDefaultValue(true);
+
+                    b.Property<bool>("ReceiptShowTax")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("tinyint(1)")
+                        .HasDefaultValue(true);
+
                     b.Property<string>("Slug")
                         .IsRequired()
                         .HasMaxLength(80)
@@ -1025,6 +1080,13 @@ namespace OJunnySyS.Infrastructure.Persistence.Migrations
 
                     b.Property<int>("Status")
                         .HasColumnType("int");
+
+                    b.Property<string>("TaxIdentifier")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(40)
+                        .HasColumnType("varchar(40)")
+                        .HasDefaultValue("");
 
                     b.Property<string>("TimeZoneId")
                         .IsRequired()

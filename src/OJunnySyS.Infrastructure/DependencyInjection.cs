@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using OJunnySyS.Application.Abstractions;
 using OJunnySyS.Infrastructure.Persistence;
+using OJunnySyS.Infrastructure.Identity;
 
 namespace OJunnySyS.Infrastructure;
 
@@ -17,6 +18,8 @@ public static class DependencyInjection
         services.AddScoped<ITenantUserRepository, EfTenantUserRepository>();
         services.AddScoped<ICustomerTagRepository, EfCustomerTagRepository>();
         services.AddScoped<ICustomerSegmentRepository, EfCustomerSegmentRepository>();
+        services.AddScoped<ITenantOnboardingService, TenantOnboardingService>();
+        services.AddScoped<IRegistrationEmailSender, SmtpRegistrationEmailSender>();
         services.AddScoped<ITenantAccessGuard, TenantAccessGuard>();
         services.AddSingleton<IBusinessClock>(_ => new SystemBusinessClock(businessTimeZone));
         return services;

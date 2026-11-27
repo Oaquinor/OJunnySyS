@@ -20,6 +20,16 @@ public sealed class Tenant : Entity
     public string TimeZoneId { get; private set; } = "America/Santo_Domingo";
     public string CurrencyCode { get; private set; } = "DOP";
     public decimal DefaultTaxRate { get; private set; } = 0.18m;
+    public string LegalName { get; private set; } = string.Empty;
+    public string TaxIdentifier { get; private set; } = string.Empty;
+    public string BusinessPhone { get; private set; } = string.Empty;
+    public string BusinessAddress { get; private set; } = string.Empty;
+    public string ReceiptHeader { get; private set; } = string.Empty;
+    public string ReceiptFooter { get; private set; } = "Gracias por su compra.";
+    public int ReceiptPaperWidthMm { get; private set; } = 80;
+    public bool ReceiptShowCustomer { get; private set; } = true;
+    public bool ReceiptShowSku { get; private set; } = true;
+    public bool ReceiptShowTax { get; private set; } = true;
     public string PlanCode { get; private set; } = "trial";
     public TenantStatus Status { get; private set; }
     public DateTimeOffset? TrialEndsAtUtc { get; private set; }
@@ -51,6 +61,20 @@ public sealed class Tenant : Entity
         TimeZoneId = timeZoneId.Trim();
         CurrencyCode = currencyCode.Trim().ToUpperInvariant();
         DefaultTaxRate = decimal.Round(defaultTaxRate, 4);
+        MarkUpdated();
+    }
+
+    public void UpdateReceiptSettings(string legalName, string taxIdentifier, string businessPhone, string businessAddress,
+        string receiptHeader, string receiptFooter, int paperWidthMm, bool showCustomer, bool showSku, bool showTax)
+    {
+        if (legalName?.Trim().Length > 160 || taxIdentifier?.Trim().Length > 40 || businessPhone?.Trim().Length > 40 ||
+            businessAddress?.Trim().Length > 240 || receiptHeader?.Trim().Length > 240 || receiptFooter?.Trim().Length > 240)
+            throw new DomainException("Uno de los datos del recibo supera el máximo permitido.");
+        if (paperWidthMm is not (58 or 80 or 210)) throw new DomainException("Elige un ancho de papel de 58, 80 o 210 mm.");
+        LegalName = legalName?.Trim() ?? string.Empty; TaxIdentifier = taxIdentifier?.Trim() ?? string.Empty;
+        BusinessPhone = businessPhone?.Trim() ?? string.Empty; BusinessAddress = businessAddress?.Trim() ?? string.Empty;
+        ReceiptHeader = receiptHeader?.Trim() ?? string.Empty; ReceiptFooter = receiptFooter?.Trim() ?? string.Empty;
+        ReceiptPaperWidthMm = paperWidthMm; ReceiptShowCustomer = showCustomer; ReceiptShowSku = showSku; ReceiptShowTax = showTax;
         MarkUpdated();
     }
 

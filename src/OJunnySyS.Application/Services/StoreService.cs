@@ -4,6 +4,7 @@ using OJunnySyS.Domain.Catalog;
 using OJunnySyS.Domain.Customers;
 using OJunnySyS.Domain.Sales;
 using OJunnySyS.Domain.Purchasing;
+using OJunnySyS.Domain.Cash;
 
 namespace OJunnySyS.Application.Services;
 
@@ -80,6 +81,15 @@ public sealed class StoreService(IStoreRepository repository, IBusinessClock clo
 
     public Task<CashSessionDto?> GetCurrentCashSessionAsync(CancellationToken ct = default) => repository.GetCurrentCashSessionAsync(ct);
     public Task<IReadOnlyList<CashSessionDto>> GetRecentCashSessionsAsync(int count = 10, CancellationToken ct = default) => repository.GetRecentCashSessionsAsync(count, ct);
+    public async Task<CashSessionReport> GetCashSessionReportAsync(DateOnly from, DateOnly to, CancellationToken ct = default)
+    {
+        if (from > to || to.DayNumber - from.DayNumber > 365) throw new OJunnySyS.Domain.Common.DomainException("El período del informe debe ser válido y no superar 366 días.");
+        var (startUtc, endUtc) = clock.GetUtcRange(from, to);
+        var sessions = await repository.GetCashSessionsInPeriodAsync(startUtc, endUtc, ct);
+        return new CashSessionReport(from, to, sessions.Count, sessions.Count(x => x.Status == CashSessionStatus.Open),
+            sessions.Sum(x => x.CashSales), sessions.Sum(x => x.CashIn), sessions.Sum(x => x.CashOut),
+            sessions.Where(x => x.CountedCash.HasValue).Sum(x => x.Difference ?? 0m), sessions);
+    }
     public Task<CashSessionDto> OpenCashSessionAsync(Guid userId, OpenCashSessionRequest request, CancellationToken ct = default) => repository.OpenCashSessionAsync(userId, request, ct);
     public Task<CashSessionDto> RecordCashMovementAsync(Guid sessionId, Guid userId, CashMovementRequest request, CancellationToken ct = default) => repository.RecordCashMovementAsync(sessionId, userId, request, ct);
     public Task<CashSessionDto> CloseCashSessionAsync(Guid sessionId, Guid userId, decimal countedCash, CancellationToken ct = default) => repository.CloseCashSessionAsync(sessionId, userId, countedCash, ct);

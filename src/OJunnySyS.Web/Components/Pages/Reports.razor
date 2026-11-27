@@ -1,6 +1,7 @@
 @page "/app/reports"
 @attribute [Authorize(Roles = "Administrator,Manager")]
 @inject StoreService Store
+@inject TenantSettingsService TenantSettings
 @inject OJunnySyS.Application.Abstractions.IBusinessClock Clock
 
 <PageTitle>Reportes · OjunnySyS</PageTitle>
@@ -11,6 +12,7 @@
     <button class="button button-primary" @onclick="LoadAsync" disabled="@_loading">@(_loading ? "Generando…" : "Generar reporte")</button>
     <span class="timezone-note">Fechas en la zona horaria del negocio</span>
 </section>
+<div class="report-period">REPORTES OPERATIVOS <strong>Ventas · Caja y arqueos</strong></div>
 @if (!string.IsNullOrWhiteSpace(_error)) { <div class="inline-error">@_error</div> }
 @if (_report is not null)
 {
@@ -55,10 +57,31 @@
         </div>
     }
 }
+@if (_cashReport is not null)
+{
+    <section class="panel report-panel cash-report-panel">
+        <div class="panel-heading"><div><span class="eyebrow">CAJA · ARQUEOS</span><h2>Turnos y movimientos de efectivo</h2><p>@_cashReport.Sessions turnos · @_cashReport.OpenSessions abiertos en el período</p></div></div>
+        <div class="stats-grid report-stats">
+            <MetricCard Label="VENTAS EN EFECTIVO" Value="@Money(_cashReport.CashSales)" Icon="＄" Tone="green" />
+            <MetricCard Label="ENTRADAS DE CAJA" Value="@Money(_cashReport.CashIn)" Icon="↘" Tone="blue" />
+            <MetricCard Label="RETIROS DE CAJA" Value="@Money(_cashReport.CashOut)" Icon="↗" Tone="amber" />
+            <MetricCard Label="DIFERENCIA DE ARQUEO" Value="@Money(_cashReport.CountedDifference)" Icon="◈" Tone="lilac" />
+        </div>
+        @if (_cashReport.Items.Count == 0) { <EmptyState Icon="＄" Title="Sin turnos en este período" Description="Al abrir y cerrar turnos de caja, los arqueos aparecerán en este informe." /> }
+        else
+        {
+            <div class="table-wrap"><table><thead><tr><th>CAJA</th><th>APERTURA</th><th>CIERRE</th><th>FONDO</th><th>VENTAS EFECTIVO</th><th>ENTRADAS</th><th>RETIROS</th><th>ARQUEO</th><th>DIFERENCIA</th><th>ESTADO</th></tr></thead><tbody>
+            @foreach (var item in _cashReport.Items) { <tr><td><strong>@item.RegisterCode</strong></td><td>@Clock.ToBusinessTime(item.OpenedAtUtc).ToString("dd/MM/yy HH:mm")</td><td>@(item.ClosedAtUtc is { } closed ? Clock.ToBusinessTime(closed).ToString("dd/MM/yy HH:mm") : "—")</td><td class="align-right">@Money(item.OpeningFloat)</td><td class="align-right">@Money(item.CashSales)</td><td class="align-right">@Money(item.CashIn)</td><td class="align-right">@Money(item.CashOut)</td><td class="align-right">@(item.CountedCash is { } counted ? Money(counted) : "—")</td><td class="align-right">@Money(item.Difference ?? 0m)</td><td>@(item.Status == CashSessionStatus.Open ? "Abierta" : "Cerrada")</td></tr> }
+            </tbody></table></div>
+        }
+    </section>
+}
 
 @code {
     private DateOnly _from, _to;
     private SalesReport? _report;
+    private CashSessionReport? _cashReport;
+    private string _currencyCode = "DOP";
     private string? _error;
     private bool _loading;
     private decimal Average => _report is null || _report.SalesCount == 0 ? 0 : decimal.Round(_report.Total / _report.SalesCount, 2);
@@ -67,6 +90,7 @@
     {
         _to = DateOnly.FromDateTime(Clock.ToBusinessTime(Clock.UtcNow).DateTime);
         _from = _to.AddDays(-29);
+        _currencyCode = (await TenantSettings.GetAsync()).CurrencyCode;
         await LoadAsync();
     }
 
@@ -74,12 +98,12 @@
     {
         _loading = true;
         _error = null;
-        try { _report = await Store.GetSalesReportAsync(_from, _to); }
-        catch (DomainException ex) { _report = null; _error = ex.Message; }
+        try { _report = await Store.GetSalesReportAsync(_from, _to); _cashReport = await Store.GetCashSessionReportAsync(_from, _to); }
+        catch (DomainException ex) { _report = null; _cashReport = null; _error = ex.Message; }
         finally { _loading = false; }
     }
 
-    private static string Money(decimal value) => DisplayFormat.Money(value);
+    private string Money(decimal value) => DisplayFormat.Money(value, _currencyCode);
     private static string PaymentLabel(PaymentMethod value) => DisplayFormat.PaymentLabel(value);
 }
 

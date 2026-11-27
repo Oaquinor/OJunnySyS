@@ -36,10 +36,14 @@ public sealed class EfTenantSettingsRepository(
         catch (TimeZoneNotFoundException) { throw new DomainException("Selecciona una zona horaria disponible."); }
         catch (InvalidTimeZoneException) { throw new DomainException("La zona horaria configurada no es válida."); }
         tenant.UpdateBusinessSettings(request.TimeZoneId, request.CurrencyCode, request.DefaultTaxRate);
+        tenant.UpdateReceiptSettings(request.LegalName, request.TaxIdentifier, request.BusinessPhone, request.BusinessAddress,
+            request.ReceiptHeader, request.ReceiptFooter, request.ReceiptPaperWidthMm, request.ReceiptShowCustomer, request.ReceiptShowSku, request.ReceiptShowTax);
         await db.SaveChangesAsync(cancellationToken);
         return Map(tenant);
     }
 
     private static TenantBusinessSettingsDto Map(OJunnySyS.Domain.Tenancy.Tenant tenant) =>
-        new(tenant.Name, tenant.Slug, tenant.TimeZoneId, tenant.CurrencyCode, tenant.DefaultTaxRate);
+        new(tenant.Name, tenant.Slug, tenant.TimeZoneId, tenant.CurrencyCode, tenant.DefaultTaxRate,
+            tenant.LegalName, tenant.TaxIdentifier, tenant.BusinessPhone, tenant.BusinessAddress, tenant.ReceiptHeader, tenant.ReceiptFooter,
+            tenant.ReceiptPaperWidthMm, tenant.ReceiptShowCustomer, tenant.ReceiptShowSku, tenant.ReceiptShowTax);
 }

@@ -71,6 +71,16 @@ public sealed class StoreDbContext(DbContextOptions<StoreDbContext> options)
             entity.Property(x => x.OwnerEmail).HasMaxLength(254).IsRequired();
             entity.Property(x => x.TimeZoneId).HasMaxLength(100).IsRequired();
             entity.Property(x => x.CurrencyCode).HasMaxLength(3).IsRequired();
+            entity.Property(x => x.LegalName).HasMaxLength(160).HasDefaultValue(string.Empty).IsRequired();
+            entity.Property(x => x.TaxIdentifier).HasMaxLength(40).HasDefaultValue(string.Empty).IsRequired();
+            entity.Property(x => x.BusinessPhone).HasMaxLength(40).HasDefaultValue(string.Empty).IsRequired();
+            entity.Property(x => x.BusinessAddress).HasMaxLength(240).HasDefaultValue(string.Empty).IsRequired();
+            entity.Property(x => x.ReceiptHeader).HasMaxLength(240).HasDefaultValue(string.Empty).IsRequired();
+            entity.Property(x => x.ReceiptFooter).HasMaxLength(240).HasDefaultValue("Gracias por su compra.").IsRequired();
+            entity.Property(x => x.ReceiptPaperWidthMm).HasDefaultValue(80);
+            entity.Property(x => x.ReceiptShowCustomer).HasDefaultValue(true);
+            entity.Property(x => x.ReceiptShowSku).HasDefaultValue(true);
+            entity.Property(x => x.ReceiptShowTax).HasDefaultValue(true);
             entity.Property(x => x.DefaultTaxRate).HasPrecision(5, 4).HasDefaultValue(0.18m);
             entity.Property(x => x.PlanCode).HasMaxLength(40).IsRequired();
         });

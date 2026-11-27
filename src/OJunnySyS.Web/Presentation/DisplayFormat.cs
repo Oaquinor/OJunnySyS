@@ -10,6 +10,19 @@ public static class DisplayFormat
     public static string Money(decimal amount, bool showCents = false) =>
         amount.ToString(showCents ? "C2" : "C0", DominicanSpanish);
 
+    public static string Money(decimal amount, string currencyCode, bool showCents = false)
+    {
+        var culture = (CultureInfo)DominicanSpanish.Clone();
+        culture.NumberFormat.CurrencySymbol = currencyCode.ToUpperInvariant() switch
+        {
+            "DOP" => "RD$",
+            "USD" => "US$",
+            "EUR" => "€",
+            _ => currencyCode.ToUpperInvariant() + " "
+        };
+        return amount.ToString(showCents ? "C2" : "C0", culture);
+    }
+
     public static string Initials(string value) =>
         string.Join("", value.Split(' ', StringSplitOptions.RemoveEmptyEntries)
             .Take(2).Select(word => char.ToUpperInvariant(word[0])));

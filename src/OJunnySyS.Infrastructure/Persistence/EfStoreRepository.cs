@@ -230,6 +230,16 @@ public sealed class EfStoreRepository(IDbContextFactory<StoreDbContext> contextF
         return result;
     }
 
+    public async Task<IReadOnlyList<CashSessionDto>> GetCashSessionsInPeriodAsync(DateTimeOffset from, DateTimeOffset to, CancellationToken cancellationToken = default)
+    {
+        await using var db = await CreateDbContextAsync(cancellationToken);
+        var sessions = await db.CashSessions.AsNoTracking().Where(x => x.CreatedAtUtc >= from && x.CreatedAtUtc < to)
+            .OrderByDescending(x => x.CreatedAtUtc).Take(5000).ToListAsync(cancellationToken);
+        var result = new List<CashSessionDto>(sessions.Count);
+        foreach (var session in sessions) result.Add(await MapCashSessionAsync(db, session, cancellationToken));
+        return result;
+    }
+
     public async Task<CashSessionDto> OpenCashSessionAsync(Guid userId, OpenCashSessionRequest request, CancellationToken cancellationToken = default)
     {
         var tenantId = tenantContext.GetRequiredTenantId();
