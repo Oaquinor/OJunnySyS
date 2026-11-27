@@ -1,0 +1,75 @@
+# Auditoría funcional de Alegra
+
+## Alcance y método
+
+La revisión se hizo en la cuenta de prueba abierta por el propietario, leyendo pantallas, formularios, columnas, selectores y estados vacíos. No se copiaron datos privados de la cuenta. Se creó únicamente el artículo `TEST OJunnySyS - Producto demo POS` para verificar que el catálogo de Contabilidad se sincroniza con POS. Se preparó un carrito de RD$100 para leer el paso de cobro y se descartó antes de confirmar el pago. No se crearon facturas, pagos, movimientos de caja ni cierres.
+
+La prueba está en República Dominicana y muestra numeración fiscal NCF, DOP, sucursal, almacén y cuentas. Los formularios fiscales y la facturación electrónica oficial necesitan reglas locales y validación DGII antes de ofrecerse como funcionalidad fiscal.
+
+## Alegra Contabilidad: módulos observados
+
+| Área | Funciones visibles observadas | Estado de OJunnySyS |
+|---|---|---|
+| Inicio | Tarjetas de cuentas por cobrar/pagar, impuestos, productos vendidos, devoluciones, clientes con ventas y ventas por período; selectores de período | Panel diario y ventas básicos; falta panel configurable y métricas fiscales/retornos |
+| Ingresos | Facturas normales y rápidas, recurrentes, cobros, notas de crédito/débito, cotizaciones, conduces; cliente, NCF, vendedor, almacén, centro de costo, lista de precios, moneda, vencimiento, descuentos, impuestos, retenciones, notas, términos, pagos y formato de impresión | POS/ventas con cliente, pago, stock e impuesto general; faltan documentos comerciales, NCF/DGII, multimoneda, retenciones, términos, descuento, asignaciones y plantillas |
+| Compras | Facturas de proveedor, pagos/gastos, gastos menores y recurrentes, notas, órdenes, recepción de comprobantes | Proveedores, órdenes, recepción parcial/completa, saldos y pagos; faltan facturas proveedor con impuestos, gastos libres, gastos recurrentes y gestión de comprobantes |
+| Contactos | Clientes y proveedores centralizados con historial de documentos | CRM de clientes, proveedores y ficha/cronología parcial; ampliar datos fiscales, múltiples contactos, actividad y documentos relacionados |
+| Inventario | Productos/servicios, valoración por fecha/almacén, ajustes, importación/actualización masiva, listas de precios, almacenes/transferencias, categorías, variantes y atributos/campos personalizados | Catálogo, stock, compras y movimientos; faltan coste/valoración, ajustes auditables, transferencias, listas, variantes/atributos e importación masiva |
+| Bancos y cajas | Cuentas de efectivo/banco/tarjeta, movimientos, transferencias y conciliación bancaria con balance inicial, cargos/entradas y diferencia | Caja operativa, entradas/retiros, historial e informe por turnos; faltan cuentas bancarias, libro de movimientos y conciliación |
+| Contabilidad | Catálogo de cuentas, asientos, activos, libro diario y complementos contables | No hay libro mayor ni asientos de doble partida; es una brecha contable crítica antes de presentar el producto como ERP contable |
+| Reportes | Ventas (7), administrativos (7), flujo de caja, contables (9), fiscales (8), exportables (2), favoritos e historial de exportación | Ventas, turnos de caja y antigüedad de cuentas por pagar; faltan la mayoría de reportes/exportaciones y contabilidad/fiscal |
+| Tareas | Bandeja de tareas y notificaciones | CRM tiene actividades y vencimientos; ampliar bandeja, asignación, alertas y filtros |
+| Configuración | Empresa/usuarios/perfil, centros de costo, monedas; términos, NCF y vendedores; plantillas; impuestos/retenciones/categorías; configuración contable, cierre, tipos/numeraciones; notificaciones/correos; campos personalizados/variantes; integraciones e historial | Empresa/impuesto general/impresión base, identidad y usuarios/plataforma; faltan catálogo fiscal, numeraciones, centros de costo, usuarios por sucursal, auditoría y preferencias documentales |
+
+## POS: recorrido y hallazgos
+
+### Pantalla principal y terminal
+
+- El POS es una aplicación separada de Contabilidad y abre desde el selector de soluciones. La cabecera muestra disponibilidad, sucursal/terminal activa, sesión de caja, búsqueda por nombre/código de barras y selector de productos.
+- La venta incluye lista de precios, numeración NCF, cliente (Consumidor final predeterminado), atajo de cliente nuevo, vista previa de impresión, preferencias de venta, carrito y botón de cobro.
+- Un producto creado en el catálogo contable se sincronizó y apareció en POS con existencias y precio. Una búsqueda lenta mostró el estado de carga y después cargó el artículo.
+- El carrito calcula el total y permite ir al paso de pago; los métodos disponibles son efectivo, tarjeta de crédito, transferencia, tarjeta débito, combinado y otros métodos. El importe preparado no fue cobrado.
+- Existe venta simple para vender conceptos sin crear producto de inventario. No se activó ni se guardó preferencia alguna.
+- El historial accesible desde la cabecera no presentó datos de venta en esta cuenta vacía durante la revisión.
+
+### Turnos y caja
+
+- El cierre detalla fecha inicial, total de ventas, fondo, efectivo, tarjeta de débito/crédito, transferencias, devoluciones, total de movimientos y efectivo esperado.
+- Permite introducir dinero real contado, observaciones y registrar un nuevo movimiento antes del cierre. El aviso explica que el efectivo esperado se puede conciliar con ingresos/retiros.
+- La pantalla advierte que se debe sincronizar la información y revisar pagos pendientes antes de cerrar. No se intentó guardar/cerrar el turno.
+- La sucursal define banco de apertura y banco de cierre para el turno.
+
+### Configuración POS
+
+| Apartado | Campos y opciones observadas |
+|---|---|
+| Negocio | RNC, nombre, ciudad/provincia, dirección, precisión decimal, correo/teléfono/sitio, sector, logo; multimoneda; turnos; cuentas contables de entradas y salidas de efectivo |
+| Sucursal actual | Nombre, numeraciones de ventas/devoluciones/recibos/gastos, almacén, lista de precios, nombre visible y contacto en tirilla, usuarios habilitados, banco por tarjeta débito/crédito/transferencia/efectivo, cuenta base y banco de cierre del turno, centro de costo y vendedor predeterminados, ventas pendientes/prefijo, venta simple |
+| Sucursales | Lista de terminales con numeración, almacén y acciones; alta de sucursal |
+| Vendedores | Alta/administración con nombre, identificación, observaciones y acciones |
+| Métodos de pago | Activa efectivo, tarjeta de crédito, transferencia, tarjeta débito y combinado; permite añadir método con nombre, indicaciones, cuenta bancaria y QR |
+| Preferencias de venta | Propina como impuesto legal local |
+| Plantilla de impresión | Diseños clásico/minimalista/detallado, papel 80/57 mm, interlineado estándar/reducido, márgenes, fuente clásica/moderna/compacta, tamaño pequeño/mediano/grande, frase sugerida, vista previa, impresión de prueba y secciones configurables: logo, vendedor, descripción, referencia, precio unitario, unidad, impuestos incluidos, total de líneas/productos, pie y QR/imagen |
+| Balanza | Perfil de balanza y conexión al puerto del dispositivo para leer peso del producto durante la venta. No se activó el hardware |
+| Cuenta/plan | Estado del plan, facturación electrónica, perfil, consumo y accesos a POS Windows; no se cambiaron |
+
+## Comparación con la implementación actual
+
+OJunnySyS ya tiene catálogo con SKU/barcode, stock, búsqueda POS, cliente, cobro por efectivo/tarjeta/transferencia, caja principal, movimiento de entrada/retiro, cierre con efectivo contado/diferencia, historial, ventas idempotentes, recibo térmico parametrizable y PWA. La factura POS es transaccional: inventario, venta y turno se escriben coordinadamente.
+
+La revisión confirma que los siguientes trabajos son concretos y necesarios:
+
+1. **Configuración POS por empresa y terminal**: entidad de sucursal/terminal, numeraciones, almacén, vendedor, centro de costo y destinos de pago; separar configuración global de configuración de sucursal.
+2. **Medios de pago configurables**: crear/desactivar medios propios por tenant y asociar cada uno a su cuenta; combinar pagos en una misma venta con importes cuya suma valide el total.
+3. **Vendedores vinculados a ventas**: catálogo y asignación; conservar vendedor en el snapshot de venta y permitir informes por vendedor.
+4. **Preferencias de venta**: descuento, venta rápida, venta simple, propina/impuestos locales, monedas y ventas pendientes, siempre con validación transaccional.
+5. **Diseñador de recibo**: presets, tamaño térmico, densidad/márgenes, tipografía, orden/visibilidad de campos, mensaje, QR, vista previa y prueba de impresión.
+6. **Caja por terminal**: mantener serialización transaccional actual al pasar de una caja global a sesiones simultáneas por sucursal/terminal, con entradas/retiros y cierre por medio de pago.
+7. **Dispositivos**: interfaz de extensión para balanza, lector y futuras impresoras; degradación limpia cuando el navegador/dispositivo no es compatible.
+8. **Caja de auditoría/reportes**: cierres por operador/terminal, ventas por método y vendedor, conciliación y trazabilidad de cambios.
+
+La siguiente entrega de código debe mantener el monolito modular .NET/Blazor/MySQL, tenant scoping en índices y relaciones, API/casos de uso separados del UI, migraciones compatibles, snapshots inmutables para datos históricos y operaciones financieras idempotentes. No se debe llamar “factura fiscal electrónica” a una impresión POS sin integración DGII validada.
+
+## Fuera de alcance observado o sin acceso
+
+El plan de prueba mostró módulos Nómina, portal de clientes y Alegra Ventas como soluciones adicionales. La opción de POS Restobar estaba disponible como activación y no se activó. Los reportes fiscales listaban 606, 607, 608, IT-1, impuestos/retenciones e IR-17, pero no se generó ni transmitió ninguna declaración. Facturación electrónica aparecía desactivada. No se hicieron cambios a la configuración del negocio, usuarios, pagos o plan.
