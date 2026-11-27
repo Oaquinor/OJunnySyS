@@ -11,10 +11,14 @@ public sealed record SetProductActiveRequest(bool IsActive, long ExpectedRevisio
 public sealed record CustomerDto(Guid Id, string Name, string Email, string Phone, string? Company, decimal LifetimeValue, long Revision, string FirstName, string LastName, DateTimeOffset CreatedAtUtc = default);
 public sealed record UpdateCustomerRequest(string FirstName, string LastName, string Email, string Phone, string? Company, long ExpectedRevision);
 public sealed record DeactivateCustomerRequest(long ExpectedRevision);
-public sealed record SaleDto(Guid Id, string Number, string CustomerName, decimal Subtotal, decimal TaxAmount, decimal Total, PaymentMethod PaymentMethod, DateTimeOffset CreatedAtUtc, SaleStatus Status = SaleStatus.Completed, string? PaymentSummary = null, string? SellerName = null);
+public sealed record SaleDto(Guid Id, string Number, string CustomerName, decimal Subtotal, decimal TaxAmount, decimal Total, PaymentMethod PaymentMethod, DateTimeOffset CreatedAtUtc, SaleStatus Status = SaleStatus.Completed, string? PaymentSummary = null, string? SellerName = null, DateOnly? DueDate = null, decimal AmountPaid = 0m, decimal BalanceDue = 0m);
 public sealed record CheckoutLine(Guid ProductId, int Quantity);
 public sealed record CheckoutPaymentLine(Guid PaymentMethodId, decimal Amount, string? Reference = null);
-public sealed record CheckoutRequest(Guid? CustomerId, PaymentMethod PaymentMethod, IReadOnlyCollection<CheckoutLine> Lines, Guid IdempotencyKey = default, string RegisterCode = "MAIN", IReadOnlyCollection<CheckoutPaymentLine>? Payments = null, Guid? SellerUserId = null);
+public sealed record CheckoutRequest(Guid? CustomerId, PaymentMethod PaymentMethod, IReadOnlyCollection<CheckoutLine> Lines, Guid IdempotencyKey = default, string RegisterCode = "MAIN", IReadOnlyCollection<CheckoutPaymentLine>? Payments = null, Guid? SellerUserId = null, DateOnly? DueDate = null);
+public sealed record CustomerReceiptRequest(Guid IdempotencyKey, decimal Amount, Guid PaymentMethodId, string? Reference = null, string RegisterCode = "MAIN");
+public sealed record ReceivableDto(Guid SaleId, string Number, Guid CustomerId, string CustomerName, DateOnly? DueDate, DateTimeOffset IssuedAtUtc, decimal Total, decimal AmountPaid, decimal BalanceDue);
+public sealed record ReceivableAgingBucketDto(string Bucket, int Count, decimal Balance);
+public sealed record ReceivablesAgingReport(DateOnly AsOfDate, int OpenInvoices, decimal TotalBalance, IReadOnlyList<ReceivableAgingBucketDto> Bands, IReadOnlyList<ReceivableDto> Items);
 public sealed record DashboardSummary(decimal SalesToday, int OrdersToday, int ActiveCustomers, int LowStockProducts, IReadOnlyList<SaleDto> RecentSales);
 public sealed record PaymentBreakdown(string Method, int Sales, decimal Total);
 public sealed record ProductSalesSummary(string ProductName, int Quantity, decimal Revenue, decimal Cost, decimal GrossProfit, int UncostedUnits);

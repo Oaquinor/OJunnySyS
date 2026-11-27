@@ -27,6 +27,7 @@ public sealed class StoreDbContext(DbContextOptions<StoreDbContext> options)
     public DbSet<CustomerSegment> CustomerSegments => Set<CustomerSegment>();
     public DbSet<Sale> Sales => Set<Sale>();
     public DbSet<SalePayment> SalePayments => Set<SalePayment>();
+    public DbSet<CustomerReceipt> CustomerReceipts => Set<CustomerReceipt>();
     public DbSet<TenantPaymentMethod> TenantPaymentMethods => Set<TenantPaymentMethod>();
     public DbSet<Tenant> Tenants => Set<Tenant>();
     public DbSet<Supplier> Suppliers => Set<Supplier>();
@@ -227,6 +228,25 @@ public sealed class StoreDbContext(DbContextOptions<StoreDbContext> options)
             entity.Navigation(nameof(Sale.Lines)).UsePropertyAccessMode(PropertyAccessMode.Field);
             entity.HasMany<SalePayment>(nameof(Sale.Payments)).WithOne().HasForeignKey(x => new { x.TenantId, x.SaleId }).HasPrincipalKey(x => new { x.TenantId, x.Id }).OnDelete(DeleteBehavior.Restrict);
             entity.Navigation(nameof(Sale.Payments)).UsePropertyAccessMode(PropertyAccessMode.Field);
+            entity.HasMany<CustomerReceipt>(nameof(Sale.Receipts)).WithOne().HasForeignKey(x => new { x.TenantId, x.SaleId }).HasPrincipalKey(x => new { x.TenantId, x.Id }).OnDelete(DeleteBehavior.Restrict);
+            entity.Navigation(nameof(Sale.Receipts)).UsePropertyAccessMode(PropertyAccessMode.Field);
+        });
+
+        modelBuilder.Entity<CustomerReceipt>(entity =>
+        {
+            entity.HasKey(x => x.Id);
+            entity.HasIndex(x => new { x.TenantId, x.IdempotencyKey }).IsUnique();
+            entity.HasIndex(x => new { x.TenantId, x.CustomerId, x.CreatedAtUtc });
+            entity.HasOne<Tenant>().WithMany().HasForeignKey(x => x.TenantId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne<Customer>().WithMany().HasForeignKey(x => x.CustomerId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne<ChartAccount>().WithMany().HasForeignKey(x => new { x.TenantId, x.LedgerAccountId }).HasPrincipalKey(x => new { x.TenantId, x.Id }).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne<TenantPaymentMethod>().WithMany().HasForeignKey(x => new { x.TenantId, x.PaymentMethodId }).HasPrincipalKey(x => new { x.TenantId, x.Id }).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne<CashSession>().WithMany().HasForeignKey(x => x.CashSessionId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasQueryFilter(x => CurrentTenantId != null && x.TenantId == CurrentTenantId);
+            entity.Property(x => x.Amount).HasPrecision(14, 2);
+            entity.Property(x => x.MethodName).HasMaxLength(80).IsRequired();
+            entity.Property(x => x.MethodType).HasConversion<int>();
+            entity.Property(x => x.Reference).HasMaxLength(120);
         });
 
         modelBuilder.Entity<SaleLine>(entity =>

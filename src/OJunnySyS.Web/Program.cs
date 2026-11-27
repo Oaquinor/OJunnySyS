@@ -89,6 +89,7 @@ builder.Services.AddAuthorization(options =>
     options.AddPolicy("CrmWrite", policy => policy.RequireRole(AppRoles.Administrator, AppRoles.Manager, AppRoles.Salesperson));
     options.AddPolicy("ReportsRead", policy => policy.RequireRole(AppRoles.Administrator, AppRoles.Manager));
     options.AddPolicy("SalesRead", policy => policy.RequireRole(AppRoles.Administrator, AppRoles.Manager, AppRoles.Cashier));
+    options.AddPolicy("ReceivablesRead", policy => policy.RequireRole(AppRoles.Administrator, AppRoles.Manager, AppRoles.Cashier));
     options.AddPolicy("Checkout", policy => policy.RequireRole(AppRoles.Administrator, AppRoles.Manager, AppRoles.Cashier));
     options.AddPolicy("PurchasingWrite", policy => policy.RequireRole(AppRoles.Administrator, AppRoles.Manager, AppRoles.PurchasingAgent));
     options.AddPolicy("SupplierPayments", policy => policy.RequireRole(AppRoles.Administrator, AppRoles.Manager));
@@ -308,6 +309,13 @@ api.MapGet("/reports/sales.csv", async (DateOnly from, DateOnly to, Guid? wareho
 }).RequireAuthorization("ReportsRead");
 api.MapGet("/reports/payables-aging", async (DateOnly? asOf, StoreService store, CancellationToken ct) => Results.Ok(await store.GetPayablesAgingAsync(asOf, ct)))
     .RequireAuthorization("ReportsRead");
+api.MapGet("/reports/receivables-aging", async (DateOnly? asOf, StoreService store, CancellationToken ct) => Results.Ok(await store.GetReceivablesAgingAsync(asOf, ct)))
+    .RequireAuthorization("ReceivablesRead");
+api.MapPost("/sales/{id:guid}/receipts", async (Guid id, CustomerReceiptRequest request, ClaimsPrincipal user, StoreService store, CancellationToken ct) =>
+{
+    try { return Results.Ok(await store.RecordCustomerReceiptAsync(id, CurrentActorId(user), request, ct)); }
+    catch (DomainException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization("ReceivablesRead");
 api.MapPost("/customers", async (CreateCustomerRequest request, StoreService store, CancellationToken ct) =>
 {
     try { return Results.Created("/api/v1/customers", await store.CreateCustomerAsync(request.FirstName, request.LastName, request.Email, request.Phone, request.Company, ct)); }

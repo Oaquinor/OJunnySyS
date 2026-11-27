@@ -14,8 +14,9 @@ public sealed class Sale : TenantEntity
     private Sale() { }
     private readonly List<SaleLine> _lines = [];
     private readonly List<SalePayment> _payments = [];
+    private readonly List<CustomerReceipt> _receipts = [];
 
-    public Sale(Guid tenantId, string number, Customer? customer, PaymentMethod paymentMethod, IEnumerable<SaleLine> lines, Guid cashSessionId, Guid cashierUserId, decimal taxRate = 0.18m, Guid? idempotencyKey = null, string registerCode = "MAIN", Guid warehouseId = default) : base(tenantId)
+    public Sale(Guid tenantId, string number, Customer? customer, PaymentMethod paymentMethod, IEnumerable<SaleLine> lines, Guid cashSessionId, Guid cashierUserId, decimal taxRate = 0.18m, Guid? idempotencyKey = null, string registerCode = "MAIN", Guid warehouseId = default, DateOnly? dueDate = null) : base(tenantId)
     {
         if (string.IsNullOrWhiteSpace(number)) throw new DomainException("El número de venta es obligatorio.");
         if (number.Length > 64) throw new DomainException("El número de venta no puede superar 64 caracteres.");
@@ -26,7 +27,7 @@ public sealed class Sale : TenantEntity
         if (warehouseId == Guid.Empty) throw new DomainException("El almacén de la venta es obligatorio.");
         WarehouseId = warehouseId;
         Number = number; CustomerId = customer?.Id; CustomerName = customer?.FullName ?? "Consumidor final";
-        CashSessionId = cashSessionId; CashierUserId = cashierUserId;
+        CashSessionId = cashSessionId; CashierUserId = cashierUserId; DueDate = dueDate;
         PaymentMethod = paymentMethod; TaxRate = taxRate; IdempotencyKey = idempotencyKey;
         _lines.AddRange(lines);
         if (_lines.Count == 0) throw new DomainException("La venta debe contener al menos un producto.");
@@ -43,6 +44,7 @@ public sealed class Sale : TenantEntity
     public string? SellerName { get; private set; }
     public Guid? IdempotencyKey { get; private set; }
     public Guid? CustomerId { get; private set; }
+    public DateOnly? DueDate { get; private set; }
     public string CustomerName { get; private set; } = "";
     public PaymentMethod PaymentMethod { get; private set; }
     public SaleStatus Status { get; private set; }
@@ -52,6 +54,19 @@ public sealed class Sale : TenantEntity
     public decimal Total { get; private set; }
     public IReadOnlyCollection<SaleLine> Lines => _lines;
     public IReadOnlyCollection<SalePayment> Payments => _payments;
+    public IReadOnlyCollection<CustomerReceipt> Receipts => _receipts;
+    public decimal AmountPaid => decimal.Round(_payments.Sum(x => x.Amount) + _receipts.Sum(x => x.Amount), 2);
+    public decimal BalanceDue => Status == SaleStatus.Voided ? 0m : decimal.Round(Total - AmountPaid, 2);
+
+    public void RecordReceivablePayment(CustomerReceipt receipt)
+    {
+        if (PaymentMethod != PaymentMethod.Credit || CustomerId is null) throw new DomainException("Esta venta no tiene una cuenta por cobrar.");
+        if (Status == SaleStatus.Voided) throw new DomainException("No se puede cobrar una venta anulada.");
+        if (receipt.TenantId != TenantId || receipt.SaleId != Id) throw new DomainException("El recibo no pertenece a esta venta.");
+        if (receipt.Amount > BalanceDue) throw new DomainException("El abono supera el saldo pendiente.");
+        if (_receipts.Any(x => x.IdempotencyKey == receipt.IdempotencyKey)) throw new DomainException("Este recibo ya fue registrado.");
+        _receipts.Add(receipt); MarkUpdated();
+    }
 
     public void AssignSeller(Guid? sellerUserId, string? sellerName)
     {
@@ -71,6 +86,12 @@ public sealed class Sale : TenantEntity
     {
         if (_payments.Count != 0) throw new DomainException("Los pagos de esta venta ya quedaron registrados.");
         var items = allocations?.ToArray() ?? throw new DomainException("Debes seleccionar al menos un medio de pago.");
+        if (PaymentMethod == PaymentMethod.Credit)
+        {
+            if (CustomerId is null) throw new DomainException("Las ventas a crédito requieren un cliente registrado.");
+            if (items.Length != 0) throw new DomainException("La venta a crédito no puede incluir cobros iniciales en este flujo.");
+            return;
+        }
         if (items.Length is < 1 or > 10) throw new DomainException("Una venta debe tener entre uno y diez medios de pago.");
         if (items.Any(x => x.PaymentMethodId == Guid.Empty) || items.Select(x => x.PaymentMethodId).Distinct().Count() != items.Length)
             throw new DomainException("Cada medio de pago puede agregarse una sola vez a la venta.");

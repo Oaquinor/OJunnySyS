@@ -172,6 +172,30 @@ public sealed class StoreService(IStoreRepository repository, IBusinessClock clo
             items.OrderByDescending(x => x.DaysPastDue).ThenBy(x => x.DueDate).Take(500).ToArray());
     }
 
+    public async Task<ReceivablesAgingReport> GetReceivablesAgingAsync(DateOnly? asOfDate = null, CancellationToken ct = default)
+    {
+        var asOf = asOfDate ?? DateOnly.FromDateTime(clock.ToBusinessTime(clock.UtcNow).DateTime);
+        var invoices = await repository.GetOpenReceivablesAsync(ct);
+        var items = invoices.Where(x => x.BalanceDue > 0).Select(x => new ReceivableDto(x.Id, x.Number, x.CustomerId!.Value,
+            x.CustomerName, x.DueDate, x.CreatedAtUtc, x.Total, x.AmountPaid, x.BalanceDue)).ToArray();
+        var bands = new[] { "Vigente", "1–30 días", "31–60 días", "61–90 días", "Más de 90 días" }.Select(label =>
+        {
+            var group = items.Where(x => AgingLabel(x.DueDate, asOf) == label).ToArray();
+            return new ReceivableAgingBucketDto(label, group.Length, group.Sum(x => x.BalanceDue));
+        }).ToArray();
+        return new ReceivablesAgingReport(asOf, items.Length, items.Sum(x => x.BalanceDue), bands,
+            items.OrderBy(x => x.DueDate).ThenByDescending(x => x.BalanceDue).Take(500).ToArray());
+    }
+
+    public async Task<SaleDto> RecordCustomerReceiptAsync(Guid saleId, Guid actorId, CustomerReceiptRequest request, CancellationToken ct = default) =>
+        Map(await repository.RecordCustomerReceiptAsync(saleId, actorId, request, ct));
+
+    private static string AgingLabel(DateOnly? dueDate, DateOnly asOf)
+    {
+        var days = dueDate is { } due ? Math.Max(0, asOf.DayNumber - due.DayNumber) : 0;
+        return days == 0 ? "Vigente" : days <= 30 ? "1–30 días" : days <= 60 ? "31–60 días" : days <= 90 ? "61–90 días" : "Más de 90 días";
+    }
+
     public async Task<DashboardSummary> GetDashboardAsync(CancellationToken ct = default)
     {
         var (startUtc, endUtc) = clock.CurrentBusinessDayUtc;
@@ -184,7 +208,8 @@ public sealed class StoreService(IStoreRepository repository, IBusinessClock clo
     private static ProductDto Map(Product product) => new(product.Id, product.Sku, product.Name, product.Category, product.UnitPrice, product.StockOnHand, product.Barcode, product.IsActive, product.Revision, product.TaxRateOverride);
     private static CustomerDto Map(Customer customer) => new(customer.Id, customer.FullName, customer.Email, customer.Phone, customer.Company, customer.LifetimeValue, customer.Revision, customer.FirstName, customer.LastName, customer.CreatedAtUtc);
     private static SaleDto Map(Sale sale) => new(sale.Id, sale.Number, sale.CustomerName, sale.Subtotal, sale.TaxAmount, sale.Total, sale.PaymentMethod, sale.CreatedAtUtc, sale.Status,
-        sale.Payments.Count == 0 ? null : string.Join(" + ", sale.Payments.Select(x => x.MethodName).Distinct()), sale.SellerName);
+        sale.Payments.Count == 0 ? (sale.PaymentMethod == PaymentMethod.Credit ? "Crédito" : null) : string.Join(" + ", sale.Payments.Select(x => x.MethodName).Distinct()), sale.SellerName,
+        sale.DueDate, sale.AmountPaid, sale.BalanceDue);
     private static SupplierDto Map(Supplier supplier) => new(supplier.Id, supplier.Name, supplier.TaxIdentifier, supplier.Email, supplier.Phone, supplier.Notes, supplier.Revision);
     private static PurchaseOrderDto Map(PurchaseOrder order) => new(order.Id, order.Number, order.SupplierName, order.Reference, order.DueDate, order.Status, order.Total, order.AmountPaid, order.BalanceDue, order.CreatedAtUtc,
         order.Lines.Select(x => new PurchaseLineDto(x.Id, x.ProductId, x.Sku, x.ProductName, x.Quantity, x.ReceivedQuantity, x.UnitCost, x.LineTotal, x.TaxRate, x.TaxAmount)).ToArray(),

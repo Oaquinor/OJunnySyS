@@ -1,0 +1,65 @@
+@page "/app/receivables"
+@attribute [Authorize(Roles = "Administrator,Manager,Cashier")]
+@inject StoreService Store
+@inject PosPaymentMethodService PaymentMethods
+@inject AuthenticationStateProvider AuthenticationState
+@inject ILogger<Receivables> Logger
+
+<PageTitle>Cuentas por cobrar · OJunnySyS</PageTitle>
+<PageHeader Eyebrow="VENTAS / CARTERA" Title="Cuentas por cobrar" Description="Consulta vencimientos, saldos de clientes y registra abonos con su recibo contable.">
+    <Actions><a class="button button-secondary" href="/app/reports">Ver reportes</a></Actions>
+</PageHeader>
+
+@if (_report is not null)
+{
+    <section class="cash-summary-grid receivable-summary">
+        <article><span>FACTURAS ABIERTAS</span><strong>@_report.OpenInvoices</strong></article>
+        <article class="cash-expected"><span>SALDO POR COBRAR</span><strong>@Money(_report.TotalBalance)</strong></article>
+        @foreach (var band in _report.Bands) { <article><span>@band.Bucket.ToUpperInvariant()</span><strong>@Money(band.Balance)</strong><small>@band.Count cuenta(s)</small></article> }
+    </section>
+    @if (!string.IsNullOrWhiteSpace(_notice)) { <div class="toast">✓ @_notice</div> }
+    @if (!string.IsNullOrWhiteSpace(_error)) { <div class="inline-error">@_error</div> }
+    <section class="panel list-panel receivables-panel">
+        <div class="list-toolbar"><span class="result-count">Cartera al @_report.AsOfDate.ToString("dd/MM/yyyy") · @_report.Items.Count cuentas pendientes</span><button class="button button-secondary button-small" @onclick="LoadAsync">Actualizar</button></div>
+        @if (_report.Items.Count == 0) { <EmptyState Icon="✓" Title="Cartera al día" Description="Las ventas a crédito con saldo aparecerán aquí." /> }
+        else { <div class="table-wrap"><table><thead><tr><th>CUENTA</th><th>CLIENTE</th><th>EMISIÓN / VENCE</th><th>ESTADO</th><th class="align-right">TOTAL</th><th class="align-right">ABONADO</th><th class="align-right">SALDO</th><th>REGISTRAR ABONO</th></tr></thead><tbody>
+            @foreach (var item in _report.Items)
+            {
+                var form = FormFor(item.SaleId);
+                <tr><td><a class="mono" href="/app/receipts/@item.SaleId">@item.Number</a></td><td><strong>@item.CustomerName</strong></td><td>@Clock.ToBusinessTime(item.IssuedAtUtc).ToString("dd/MM/yy")<br /><small>Vence @item.DueDate?.ToString("dd/MM/yy")</small></td><td><span class="status-pill @(item.DueDate < _report.AsOfDate ? "status-warning" : "")"><i></i>@Aging(item.DueDate, _report.AsOfDate)</span></td><td class="align-right">@Money(item.Total)</td><td class="align-right">@Money(item.AmountPaid)</td><td class="align-right amount">@Money(item.BalanceDue)</td><td><div class="receivable-payment"><NumericInput aria-label="Importe del abono" @bind-Value="form.Amount" min="0.01" max="@item.BalanceDue" step="0.01" /><select aria-label="Medio de cobro" @bind="form.PaymentMethodId"><option value="">Medio</option>@foreach (var method in _methods) { <option value="@method.Id">@method.Name</option> }</select><input aria-label="Referencia del pago" placeholder="Referencia" @bind="form.Reference" /><button class="button button-primary button-small" @onclick="() => CollectAsync(item, form)" disabled="@(_saving || form.PaymentMethodId == Guid.Empty || form.Amount <= 0 || form.Amount > item.BalanceDue)">Abonar</button></div></td></tr>
+            }
+        </tbody></table></div> }
+    </section>
+}
+
+@code {
+    [Inject] private OJunnySyS.Application.Abstractions.IBusinessClock Clock { get; set; } = default!;
+    private ReceivablesAgingReport? _report;
+    private IReadOnlyList<TenantPaymentMethodDto> _methods = [];
+    private readonly Dictionary<Guid, ReceiptForm> _forms = [];
+    private Guid _userId;
+    private bool _saving;
+    private string? _error, _notice;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var user = (await AuthenticationState.GetAuthenticationStateAsync()).User;
+        if (!Guid.TryParse(user.FindFirstValue(System.Security.Claims.ClaimTypes.NameIdentifier), out _userId)) throw new InvalidOperationException("La sesión autenticada no tiene un identificador válido.");
+        _methods = await PaymentMethods.GetAsync(false);
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync() { _report = await Store.GetReceivablesAgingAsync(); }
+    private ReceiptForm FormFor(Guid id) { if (!_forms.TryGetValue(id, out var form)) _forms[id] = form = new() { Amount = _report?.Items.FirstOrDefault(x => x.SaleId == id)?.BalanceDue ?? 0, PaymentMethodId = _methods.FirstOrDefault(x => x.Type == PaymentMethodType.Cash)?.Id ?? _methods.FirstOrDefault()?.Id ?? Guid.Empty }; return form; }
+    private async Task CollectAsync(ReceivableDto invoice, ReceiptForm form)
+    {
+        _saving = true; _error = null; _notice = null;
+        try { await Store.RecordCustomerReceiptAsync(invoice.SaleId, _userId, new CustomerReceiptRequest(Guid.NewGuid(), form.Amount, form.PaymentMethodId, form.Reference)); _notice = $"Abono registrado para {invoice.Number}. Saldo actualizado."; _forms.Remove(invoice.SaleId); await LoadAsync(); }
+        catch (DomainException ex) { _error = ex.Message; }
+        catch (Exception ex) { Logger.LogError(ex, "No se pudo registrar el recibo de cliente {SaleId}.", invoice.SaleId); _error = "No se pudo registrar el abono. Verifica el turno de caja y la cuenta del medio de pago."; }
+        finally { _saving = false; }
+    }
+    private static string Aging(DateOnly? dueDate, DateOnly asOf) { var days = dueDate is { } due ? Math.Max(0, asOf.DayNumber - due.DayNumber) : 0; return days == 0 ? "Vigente" : days <= 30 ? "1–30 días" : days <= 60 ? "31–60 días" : days <= 90 ? "61–90 días" : "Más de 90 días"; }
+    private static string Money(decimal amount) => DisplayFormat.Money(amount, showCents: true);
+    private sealed class ReceiptForm { public decimal Amount { get; set; } public Guid PaymentMethodId { get; set; } public string? Reference { get; set; } }
+}
