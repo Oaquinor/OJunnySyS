@@ -40,3 +40,49 @@
     outline: 2px solid #91c99d;
     outline-offset: 4px;
 }
+
+/* Opt into the modern, browser-native customizable picker where supported.
+   Older browsers keep the functional native select as a progressive fallback. */
+@supports (appearance: base-select) {
+    .app-shell select {
+        appearance: base-select;
+        background-image: none;
+    }
+
+    .app-shell select::picker-icon {
+        color: #64766a;
+        transition: rotate .16s ease;
+    }
+
+    .app-shell select:open::picker-icon {
+        rotate: 180deg;
+    }
+
+    .app-shell select::picker(select) {
+        appearance: base-select;
+        margin-block: 5px;
+        padding: 5px;
+        border: 1px solid #dce5dc;
+        border-radius: 14px;
+        background: #fff;
+        box-shadow: 0 12px 30px #1833261f;
+        color: #34463b;
+    }
+
+    .app-shell select option {
+        min-height: 36px;
+        padding: 8px 11px;
+        border-radius: 9px;
+        color: #435148;
+    }
+
+    .app-shell select option:hover {
+        background: #f0f6f0;
+    }
+
+    .app-shell select option:checked {
+        background: #e6f2e8;
+        color: #246a45;
+        font-weight: 700;
+    }
+}
