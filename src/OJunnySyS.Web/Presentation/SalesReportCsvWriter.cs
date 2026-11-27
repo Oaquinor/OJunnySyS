@@ -31,9 +31,5 @@ public static class SalesReportCsvWriter
             .Append(Csv(grossProfit?.ToString("0.00", CultureInfo.InvariantCulture) ?? "")).Append(',')
             .Append(Csv(uncostedUnits?.ToString(CultureInfo.InvariantCulture) ?? "")).AppendLine();
 
-    private static string Csv(string value)
-    {
-        var safe = value.Length > 0 && value[0] is '=' or '+' or '-' or '@' or '\t' or '\r' ? "'" + value : value;
-        return $"\"{safe.Replace("\"", "\"\"", StringComparison.Ordinal)}\"";
-    }
+    private static string Csv(string value) => CsvText.Escape(value);
 }

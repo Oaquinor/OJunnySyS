@@ -118,6 +118,10 @@ Los reportes de cuentas por pagar ya existen en Compras con bandas y saldos; el 
 
 ## Referencias fiscales oficiales consultadas
 
+## Estado de cuenta por cliente
+
+Se agregó una consulta de estado de cuenta por cliente con rango de hasta 366 días, saldo anterior al rango, ventas y cobros ordenados por fecha, vencimiento, balance corrido y saldo al corte. La misma fuente sirve a la pantalla, endpoint protegido y exportación CSV; las fechas del CSV usan la zona horaria comercial. El saldo se calcula desde ventas completadas, pagos iniciales y recibos persistidos; no sustituye una factura fiscal ni incluye notas de crédito/devoluciones, que siguen pendientes.
+
 - [DGII: Formatos de envío de datos](https://dgii.gov.do/cicloContribuyente/obligacionesTributarias/remisionInformacion/Paginas/formatoEnvioDatos.aspx): propósito de 606/607/608/609 y guías vigentes.
 - [DGII: Biblioteca de instructivos para formatos](https://dgii.gov.do/publicacionesOficiales/bibliotecaVirtual/contribuyentes/formatoEnvioDatos/Paginas/default.aspx): la DGII publica instructivos revisados en 2025–2026; el generador debe versionar el formato y sus reglas por período.
 - [DGII: Declaraciones juradas](https://dgii.gov.do/cicloContribuyente/obligacionesTributarias/declaracionPagoImpuestos/declaracionesJuradasPFyPJ/Paginas/default.aspx): IT-1 e IR-17 tienen obligaciones, periodicidad y reglas distintas; no basta con copiar la interfaz del competidor.

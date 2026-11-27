@@ -15,6 +15,7 @@ public interface IStoreRepository
     Task<IReadOnlyList<Customer>> SearchCustomersAsync(string? query, CancellationToken cancellationToken = default);
     Task<Customer?> GetCustomerAsync(Guid customerId, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<Sale>> GetCustomerSalesAsync(Guid customerId, int count = 100, CancellationToken cancellationToken = default);
+    Task<CustomerStatementData> GetCustomerStatementDataAsync(Guid customerId, DateTimeOffset startUtc, DateTimeOffset endUtc, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<Sale>> GetRecentSalesAsync(int count, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<Sale>> GetSalesInPeriodAsync(DateTimeOffset from, DateTimeOffset to, Guid? warehouseId = null, Guid? sellerUserId = null, CancellationToken cancellationToken = default);
     Task<Customer> CreateCustomerAsync(string firstName, string lastName, string email, string phone, string? company, CancellationToken cancellationToken = default);

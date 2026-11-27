@@ -19,6 +19,11 @@ public sealed record CustomerReceiptRequest(Guid IdempotencyKey, decimal Amount,
 public sealed record ReceivableDto(Guid SaleId, string Number, Guid CustomerId, string CustomerName, DateOnly? DueDate, DateTimeOffset IssuedAtUtc, decimal Total, decimal AmountPaid, decimal BalanceDue);
 public sealed record ReceivableAgingBucketDto(string Bucket, int Count, decimal Balance);
 public sealed record ReceivablesAgingReport(DateOnly AsOfDate, int OpenInvoices, decimal TotalBalance, IReadOnlyList<ReceivableAgingBucketDto> Bands, IReadOnlyList<ReceivableDto> Items);
+public enum CustomerStatementEntryType { Sale, Payment }
+public sealed record CustomerStatementMovement(Guid SaleId, DateTimeOffset OccurredAtUtc, string Reference, CustomerStatementEntryType Type, string Description, DateOnly? DueDate, decimal Debit, decimal Credit);
+public sealed record CustomerStatementData(decimal OpeningBalance, IReadOnlyList<CustomerStatementMovement> Movements);
+public sealed record CustomerStatementLine(Guid SaleId, DateTimeOffset OccurredAtUtc, string Reference, CustomerStatementEntryType Type, string Description, DateOnly? DueDate, decimal Debit, decimal Credit, decimal Balance);
+public sealed record CustomerStatementReport(Guid CustomerId, string CustomerName, DateOnly From, DateOnly To, decimal OpeningBalance, decimal Invoiced, decimal Collected, decimal ClosingBalance, IReadOnlyList<CustomerStatementLine> Entries);
 public sealed record DashboardSummary(decimal SalesToday, int OrdersToday, int ActiveCustomers, int LowStockProducts, IReadOnlyList<SaleDto> RecentSales);
 public sealed record PaymentBreakdown(string Method, int Sales, decimal Total);
 public sealed record ProductSalesSummary(string ProductName, int Quantity, decimal Revenue, decimal Cost, decimal GrossProfit, int UncostedUnits);

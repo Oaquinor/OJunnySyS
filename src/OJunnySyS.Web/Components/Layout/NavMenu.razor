@@ -40,6 +40,9 @@
         <span class="nav-caption section-caption">ANÁLISIS</span>
         <NavLink class="nav-link" href="/app/reports"><span class="nav-icon">▥</span> Reportes</NavLink>
     </AuthorizeView>
+    <AuthorizeView Roles="Administrator,Manager,Cashier,Salesperson">
+        <NavLink class="nav-link" href="/app/reports/customer-statement"><span class="nav-icon">▤</span> Estado de cuenta</NavLink>
+    </AuthorizeView>
 </nav>
 
 <div class="sidebar-bottom">

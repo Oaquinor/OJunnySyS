@@ -61,6 +61,29 @@
 .cash-history .empty-state { padding: 30px 20px; }
 .cash-error { margin: 14px 0; }
 
+.statement-filter { display: grid; grid-template-columns: minmax(220px, 1.5fr) repeat(2, minmax(150px, .8fr)) auto; align-items: end; gap: 14px; padding: 18px; margin-bottom: 20px; }
+.statement-filter label { display: grid; gap: 7px; color: #65756a; font-size: 11px; font-weight: 650; }
+.statement-filter input, .statement-filter select { width: 100%; min-height: 42px; padding: 0 13px; border: 1px solid var(--line); border-radius: 11px; background: #fff; color: var(--ink); font: inherit; }
+.statement-filter .button { min-height: 42px; white-space: nowrap; }
+.statement-heading { display: flex; justify-content: space-between; align-items: end; gap: 16px; margin: 3px 0 17px; }
+.statement-heading h2 { margin: 5px 0 4px; color: var(--ink); font: 700 22px Manrope, sans-serif; }
+.statement-heading p { margin: 0; color: var(--muted); font-size: 11px; }
+.statement-heading > a { color: var(--accent); font-size: 11px; font-weight: 650; }
+.statement-summary { margin-bottom: 18px; }
+.statement-panel { padding: 0; overflow: hidden; }
+.statement-panel .table-wrap { overflow-x: auto; }
+.statement-panel table { min-width: 900px; }
+.statement-panel th { white-space: nowrap; }
+.statement-opening, .statement-total { background: #f6f8f5; font-weight: 700; }
+.statement-opening td, .statement-total td { color: #425448; }
+.statement-empty { padding: 13px 18px; margin: 0; border-bottom: 1px solid var(--line); color: var(--muted); font-size: 11px; }
+
+@media print {
+    .statement-filter, .statement-heading > a, .page-header-actions, .app-sidebar, .app-topbar { display: none !important; }
+    .statement-panel { border: 0; box-shadow: none; }
+    .statement-panel table { min-width: 0; }
+}
+
 @media (max-width: 1100px) {
     .cash-open-banner { align-items: stretch; flex-direction: column; gap: 20px; }
     .cash-open-banner form { flex-basis: auto; width: min(100%, 440px); }
@@ -77,4 +100,7 @@
     .cash-summary-grid article { padding: 14px; }
     .cash-summary-grid article > strong { font-size: 17px; }
     .cash-status-bar { align-items: flex-start; flex-direction: column; }
+    .statement-filter { grid-template-columns: 1fr; }
+    .statement-filter .button { width: 100%; }
+    .statement-heading { align-items: flex-start; flex-direction: column; }
 }

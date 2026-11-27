@@ -1,0 +1,76 @@
+@page "/app/reports/customer-statement"
+@attribute [Authorize(Roles = "Administrator,Manager,Cashier,Salesperson")]
+@inject StoreService Store
+@inject IBusinessClock Clock
+@inject ILogger<CustomerStatement> Logger
+@inject IJSRuntime JS
+
+<PageTitle>Estado de cuenta · OJunnySyS</PageTitle>
+<PageHeader Eyebrow="ANÁLISIS / CLIENTES" Title="Estado de cuenta" Description="Consulta ventas, cobros y saldo de cada cliente hasta la fecha de corte.">
+    <Actions>@if (_statement is not null) { <a class="button button-secondary" href="@ExportUrl">↓ Descargar CSV</a><button class="button button-primary" @onclick="PrintAsync">Imprimir</button> }</Actions>
+</PageHeader>
+
+<section class="panel report-filter statement-filter">
+    <label>Cliente<InputSelect @bind-Value="_customerId"><option value="">Selecciona un cliente</option>@foreach (var customer in _customers) { <option value="@customer.Id">@customer.Name</option> }</InputSelect></label>
+    <label>Desde<InputDate @bind-Value="_from" /></label>
+    <label>Hasta / corte<InputDate @bind-Value="_to" /></label>
+    <button class="button button-primary" @onclick="LoadAsync" disabled="@(_loading || _customerId is null)">@(_loading ? "Generando…" : "Generar estado")</button>
+</section>
+
+@if (!string.IsNullOrWhiteSpace(_error)) { <div class="inline-error">@_error</div> }
+@if (_statement is not null)
+{
+    <div class="statement-heading"><div><span class="eyebrow">CLIENTE</span><h2>@_statement.CustomerName</h2><p>Estado desde @_statement.From.ToString("dd MMM yyyy") hasta @_statement.To.ToString("dd MMM yyyy") · DOP</p></div><a href="/app/customers/@_statement.CustomerId">Ver ficha ↗</a></div>
+    <section class="cash-summary-grid statement-summary">
+        <article><span>SALDO DE APERTURA</span><strong>@Money(_statement.OpeningBalance)</strong></article>
+        <article><span>VENTAS DEL PERÍODO</span><strong>@Money(_statement.Invoiced)</strong><small>Débitos</small></article>
+        <article><span>COBROS DEL PERÍODO</span><strong>@Money(_statement.Collected)</strong><small>Créditos</small></article>
+        <article class="cash-expected"><span>SALDO AL CORTE</span><strong>@Money(_statement.ClosingBalance)</strong></article>
+    </section>
+    <section class="panel list-panel statement-panel">
+        @if (_statement.Entries.Count == 0) { <p class="statement-empty">El cliente no registra ventas ni cobros en estas fechas; se muestra su saldo anterior.</p> }
+        <div class="table-wrap"><table><thead><tr><th>FECHA</th><th>REFERENCIA</th><th>DETALLE</th><th>VENCE</th><th class="align-right">DÉBITO</th><th class="align-right">CRÉDITO</th><th class="align-right">SALDO</th></tr></thead><tbody>
+            <tr class="statement-opening"><td colspan="6">Saldo anterior al @_statement.From.ToString("dd/MM/yyyy")</td><td class="align-right amount">@Money(_statement.OpeningBalance)</td></tr>
+            @foreach (var entry in _statement.Entries)
+            {
+                <tr><td>@Clock.ToBusinessTime(entry.OccurredAtUtc).ToString("dd/MM/yyyy")</td><td><a class="mono" href="/app/receipts/@entry.SaleId">@entry.Reference</a></td><td>@entry.Description</td><td>@(entry.DueDate?.ToString("dd/MM/yyyy") ?? "—")</td><td class="align-right">@(entry.Debit > 0 ? Money(entry.Debit) : "—")</td><td class="align-right">@(entry.Credit > 0 ? Money(entry.Credit) : "—")</td><td class="align-right amount">@Money(entry.Balance)</td></tr>
+            }
+            <tr class="statement-total"><td colspan="4">Totales del período</td><td class="align-right">@Money(_statement.Invoiced)</td><td class="align-right">@Money(_statement.Collected)</td><td class="align-right amount">@Money(_statement.ClosingBalance)</td></tr>
+        </tbody></table></div>
+    </section>
+}
+
+@code {
+    [Parameter, SupplyParameterFromQuery(Name = "customerId")] public Guid? CustomerId { get; set; }
+    private IReadOnlyList<CustomerDto> _customers = [];
+    private CustomerStatementReport? _statement;
+    private Guid? _customerId;
+    private DateOnly _from, _to;
+    private bool _loading;
+    private string? _error;
+
+    private string ExportUrl => $"/api/v1/customers/{_statement!.CustomerId}/statement.csv?from={_from:yyyy-MM-dd}&to={_to:yyyy-MM-dd}";
+
+    protected override async Task OnInitializedAsync()
+    {
+        var today = DateOnly.FromDateTime(Clock.ToBusinessTime(Clock.UtcNow).DateTime);
+        _from = new DateOnly(today.Year, today.Month, 1);
+        _to = today;
+        _customers = await Store.SearchCustomersAsync(null);
+        _customerId = CustomerId;
+        if (_customerId is not null) await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        if (_customerId is not { } id) return;
+        _loading = true; _error = null;
+        try { _statement = await Store.GetCustomerStatementAsync(id, _from, _to); }
+        catch (DomainException ex) { _statement = null; _error = ex.Message; }
+        catch (Exception ex) { Logger.LogError(ex, "No se pudo generar el estado de cuenta de {CustomerId}.", id); _statement = null; _error = "No se pudo generar el estado de cuenta. Inténtalo de nuevo."; }
+        finally { _loading = false; }
+    }
+
+    private async Task PrintAsync() => await JS.InvokeVoidAsync("window.print");
+    private static string Money(decimal value) => DisplayFormat.Money(value, showCents: true);
+}

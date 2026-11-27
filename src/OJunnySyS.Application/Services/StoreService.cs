@@ -72,6 +72,18 @@ public sealed class StoreService(IStoreRepository repository, IBusinessClock clo
             completed.Sum(x => x.Total), payments, topProducts, dailySales, sellers, customers, warehouseSales);
     }
 
+    public async Task<CustomerStatementReport> GetCustomerStatementAsync(Guid customerId, DateOnly from, DateOnly to, CancellationToken ct = default)
+    {
+        if (customerId == Guid.Empty) throw new OJunnySyS.Domain.Common.DomainException("Selecciona un cliente para generar el estado de cuenta.");
+        if (from > to) throw new OJunnySyS.Domain.Common.DomainException("La fecha inicial debe ser anterior o igual a la fecha final.");
+        if (to.DayNumber - from.DayNumber > 365) throw new OJunnySyS.Domain.Common.DomainException("El período máximo del estado de cuenta es de 366 días.");
+        var customer = await repository.GetCustomerAsync(customerId, ct)
+            ?? throw new OJunnySyS.Domain.Common.DomainException("El cliente no existe en la empresa activa.");
+        var (startUtc, endUtc) = clock.GetUtcRange(from, to);
+        var data = await repository.GetCustomerStatementDataAsync(customerId, startUtc, endUtc, ct);
+        return CustomerStatementBuilder.Build(customerId, customer.FullName, from, to, data);
+    }
+
     public async Task<CustomerDto> CreateCustomerAsync(string firstName, string lastName, string email, string phone, string? company, CancellationToken ct = default)
     {
         var customer = await repository.CreateCustomerAsync(firstName, lastName, email, phone, company, ct);

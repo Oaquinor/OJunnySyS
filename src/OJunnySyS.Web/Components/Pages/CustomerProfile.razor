@@ -12,7 +12,7 @@
 else if (_customer is null) { <PageHeader Eyebrow="CRM / CLIENTE" Title="Cliente no encontrado" Description="No encontramos este cliente en la empresa activa."><Actions><a class="button button-secondary" href="/app/customers">Volver a clientes</a></Actions></PageHeader> }
 else {
     <PageHeader Eyebrow="CRM / FICHA DEL CLIENTE" Title="@_customer.Name" Description="Datos de contacto, relación comercial e historial en un solo lugar.">
-        <Actions><a class="button button-secondary" href="/app/crm?customerId=@CustomerId">Abrir seguimiento</a><a class="button button-secondary" href="/app/customers">Todos los clientes</a></Actions>
+        <Actions><a class="button button-secondary" href="/app/reports/customer-statement?customerId=@CustomerId">Estado de cuenta</a><a class="button button-secondary" href="/app/crm?customerId=@CustomerId">Abrir seguimiento</a><a class="button button-secondary" href="/app/customers">Todos los clientes</a></Actions>
     </PageHeader>
     <div class="customer-profile-grid">
         <section class="panel customer-profile-card">

@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.RateLimiting;
 using System.Security.Claims;
 using System.Threading.RateLimiting;
+using OJunnySyS.Application.Abstractions;
 using OJunnySyS.Application.Contracts;
 using OJunnySyS.Application.Services;
 using OJunnySyS.Domain.Common;
@@ -90,6 +91,7 @@ builder.Services.AddAuthorization(options =>
     options.AddPolicy("ReportsRead", policy => policy.RequireRole(AppRoles.Administrator, AppRoles.Manager));
     options.AddPolicy("SalesRead", policy => policy.RequireRole(AppRoles.Administrator, AppRoles.Manager, AppRoles.Cashier));
     options.AddPolicy("ReceivablesRead", policy => policy.RequireRole(AppRoles.Administrator, AppRoles.Manager, AppRoles.Cashier));
+    options.AddPolicy("CustomerStatementRead", policy => policy.RequireRole(AppRoles.Administrator, AppRoles.Manager, AppRoles.Cashier, AppRoles.Salesperson));
     options.AddPolicy("Checkout", policy => policy.RequireRole(AppRoles.Administrator, AppRoles.Manager, AppRoles.Cashier));
     options.AddPolicy("PurchasingWrite", policy => policy.RequireRole(AppRoles.Administrator, AppRoles.Manager, AppRoles.PurchasingAgent));
     options.AddPolicy("SupplierPayments", policy => policy.RequireRole(AppRoles.Administrator, AppRoles.Manager));
@@ -311,6 +313,20 @@ api.MapGet("/reports/payables-aging", async (DateOnly? asOf, StoreService store,
     .RequireAuthorization("ReportsRead");
 api.MapGet("/reports/receivables-aging", async (DateOnly? asOf, StoreService store, CancellationToken ct) => Results.Ok(await store.GetReceivablesAgingAsync(asOf, ct)))
     .RequireAuthorization("ReceivablesRead");
+api.MapGet("/customers/{id:guid}/statement", async (Guid id, DateOnly from, DateOnly to, StoreService store, CancellationToken ct) =>
+{
+    try { return Results.Ok(await store.GetCustomerStatementAsync(id, from, to, ct)); }
+    catch (DomainException ex) { return Results.ValidationProblem(new Dictionary<string, string[]> { ["statement"] = [ex.Message] }); }
+}).RequireAuthorization("CustomerStatementRead");
+api.MapGet("/customers/{id:guid}/statement.csv", async (Guid id, DateOnly from, DateOnly to, StoreService store, IBusinessClock clock, CancellationToken ct) =>
+{
+    try
+    {
+        var statement = await store.GetCustomerStatementAsync(id, from, to, ct);
+        return Results.File(CustomerStatementCsvWriter.Write(statement, clock), "text/csv; charset=utf-8", $"ojunny-estado-cuenta-{to:yyyyMMdd}.csv");
+    }
+    catch (DomainException ex) { return Results.ValidationProblem(new Dictionary<string, string[]> { ["statement"] = [ex.Message] }); }
+}).RequireAuthorization("CustomerStatementRead");
 api.MapPost("/sales/{id:guid}/receipts", async (Guid id, CustomerReceiptRequest request, ClaimsPrincipal user, StoreService store, CancellationToken ct) =>
 {
     try { return Results.Ok(await store.RecordCustomerReceiptAsync(id, CurrentActorId(user), request, ct)); }

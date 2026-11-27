@@ -72,6 +72,44 @@ public sealed class EfStoreRepository(IDbContextFactory<StoreDbContext> contextF
             .Include(x => x.Payments).Include(x => x.Receipts).OrderByDescending(x => x.CreatedAtUtc).Take(Math.Clamp(count, 1, 200)).ToListAsync(cancellationToken);
     }
 
+    public async Task<CustomerStatementData> GetCustomerStatementDataAsync(Guid customerId, DateTimeOffset startUtc, DateTimeOffset endUtc, CancellationToken cancellationToken = default)
+    {
+        await using var db = await CreateDbContextAsync(cancellationToken);
+        var sales = db.Sales.AsNoTracking().Where(x => x.CustomerId == customerId && x.Status == SaleStatus.Completed);
+        var openingDebits = await sales.Where(x => x.CreatedAtUtc < startUtc).SumAsync(x => (decimal?)x.Total, cancellationToken) ?? 0m;
+        var openingSalePayments = await (from payment in db.SalePayments.AsNoTracking()
+                                         join sale in sales on new { payment.TenantId, SaleId = payment.SaleId } equals new { sale.TenantId, SaleId = sale.Id }
+                                         where payment.CreatedAtUtc < startUtc
+                                         select (decimal?)payment.Amount).SumAsync(cancellationToken) ?? 0m;
+        var openingReceipts = await (from receipt in db.CustomerReceipts.AsNoTracking()
+                                     join sale in sales on new { receipt.TenantId, SaleId = receipt.SaleId } equals new { sale.TenantId, SaleId = sale.Id }
+                                     where receipt.CreatedAtUtc < startUtc
+                                     select (decimal?)receipt.Amount).SumAsync(cancellationToken) ?? 0m;
+        var opening = decimal.Round(openingDebits - openingSalePayments - openingReceipts, 2, MidpointRounding.AwayFromZero);
+
+        var invoiceRows = await sales.Where(x => x.CreatedAtUtc >= startUtc && x.CreatedAtUtc < endUtc)
+            .Select(x => new { x.Id, x.Number, x.CreatedAtUtc, x.DueDate, x.Total, x.PaymentMethod })
+            .ToListAsync(cancellationToken);
+        var salePaymentRows = await (from payment in db.SalePayments.AsNoTracking()
+                                     join sale in sales on new { payment.TenantId, SaleId = payment.SaleId } equals new { sale.TenantId, SaleId = sale.Id }
+                                     where payment.CreatedAtUtc >= startUtc && payment.CreatedAtUtc < endUtc
+                                     select new { SaleId = sale.Id, sale.Number, payment.CreatedAtUtc, payment.Amount, payment.MethodName })
+            .ToListAsync(cancellationToken);
+        var receiptRows = await (from receipt in db.CustomerReceipts.AsNoTracking()
+                                 join sale in sales on new { receipt.TenantId, SaleId = receipt.SaleId } equals new { sale.TenantId, SaleId = sale.Id }
+                                 where receipt.CreatedAtUtc >= startUtc && receipt.CreatedAtUtc < endUtc
+                                 select new { SaleId = sale.Id, sale.Number, receipt.CreatedAtUtc, receipt.Amount, receipt.MethodName, receipt.Reference })
+            .ToListAsync(cancellationToken);
+        var movements = new List<CustomerStatementMovement>(invoiceRows.Count + salePaymentRows.Count + receiptRows.Count);
+        movements.AddRange(invoiceRows.Select(x => new CustomerStatementMovement(x.Id, x.CreatedAtUtc, x.Number,
+            CustomerStatementEntryType.Sale, x.PaymentMethod == PaymentMethod.Credit ? "Venta a crédito" : "Venta", x.DueDate, x.Total, 0m)));
+        movements.AddRange(salePaymentRows.Select(x => new CustomerStatementMovement(x.SaleId, x.CreatedAtUtc, x.Number,
+            CustomerStatementEntryType.Payment, $"Cobro · {x.MethodName}", null, 0m, x.Amount)));
+        movements.AddRange(receiptRows.Select(x => new CustomerStatementMovement(x.SaleId, x.CreatedAtUtc, x.Number,
+            CustomerStatementEntryType.Payment, $"Abono · {x.MethodName}{(string.IsNullOrWhiteSpace(x.Reference) ? "" : $" · {x.Reference}")}", null, 0m, x.Amount)));
+        return new CustomerStatementData(opening, movements);
+    }
+
     public async Task<IReadOnlyList<Sale>> GetRecentSalesAsync(int count, CancellationToken cancellationToken = default)
     {
         await using var db = await CreateDbContextAsync(cancellationToken);

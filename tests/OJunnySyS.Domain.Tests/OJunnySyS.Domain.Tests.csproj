@@ -10,6 +10,7 @@
   <ItemGroup>
     <PackageReference Include="MSTest" />
     <ProjectReference Include="..\..\src\OJunnySyS.Domain\OJunnySyS.Domain.csproj" />
+    <ProjectReference Include="..\..\src\OJunnySyS.Application\OJunnySyS.Application.csproj" />
   </ItemGroup>
 
   <ItemGroup>
