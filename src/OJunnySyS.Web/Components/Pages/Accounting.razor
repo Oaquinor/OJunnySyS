@@ -1,0 +1,156 @@
+@page "/app/accounting"
+@attribute [Authorize(Roles = "Administrator,Manager")]
+@inject AccountingService AccountingApp
+@inject OJunnySyS.Application.Abstractions.IBusinessClock Clock
+@inject AuthenticationStateProvider AuthenticationStateProvider
+@inject TenantSettingsService TenantSettings
+
+<PageTitle>Contabilidad · OjunnySyS</PageTitle>
+<PageHeader Eyebrow="FINANZAS / CONTABILIDAD" Title="Contabilidad" Description="Organiza las cuentas y registra asientos de partida doble con un balance verificable." />
+
+@if (!string.IsNullOrWhiteSpace(_error)) { <div class="inline-error" role="alert">@_error</div> }
+@if (!string.IsNullOrWhiteSpace(_notice)) { <div class="success-banner" role="status">@_notice</div> }
+
+<div class="accounting-shortcuts" aria-label="Secciones de contabilidad">
+    <a class="button button-secondary" href="#catalogo">Catálogo de cuentas</a>
+    <a class="button button-secondary" href="#asiento">Nuevo asiento</a>
+    <a class="button button-secondary" href="#diario">Libro diario</a>
+    <a class="button button-secondary" href="#balance">Balance de comprobación</a>
+</div>
+
+<section class="panel accounting-section" id="catalogo">
+    <div class="panel-heading"><div><span class="eyebrow">PLAN CONTABLE</span><h2>Catálogo de cuentas</h2><p>Cuentas base de la empresa y cuentas creadas por el equipo.</p></div><span class="result-count">@_accounts.Count cuentas</span></div>
+    <EditForm Model="_newAccount" OnValidSubmit="CreateAccountAsync" class="account-form">
+        <DataAnnotationsValidator />
+        <label>Código<InputText @bind-Value="_newAccount.Code" maxlength="20" placeholder="Ej. 4100" /></label>
+        <label>Nombre<InputText @bind-Value="_newAccount.Name" maxlength="120" placeholder="Ej. Ingresos por servicios" /></label>
+        <label>Tipo<InputSelect @bind-Value="_newAccount.Type"><option value="Asset">Activo</option><option value="Liability">Pasivo</option><option value="Equity">Patrimonio</option><option value="Revenue">Ingreso</option><option value="Expense">Gasto</option></InputSelect></label>
+        <button class="button button-primary" type="submit" disabled="@_saving">Agregar cuenta</button>
+    </EditForm>
+    <div class="table-wrap"><table><thead><tr><th>CÓDIGO</th><th>CUENTA</th><th>TIPO</th><th>ESTADO</th><th class="align-right">DÉBITOS</th><th class="align-right">CRÉDITOS</th></tr></thead><tbody>
+        @foreach (var account in _accounts)
+        {
+            <tr><td class="mono">@account.Code</td><td><strong>@account.Name</strong>@if (account.IsSystem) { <small class="system-account">Base del sistema</small> }</td><td>@AccountTypeLabel(account.Type)</td><td><span class="status-pill @(account.IsActive ? "" : "status-inactive")"><i></i>@(account.IsActive ? "Activa" : "Inactiva")</span></td><td class="align-right">@Money(account.DebitBalance)</td><td class="align-right">@Money(account.CreditBalance)</td></tr>
+        }
+    </tbody></table></div>
+</section>
+
+<section class="panel accounting-section" id="asiento">
+    <div class="panel-heading"><div><span class="eyebrow">PARTIDA DOBLE</span><h2>Registrar asiento</h2><p>El asiento se publica solo cuando los débitos y créditos cuadran.</p></div></div>
+    <EditForm Model="_entry" OnValidSubmit="CreateEntryAsync">
+        <div class="account-entry-head">
+            <label>Fecha<InputDate @bind-Value="_entry.EntryDate" /></label>
+            <label class="description-field">Descripción<InputText @bind-Value="_entry.Description" maxlength="240" placeholder="Describe el motivo del asiento" /></label>
+        </div>
+        <div class="table-wrap"><table><thead><tr><th>CUENTA</th><th>DETALLE</th><th class="align-right">DÉBITO</th><th class="align-right">CRÉDITO</th><th></th></tr></thead><tbody>
+            @foreach (var line in _entry.Lines)
+            {
+                <tr><td><InputSelect @bind-Value="line.AccountId"><option value="@Guid.Empty">Seleccionar cuenta</option>@foreach (var account in _activeAccounts) { <option value="@account.Id">@account.Code · @account.Name</option> }</InputSelect></td><td><InputText @bind-Value="line.Memo" maxlength="160" placeholder="Opcional" /></td><td><InputNumber @bind-Value="line.Debit" min="0" step="0.01" /></td><td><InputNumber @bind-Value="line.Credit" min="0" step="0.01" /></td><td><button class="icon-button" type="button" aria-label="Eliminar línea" @onclick="() => RemoveLine(line)" disabled="@(_entry.Lines.Count <= 2)">×</button></td></tr>
+            }
+        </tbody></table></div>
+        <div class="account-entry-actions"><button class="button button-secondary" type="button" @onclick="AddLine" disabled="@(_entry.Lines.Count >= 200)">＋ Agregar línea</button><div class="entry-totals"><span>Débitos <strong>@Money(_entry.Lines.Sum(x => x.Debit))</strong></span><span>Créditos <strong>@Money(_entry.Lines.Sum(x => x.Credit))</strong></span><span class="@(EntryBalanced ? "balanced" : "unbalanced")">@(EntryBalanced ? "Cuadrado" : "Diferencia: " + Money(Math.Abs(_entry.Lines.Sum(x => x.Debit) - _entry.Lines.Sum(x => x.Credit))))</span></div><button class="button button-primary" type="submit" disabled="@(_saving || !_accounts.Any(x => x.IsActive))">Publicar asiento</button></div>
+    </EditForm>
+</section>
+
+<section class="panel accounting-section" id="diario">
+    <div class="panel-heading"><div><span class="eyebrow">TRAZABILIDAD</span><h2>Libro diario</h2><p>Asientos publicados, ordenados por fecha y con líneas consultables.</p></div><span class="result-count">@_entries.Count registros</span></div>
+    @if (_entries.Count == 0) { <EmptyState Icon="▤" Title="Aún no hay asientos" Description="El catálogo ya está listo. Publica el primer asiento cuando registres una operación contable." /> }
+    else
+    {
+        @foreach (var entry in _entries)
+        {
+            <details class="journal-entry"><summary><span class="mono">@entry.Number</span><span>@entry.EntryDate.ToString("dd/MM/yyyy") · @entry.Description</span><strong>@Money(entry.TotalDebit)</strong></summary><div class="table-wrap"><table><thead><tr><th>CUENTA</th><th>DETALLE</th><th class="align-right">DÉBITO</th><th class="align-right">CRÉDITO</th></tr></thead><tbody>@foreach (var line in entry.Lines) { <tr><td>@line.AccountCode · @line.AccountName</td><td>@(line.Memo ?? "—")</td><td class="align-right">@Money(line.Debit)</td><td class="align-right">@Money(line.Credit)</td></tr> }</tbody></table></div></details>
+        }
+    }
+</section>
+
+<section class="panel accounting-section" id="balance">
+    <div class="panel-heading"><div><span class="eyebrow">CONTROL CONTABLE</span><h2>Balance de comprobación</h2><p>Saldo de cada cuenta al día indicado.</p></div><label>Al corte<InputDate @bind-Value="_balanceDate" /></label></div>
+    <div class="table-wrap"><table><thead><tr><th>CÓDIGO</th><th>CUENTA</th><th>TIPO</th><th class="align-right">DÉBITO</th><th class="align-right">CRÉDITO</th></tr></thead><tbody>@foreach (var line in _trialBalance?.Lines ?? []) { <tr><td class="mono">@line.Code</td><td>@line.Name</td><td>@AccountTypeLabel(line.Type)</td><td class="align-right">@Money(line.Debit)</td><td class="align-right">@Money(line.Credit)</td></tr> }</tbody><tfoot><tr><th colspan="3">TOTALES</th><th class="align-right">@Money(_trialBalance?.TotalDebit ?? 0)</th><th class="align-right">@Money(_trialBalance?.TotalCredit ?? 0)</th></tr></tfoot></table></div>
+    <div class="account-entry-actions"><span class="@(TrialBalanceBalanced ? "balanced" : "unbalanced")">@(TrialBalanceBalanced ? "Balance cuadrado" : "Hay una diferencia entre débitos y créditos")</span><button class="button button-secondary" type="button" @onclick="LoadBalanceAsync" disabled="@_loading">Actualizar balance</button></div>
+</section>
+
+@code {
+    private readonly NewAccountForm _newAccount = new();
+    private readonly NewEntryForm _entry = new();
+    private List<ChartAccountDto> _accounts = [];
+    private IReadOnlyList<ChartAccountDto> _activeAccounts => _accounts.Where(x => x.IsActive).ToArray();
+    private IReadOnlyList<JournalEntryDto> _entries = [];
+    private TrialBalanceDto? _trialBalance;
+    private DateOnly _balanceDate;
+    private string _currencyCode = "DOP";
+    private string? _error, _notice;
+    private bool _saving, _loading;
+    private bool EntryBalanced => _entry.Lines.Count >= 2 && _entry.Lines.Sum(x => x.Debit) > 0 && _entry.Lines.Sum(x => x.Debit) == _entry.Lines.Sum(x => x.Credit);
+    private bool TrialBalanceBalanced => _trialBalance is null || _trialBalance.TotalDebit == _trialBalance.TotalCredit;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _balanceDate = DateOnly.FromDateTime(Clock.ToBusinessTime(Clock.UtcNow).DateTime);
+        _entry.EntryDate = _balanceDate;
+        _currencyCode = (await TenantSettings.GetAsync()).CurrencyCode;
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        _loading = true;
+        try
+        {
+            _accounts = (await AccountingApp.GetChartOfAccountsAsync(_balanceDate)).ToList();
+            _entries = await AccountingApp.GetJournalEntriesAsync(take: 100);
+            _trialBalance = await AccountingApp.GetTrialBalanceAsync(_balanceDate);
+        }
+        catch (DomainException ex) { _error = ex.Message; }
+        finally { _loading = false; }
+    }
+
+    private async Task CreateAccountAsync()
+    {
+        _saving = true; _error = null; _notice = null;
+        try
+        {
+            var created = await AccountingApp.CreateAccountAsync(new CreateChartAccountRequest(_newAccount.Code, _newAccount.Name, _newAccount.Type));
+            _notice = $"La cuenta {created.Code} · {created.Name} se agregó al catálogo.";
+            _newAccount.Code = ""; _newAccount.Name = "";
+            await LoadAsync();
+        }
+        catch (DomainException ex) { _error = ex.Message; }
+        finally { _saving = false; }
+    }
+
+    private async Task CreateEntryAsync()
+    {
+        _saving = true; _error = null; _notice = null;
+        try
+        {
+            var state = await AuthenticationStateProvider.GetAuthenticationStateAsync();
+            var actor = state.User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+            if (!Guid.TryParse(actor, out var actorId)) throw new DomainException("No se pudo identificar al usuario activo.");
+            var request = new CreateJournalEntryRequest(_entry.EntryDate, _entry.Description, _entry.Lines.Select(line => new JournalEntryLineRequest(line.AccountId, line.Debit, line.Credit, line.Memo)).ToArray());
+            var posted = await AccountingApp.CreateJournalEntryAsync(request, actorId);
+            _notice = $"El asiento {posted.Number} quedó publicado y balanceado.";
+            _entry.Description = ""; _entry.Lines = [NewLine(), NewLine()]; _entry.EntryDate = _balanceDate;
+            await LoadAsync();
+        }
+        catch (DomainException ex) { _error = ex.Message; }
+        finally { _saving = false; }
+    }
+
+    private async Task LoadBalanceAsync()
+    {
+        _error = null;
+        try { _trialBalance = await AccountingApp.GetTrialBalanceAsync(_balanceDate); _accounts = (await AccountingApp.GetChartOfAccountsAsync(_balanceDate)).ToList(); }
+        catch (DomainException ex) { _error = ex.Message; }
+    }
+
+    private void AddLine() { if (_entry.Lines.Count < 200) _entry.Lines.Add(NewLine()); }
+    private void RemoveLine(JournalLineForm line) { if (_entry.Lines.Count > 2) _entry.Lines.Remove(line); }
+    private static JournalLineForm NewLine() => new();
+    private string Money(decimal value) => DisplayFormat.Money(value, _currencyCode);
+    private static string AccountTypeLabel(AccountType type) => type switch { AccountType.Asset => "Activo", AccountType.Liability => "Pasivo", AccountType.Equity => "Patrimonio", AccountType.Revenue => "Ingreso", AccountType.Expense => "Gasto", _ => "—" };
+
+    private sealed class NewAccountForm { public string Code { get; set; } = ""; public string Name { get; set; } = ""; public AccountType Type { get; set; } = AccountType.Expense; }
+    private sealed class NewEntryForm { public DateOnly EntryDate { get; set; } = DateOnly.FromDateTime(DateTime.Today); public string Description { get; set; } = ""; public List<JournalLineForm> Lines { get; set; } = [NewLine(), NewLine()]; }
+    private sealed class JournalLineForm { public Guid AccountId { get; set; } public decimal Debit { get; set; } public decimal Credit { get; set; } public string? Memo { get; set; } }
+}

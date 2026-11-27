@@ -145,6 +145,174 @@ namespace OJunnySyS.Infrastructure.Persistence.Migrations
                     b.ToTable("AspNetUserTokens", (string)null);
                 });
 
+            modelBuilder.Entity("OJunnySyS.Domain.Accounting.ChartAccount", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("char(36)");
+
+                    b.Property<string>("Code")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("varchar(20)");
+
+                    b.Property<DateTimeOffset>("CreatedAtUtc")
+                        .HasColumnType("datetime");
+
+                    b.Property<string>("Description")
+                        .HasMaxLength(240)
+                        .HasColumnType("varchar(240)");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("tinyint(1)");
+
+                    b.Property<bool>("IsSystem")
+                        .HasColumnType("tinyint(1)");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(120)
+                        .HasColumnType("varchar(120)");
+
+                    b.Property<long>("Revision")
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint")
+                        .HasDefaultValue(0L);
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("char(36)");
+
+                    b.Property<int>("Type")
+                        .HasColumnType("int");
+
+                    b.Property<DateTimeOffset?>("UpdatedAtUtc")
+                        .HasColumnType("datetime");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TenantId", "Code")
+                        .IsUnique();
+
+                    b.ToTable("ChartAccounts");
+                });
+
+            modelBuilder.Entity("OJunnySyS.Domain.Accounting.JournalEntry", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("char(36)");
+
+                    b.Property<DateTimeOffset>("CreatedAtUtc")
+                        .HasColumnType("datetime");
+
+                    b.Property<string>("Description")
+                        .IsRequired()
+                        .HasMaxLength(240)
+                        .HasColumnType("varchar(240)");
+
+                    b.Property<DateOnly>("EntryDate")
+                        .HasColumnType("date");
+
+                    b.Property<string>("Number")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("varchar(40)");
+
+                    b.Property<Guid>("PostedByUserId")
+                        .HasColumnType("char(36)");
+
+                    b.Property<Guid?>("SourceId")
+                        .HasColumnType("char(36)");
+
+                    b.Property<string>("SourceType")
+                        .HasMaxLength(40)
+                        .HasColumnType("varchar(40)");
+
+                    b.Property<int>("Status")
+                        .HasColumnType("int");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("char(36)");
+
+                    b.Property<decimal>("TotalCredit")
+                        .HasPrecision(14, 2)
+                        .HasColumnType("decimal(14,2)");
+
+                    b.Property<decimal>("TotalDebit")
+                        .HasPrecision(14, 2)
+                        .HasColumnType("decimal(14,2)");
+
+                    b.Property<DateTimeOffset?>("UpdatedAtUtc")
+                        .HasColumnType("datetime");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("PostedByUserId");
+
+                    b.HasIndex("TenantId", "Number")
+                        .IsUnique();
+
+                    b.HasIndex("TenantId", "EntryDate", "CreatedAtUtc");
+
+                    b.HasIndex("TenantId", "SourceType", "SourceId")
+                        .IsUnique();
+
+                    b.ToTable("JournalEntries");
+                });
+
+            modelBuilder.Entity("OJunnySyS.Domain.Accounting.JournalEntryLine", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("char(36)");
+
+                    b.Property<string>("AccountCode")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("varchar(20)");
+
+                    b.Property<Guid>("AccountId")
+                        .HasColumnType("char(36)");
+
+                    b.Property<string>("AccountName")
+                        .IsRequired()
+                        .HasMaxLength(120)
+                        .HasColumnType("varchar(120)");
+
+                    b.Property<DateTimeOffset>("CreatedAtUtc")
+                        .HasColumnType("datetime");
+
+                    b.Property<decimal>("Credit")
+                        .HasPrecision(14, 2)
+                        .HasColumnType("decimal(14,2)");
+
+                    b.Property<decimal>("Debit")
+                        .HasPrecision(14, 2)
+                        .HasColumnType("decimal(14,2)");
+
+                    b.Property<Guid>("JournalEntryId")
+                        .HasColumnType("char(36)");
+
+                    b.Property<string>("Memo")
+                        .HasMaxLength(160)
+                        .HasColumnType("varchar(160)");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("char(36)");
+
+                    b.Property<DateTimeOffset?>("UpdatedAtUtc")
+                        .HasColumnType("datetime");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TenantId", "AccountId");
+
+                    b.HasIndex("TenantId", "JournalEntryId");
+
+                    b.ToTable("JournalEntryLines");
+                });
+
             modelBuilder.Entity("OJunnySyS.Domain.Cash.CashMovement", b =>
                 {
                     b.Property<Guid>("Id")
@@ -1575,6 +1743,53 @@ namespace OJunnySyS.Infrastructure.Persistence.Migrations
                         .IsRequired();
                 });
 
+            modelBuilder.Entity("OJunnySyS.Domain.Accounting.ChartAccount", b =>
+                {
+                    b.HasOne("OJunnySyS.Domain.Tenancy.Tenant", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("OJunnySyS.Domain.Accounting.JournalEntry", b =>
+                {
+                    b.HasOne("OJunnySyS.Infrastructure.Identity.ApplicationUser", null)
+                        .WithMany()
+                        .HasForeignKey("PostedByUserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("OJunnySyS.Domain.Tenancy.Tenant", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("OJunnySyS.Domain.Accounting.JournalEntryLine", b =>
+                {
+                    b.HasOne("OJunnySyS.Domain.Tenancy.Tenant", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("OJunnySyS.Domain.Accounting.ChartAccount", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "AccountId")
+                        .HasPrincipalKey("TenantId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("OJunnySyS.Domain.Accounting.JournalEntry", null)
+                        .WithMany("Lines")
+                        .HasForeignKey("TenantId", "JournalEntryId")
+                        .HasPrincipalKey("TenantId", "Id")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("OJunnySyS.Domain.Cash.CashMovement", b =>
                 {
                     b.HasOne("OJunnySyS.Domain.Cash.CashSession", null)
@@ -1928,6 +2143,11 @@ namespace OJunnySyS.Infrastructure.Persistence.Migrations
                         .WithMany()
                         .HasForeignKey("TenantId")
                         .OnDelete(DeleteBehavior.SetNull);
+                });
+
+            modelBuilder.Entity("OJunnySyS.Domain.Accounting.JournalEntry", b =>
+                {
+                    b.Navigation("Lines");
                 });
 
             modelBuilder.Entity("OJunnySyS.Domain.Purchasing.PurchaseOrder", b =>

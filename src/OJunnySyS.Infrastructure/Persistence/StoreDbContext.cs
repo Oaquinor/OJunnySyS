@@ -11,6 +11,7 @@ using OJunnySyS.Domain.Cash;
 using OJunnySyS.Domain.Crm;
 using OJunnySyS.Domain.Pos;
 using OJunnySyS.Domain.Inventory;
+using OJunnySyS.Domain.Accounting;
 using OJunnySyS.Infrastructure.Identity;
 
 namespace OJunnySyS.Infrastructure.Persistence;
@@ -39,6 +40,9 @@ public sealed class StoreDbContext(DbContextOptions<StoreDbContext> options)
     public DbSet<PosRegister> PosRegisters => Set<PosRegister>();
     public DbSet<Warehouse> Warehouses => Set<Warehouse>();
     public DbSet<WarehouseStock> WarehouseStocks => Set<WarehouseStock>();
+    public DbSet<ChartAccount> ChartAccounts => Set<ChartAccount>();
+    public DbSet<JournalEntry> JournalEntries => Set<JournalEntry>();
+    public DbSet<JournalEntryLine> JournalEntryLines => Set<JournalEntryLine>();
     public Guid? CurrentTenantId { get; set; }
 
     public override int SaveChanges()
@@ -348,6 +352,53 @@ public sealed class StoreDbContext(DbContextOptions<StoreDbContext> options)
             entity.HasOne<Product>().WithMany().HasForeignKey(x => new { x.TenantId, x.ProductId }).HasPrincipalKey(x => new { x.TenantId, x.Id }).OnDelete(DeleteBehavior.Restrict);
             entity.HasQueryFilter(x => CurrentTenantId != null && x.TenantId == CurrentTenantId);
             entity.Property(x => x.Revision).IsConcurrencyToken().HasDefaultValue(0L);
+        });
+
+        modelBuilder.Entity<ChartAccount>(entity =>
+        {
+            entity.HasKey(x => x.Id);
+            entity.HasAlternateKey(x => new { x.TenantId, x.Id });
+            entity.HasIndex(x => new { x.TenantId, x.Code }).IsUnique();
+            entity.HasOne<Tenant>().WithMany().HasForeignKey(x => x.TenantId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasQueryFilter(x => CurrentTenantId != null && x.TenantId == CurrentTenantId);
+            entity.Property(x => x.Code).HasMaxLength(20).IsRequired();
+            entity.Property(x => x.Name).HasMaxLength(120).IsRequired();
+            entity.Property(x => x.Description).HasMaxLength(240);
+            entity.Property(x => x.Type).HasConversion<int>();
+            entity.Property(x => x.Revision).IsConcurrencyToken().HasDefaultValue(0L);
+        });
+
+        modelBuilder.Entity<JournalEntry>(entity =>
+        {
+            entity.HasKey(x => x.Id);
+            entity.HasAlternateKey(x => new { x.TenantId, x.Id });
+            entity.HasIndex(x => new { x.TenantId, x.Number }).IsUnique();
+            entity.HasIndex(x => new { x.TenantId, x.EntryDate, x.CreatedAtUtc });
+            entity.HasIndex(x => new { x.TenantId, x.SourceType, x.SourceId }).IsUnique();
+            entity.HasOne<Tenant>().WithMany().HasForeignKey(x => x.TenantId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne<ApplicationUser>().WithMany().HasForeignKey(x => x.PostedByUserId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasQueryFilter(x => CurrentTenantId != null && x.TenantId == CurrentTenantId);
+            entity.Property(x => x.Number).HasMaxLength(40).IsRequired();
+            entity.Property(x => x.Description).HasMaxLength(240).IsRequired();
+            entity.Property(x => x.SourceType).HasMaxLength(40);
+            entity.Property(x => x.Status).HasConversion<int>();
+            entity.Property(x => x.TotalDebit).HasPrecision(14, 2);
+            entity.Property(x => x.TotalCredit).HasPrecision(14, 2);
+            entity.HasMany<JournalEntryLine>(nameof(JournalEntry.Lines)).WithOne().HasForeignKey(x => new { x.TenantId, x.JournalEntryId }).HasPrincipalKey(x => new { x.TenantId, x.Id }).OnDelete(DeleteBehavior.Cascade);
+            entity.Navigation(nameof(JournalEntry.Lines)).UsePropertyAccessMode(PropertyAccessMode.Field);
+        });
+
+        modelBuilder.Entity<JournalEntryLine>(entity =>
+        {
+            entity.HasKey(x => x.Id);
+            entity.HasOne<ChartAccount>().WithMany().HasForeignKey(x => new { x.TenantId, x.AccountId }).HasPrincipalKey(x => new { x.TenantId, x.Id }).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne<Tenant>().WithMany().HasForeignKey(x => x.TenantId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasQueryFilter(x => CurrentTenantId != null && x.TenantId == CurrentTenantId);
+            entity.Property(x => x.AccountCode).HasMaxLength(20).IsRequired();
+            entity.Property(x => x.AccountName).HasMaxLength(120).IsRequired();
+            entity.Property(x => x.Debit).HasPrecision(14, 2);
+            entity.Property(x => x.Credit).HasPrecision(14, 2);
+            entity.Property(x => x.Memo).HasMaxLength(160);
         });
 
         modelBuilder.Entity<CashMovement>(entity =>

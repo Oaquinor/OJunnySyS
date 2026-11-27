@@ -15,6 +15,12 @@ public static class DatabaseInitializer
         var factory = services.GetRequiredService<IDbContextFactory<StoreDbContext>>();
         await using var db = await factory.CreateDbContextAsync(cancellationToken);
         await db.Database.MigrateAsync(cancellationToken);
+        var tenantIds = await db.Tenants.AsNoTracking().Select(x => x.Id).ToListAsync(cancellationToken);
+        foreach (var tenantId in tenantIds)
+        {
+            db.CurrentTenantId = tenantId;
+            await ChartAccountDefaults.EnsureAsync(db, tenantId, cancellationToken);
+        }
         db.CurrentTenantId = TenantDefaults.LocalDemoTenantId;
         var warehouse = await db.Warehouses.SingleAsync(x => x.Code == "MAIN", cancellationToken);
         if (await db.Products.AnyAsync(cancellationToken)) return;
