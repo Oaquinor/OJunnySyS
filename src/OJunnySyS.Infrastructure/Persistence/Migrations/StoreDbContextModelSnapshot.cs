@@ -619,6 +619,48 @@ namespace OJunnySyS.Infrastructure.Persistence.Migrations
                     b.ToTable("CustomerTagAssignments");
                 });
 
+            modelBuilder.Entity("OJunnySyS.Domain.Pos.PosRegister", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("char(36)");
+
+                    b.Property<string>("Code")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("varchar(40)");
+
+                    b.Property<DateTimeOffset>("CreatedAtUtc")
+                        .HasColumnType("datetime");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("tinyint(1)");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(120)
+                        .HasColumnType("varchar(120)");
+
+                    b.Property<long>("Revision")
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint")
+                        .HasDefaultValue(0L);
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("char(36)");
+
+                    b.Property<DateTimeOffset?>("UpdatedAtUtc")
+                        .HasColumnType("datetime");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TenantId", "Name")
+                        .IsUnique();
+
+                    b.ToTable("PosRegisters");
+                });
+
             modelBuilder.Entity("OJunnySyS.Domain.Purchasing.InventoryMovement", b =>
                 {
                     b.Property<Guid>("Id")
@@ -843,6 +885,11 @@ namespace OJunnySyS.Infrastructure.Persistence.Migrations
                         .HasMaxLength(100)
                         .HasColumnType("varchar(100)");
 
+                    b.Property<string>("RegisterCode")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("varchar(40)");
+
                     b.Property<Guid>("TenantId")
                         .HasColumnType("char(36)");
 
@@ -898,6 +945,11 @@ namespace OJunnySyS.Infrastructure.Persistence.Migrations
 
                     b.Property<int>("PaymentMethod")
                         .HasColumnType("int");
+
+                    b.Property<string>("RegisterCode")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("varchar(40)");
 
                     b.Property<int>("Status")
                         .HasColumnType("int");
@@ -1039,19 +1091,10 @@ namespace OJunnySyS.Infrastructure.Persistence.Migrations
                         .HasMaxLength(40)
                         .HasColumnType("varchar(40)");
 
-                    b.Property<string>("ReceiptFooter")
-                        .IsRequired()
+                    b.Property<bool>("ReceiptCompactLineSpacing")
                         .ValueGeneratedOnAdd()
-                        .HasMaxLength(240)
-                        .HasColumnType("varchar(240)")
-                        .HasDefaultValue("Gracias por su compra.");
-
-                    b.Property<string>("ReceiptHeader")
-                        .IsRequired()
-                        .ValueGeneratedOnAdd()
-                        .HasMaxLength(240)
-                        .HasColumnType("varchar(240)")
-                        .HasDefaultValue("");
+                        .HasColumnType("tinyint(1)")
+                        .HasDefaultValue(false);
 
                     b.Property<string>("ReceiptDesign")
                         .IsRequired()
@@ -1072,6 +1115,20 @@ namespace OJunnySyS.Infrastructure.Persistence.Migrations
                         .HasColumnType("int")
                         .HasDefaultValue(12);
 
+                    b.Property<string>("ReceiptFooter")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(240)
+                        .HasColumnType("varchar(240)")
+                        .HasDefaultValue("Gracias por su compra.");
+
+                    b.Property<string>("ReceiptHeader")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(240)
+                        .HasColumnType("varchar(240)")
+                        .HasDefaultValue("");
+
                     b.Property<int>("ReceiptMarginLeftMm")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("int")
@@ -1082,17 +1139,17 @@ namespace OJunnySyS.Infrastructure.Persistence.Migrations
                         .HasColumnType("int")
                         .HasDefaultValue(0);
 
-                    b.Property<bool>("ReceiptCompactLineSpacing")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("tinyint(1)")
-                        .HasDefaultValue(false);
-
                     b.Property<int>("ReceiptPaperWidthMm")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("int")
                         .HasDefaultValue(80);
 
                     b.Property<bool>("ReceiptShowCustomer")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("tinyint(1)")
+                        .HasDefaultValue(true);
+
+                    b.Property<bool>("ReceiptShowLineTotals")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("tinyint(1)")
                         .HasDefaultValue(true);
@@ -1108,11 +1165,6 @@ namespace OJunnySyS.Infrastructure.Persistence.Migrations
                         .HasDefaultValue(true);
 
                     b.Property<bool>("ReceiptShowUnitPrice")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("tinyint(1)")
-                        .HasDefaultValue(true);
-
-                    b.Property<bool>("ReceiptShowLineTotals")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("tinyint(1)")
                         .HasDefaultValue(true);
@@ -1304,6 +1356,13 @@ namespace OJunnySyS.Infrastructure.Persistence.Migrations
                         .HasForeignKey("TenantId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
+
+                    b.HasOne("OJunnySyS.Domain.Pos.PosRegister", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "RegisterCode")
+                        .HasPrincipalKey("TenantId", "Code")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
                 });
 
             modelBuilder.Entity("OJunnySyS.Domain.Catalog.Product", b =>
@@ -1412,6 +1471,15 @@ namespace OJunnySyS.Infrastructure.Persistence.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
+                    b.HasOne("OJunnySyS.Domain.Tenancy.Tenant", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("OJunnySyS.Domain.Pos.PosRegister", b =>
+                {
                     b.HasOne("OJunnySyS.Domain.Tenancy.Tenant", null)
                         .WithMany()
                         .HasForeignKey("TenantId")

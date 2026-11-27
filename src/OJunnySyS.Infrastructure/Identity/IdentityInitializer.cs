@@ -5,6 +5,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.EntityFrameworkCore;
 using OJunnySyS.Infrastructure.Persistence;
 using OJunnySyS.Domain.Tenancy;
+using OJunnySyS.Domain.Pos;
 
 namespace OJunnySyS.Infrastructure.Identity;
 
@@ -24,6 +25,12 @@ public static class IdentityInitializer
             tenant = new Tenant("Ojunny Demo", TenantDefaults.LocalDemoTenantSlug,
                 configuration["BootstrapAdmin:Email"] ?? "admin@ojunny.local", "America/Santo_Domingo");
             db.Tenants.Add(tenant);
+            await db.SaveChangesAsync(ct);
+        }
+        db.CurrentTenantId = tenant.Id;
+        if (!await db.PosRegisters.AnyAsync(x => x.Code == "MAIN", ct))
+        {
+            db.PosRegisters.Add(new PosRegister(tenant.Id, "MAIN", "Caja principal"));
             await db.SaveChangesAsync(ct);
         }
 

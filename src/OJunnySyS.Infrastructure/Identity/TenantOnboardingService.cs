@@ -6,6 +6,7 @@ using OJunnySyS.Application.Abstractions;
 using OJunnySyS.Application.Contracts;
 using OJunnySyS.Domain.Common;
 using OJunnySyS.Domain.Tenancy;
+using OJunnySyS.Domain.Pos;
 using OJunnySyS.Infrastructure.Persistence;
 
 namespace OJunnySyS.Infrastructure.Identity;
@@ -31,6 +32,9 @@ public sealed class TenantOnboardingService(
         var tenant = new Tenant(companyName, slug, email, request.TimeZoneId, request.CurrencyCode);
         await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
         db.Tenants.Add(tenant);
+        await db.SaveChangesAsync(cancellationToken);
+        db.CurrentTenantId = tenant.Id;
+        db.PosRegisters.Add(new PosRegister(tenant.Id, "MAIN", "Caja principal"));
         await db.SaveChangesAsync(cancellationToken);
 
         var user = new ApplicationUser

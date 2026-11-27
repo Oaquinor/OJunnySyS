@@ -18,6 +18,7 @@ public static class DependencyInjection
         services.AddScoped<ITenantUserRepository, EfTenantUserRepository>();
         services.AddScoped<ICustomerTagRepository, EfCustomerTagRepository>();
         services.AddScoped<ICustomerSegmentRepository, EfCustomerSegmentRepository>();
+        services.AddScoped<IPosRegisterRepository, EfPosRegisterRepository>();
         services.AddScoped<ITenantOnboardingService, TenantOnboardingService>();
         services.AddScoped<IRegistrationEmailSender, SmtpRegistrationEmailSender>();
         services.AddScoped<ITenantAccessGuard, TenantAccessGuard>();

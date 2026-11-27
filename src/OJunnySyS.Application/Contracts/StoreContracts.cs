@@ -13,7 +13,7 @@ public sealed record UpdateCustomerRequest(string FirstName, string LastName, st
 public sealed record DeactivateCustomerRequest(long ExpectedRevision);
 public sealed record SaleDto(Guid Id, string Number, string CustomerName, decimal Subtotal, decimal TaxAmount, decimal Total, PaymentMethod PaymentMethod, DateTimeOffset CreatedAtUtc, SaleStatus Status = SaleStatus.Completed);
 public sealed record CheckoutLine(Guid ProductId, int Quantity);
-public sealed record CheckoutRequest(Guid? CustomerId, PaymentMethod PaymentMethod, IReadOnlyCollection<CheckoutLine> Lines, Guid IdempotencyKey = default);
+public sealed record CheckoutRequest(Guid? CustomerId, PaymentMethod PaymentMethod, IReadOnlyCollection<CheckoutLine> Lines, Guid IdempotencyKey = default, string RegisterCode = "MAIN");
 public sealed record DashboardSummary(decimal SalesToday, int OrdersToday, int ActiveCustomers, int LowStockProducts, IReadOnlyList<SaleDto> RecentSales);
 public sealed record PaymentBreakdown(PaymentMethod Method, int Sales, decimal Total);
 public sealed record ProductSalesSummary(string ProductName, int Quantity, decimal Revenue);
@@ -27,7 +27,7 @@ public sealed record CreatePurchaseLineRequest(Guid ProductId, int Quantity, dec
 public sealed record CreatePurchaseOrderRequest(Guid SupplierId, string? Reference, IReadOnlyCollection<CreatePurchaseLineRequest> Lines, DateOnly? DueDate = null);
 public sealed record ReceivePurchaseLineRequest(Guid LineId, int Quantity);
 public sealed record SupplierPaymentDto(Guid Id, Guid IdempotencyKey, decimal Amount, SupplierPaymentMethod Method, string? Reference, Guid PaidByUserId, DateTimeOffset CreatedAtUtc);
-public sealed record CreateSupplierPaymentRequest(Guid IdempotencyKey, decimal Amount, SupplierPaymentMethod Method, string? Reference);
+public sealed record CreateSupplierPaymentRequest(Guid IdempotencyKey, decimal Amount, SupplierPaymentMethod Method, string? Reference, string RegisterCode = "MAIN");
 public sealed record DeactivateSupplierRequest(long ExpectedRevision);
 public enum PayableAgingBucket { NoDueDate, Current, Days1To30, Days31To60, Days61To90, Over90Days }
 public sealed record PayableBalanceDto(Guid PurchaseOrderId, string Number, string SupplierName, string? Reference, DateOnly? DueDate, decimal Total, decimal AmountPaid, decimal BalanceDue);

@@ -33,3 +33,15 @@
   .receipt-paper table { width:100%; font-size:9pt; }
   .receipt-paper th,.receipt-paper td { padding:4px 2px; }
 }
+.pos-terminal-select label,.cash-register-select { display:grid; gap:4px; color:#78857c; font-size:9px; font-weight:700; }
+.pos-terminal-select select,.cash-register-select select { min-width:145px; min-height:36px; padding:0 10px; border:1px solid var(--line); border-radius:8px; background:#fff; color:#435148; font-family:inherit; font-size:10px; font-weight:600; }
+.pos-register-layout { display:grid; grid-template-columns:minmax(0,1.35fr) minmax(300px,.8fr); gap:16px; align-items:start; }
+.pos-register-list,.pos-register-form-panel { min-width:0; }
+.pos-register-actions { display:flex; gap:6px; white-space:nowrap; }
+.pos-register-actions .button { height:31px; padding:0 9px; font-size:9px; }
+.pos-register-form-panel { padding-bottom:18px; }
+.pos-register-form-panel form { padding:0 18px; }
+.pos-register-form-panel .panel-heading { padding-left:18px; padding-right:18px; }
+.pos-register-form-panel hr { border:0; border-top:1px solid var(--line); margin:24px 18px; }
+.pos-register-note { margin-top:16px; }
+@media(max-width:1120px){.pos-register-layout{grid-template-columns:1fr}}

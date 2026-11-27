@@ -73,7 +73,7 @@ public sealed class SupplierPayment : TenantEntity
     private SupplierPayment() { }
 
     public SupplierPayment(Guid tenantId, Guid purchaseOrderId, Guid paidByUserId, Guid idempotencyKey,
-        decimal amount, SupplierPaymentMethod method, string? reference, Guid? cashSessionId) : base(tenantId)
+        decimal amount, SupplierPaymentMethod method, string? reference, Guid? cashSessionId, string registerCode = "MAIN") : base(tenantId)
     {
         if (purchaseOrderId == Guid.Empty || paidByUserId == Guid.Empty || idempotencyKey == Guid.Empty)
             throw new DomainException("La compra, el usuario y la clave del pago son obligatorios.");
@@ -82,6 +82,7 @@ public sealed class SupplierPayment : TenantEntity
         if (method == SupplierPaymentMethod.Cash && cashSessionId is null) throw new DomainException("Un pago en efectivo debe quedar asociado a un turno de caja abierto.");
         if (method != SupplierPaymentMethod.Cash && cashSessionId is not null) throw new DomainException("Solo los pagos en efectivo se asocian a la caja.");
         if (reference?.Trim().Length > 100) throw new DomainException("La referencia no puede exceder 100 caracteres.");
+        RegisterCode = OJunnySyS.Domain.Pos.PosRegister.NormalizeCode(registerCode);
         PurchaseOrderId = purchaseOrderId;
         PaidByUserId = paidByUserId;
         IdempotencyKey = idempotencyKey;
@@ -98,6 +99,7 @@ public sealed class SupplierPayment : TenantEntity
     public SupplierPaymentMethod Method { get; private set; }
     public string? Reference { get; private set; }
     public Guid? CashSessionId { get; private set; }
+    public string RegisterCode { get; private set; } = "MAIN";
 }
 
 public sealed class PurchaseOrderLine

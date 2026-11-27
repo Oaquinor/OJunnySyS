@@ -9,6 +9,7 @@ using OJunnySyS.Domain.Tenancy;
 using OJunnySyS.Domain.Purchasing;
 using OJunnySyS.Domain.Cash;
 using OJunnySyS.Domain.Crm;
+using OJunnySyS.Domain.Pos;
 using OJunnySyS.Infrastructure.Identity;
 
 namespace OJunnySyS.Infrastructure.Persistence;
@@ -32,6 +33,7 @@ public sealed class StoreDbContext(DbContextOptions<StoreDbContext> options)
     public DbSet<Opportunity> Opportunities => Set<Opportunity>();
     public DbSet<CrmActivity> CrmActivities => Set<CrmActivity>();
     public DbSet<SupplierPayment> SupplierPayments => Set<SupplierPayment>();
+    public DbSet<PosRegister> PosRegisters => Set<PosRegister>();
     public Guid? CurrentTenantId { get; set; }
 
     public override int SaveChanges()
@@ -174,6 +176,7 @@ public sealed class StoreDbContext(DbContextOptions<StoreDbContext> options)
             entity.HasOne<Tenant>().WithMany().HasForeignKey(x => x.TenantId).OnDelete(DeleteBehavior.Restrict);
             entity.HasQueryFilter(x => CurrentTenantId != null && x.TenantId == CurrentTenantId);
             entity.Property(x => x.Number).HasMaxLength(64).IsRequired();
+            entity.Property(x => x.RegisterCode).HasMaxLength(40).IsRequired();
             entity.Property(x => x.IdempotencyKey).IsRequired(false);
             entity.Property(x => x.CustomerName).HasMaxLength(220).IsRequired();
             entity.Property(x => x.Subtotal).HasPrecision(14, 2);
@@ -250,11 +253,25 @@ public sealed class StoreDbContext(DbContextOptions<StoreDbContext> options)
             entity.HasKey(x => x.Id);
             entity.HasIndex(x => new { x.TenantId, x.RegisterCode, x.Status });
             entity.HasOne<Tenant>().WithMany().HasForeignKey(x => x.TenantId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne<PosRegister>().WithMany().HasForeignKey(x => new { x.TenantId, x.RegisterCode })
+                .HasPrincipalKey(x => new { x.TenantId, x.Code }).OnDelete(DeleteBehavior.Restrict);
             entity.HasQueryFilter(x => CurrentTenantId != null && x.TenantId == CurrentTenantId);
             entity.Property(x => x.RegisterCode).HasMaxLength(40).IsRequired();
             entity.Property(x => x.OpeningFloat).HasPrecision(14, 2);
             entity.Property(x => x.ExpectedCash).HasPrecision(14, 2);
             entity.Property(x => x.CountedCash).HasPrecision(14, 2);
+        });
+
+        modelBuilder.Entity<PosRegister>(entity =>
+        {
+            entity.HasKey(x => x.Id);
+            entity.HasAlternateKey(x => new { x.TenantId, x.Code });
+            entity.HasIndex(x => new { x.TenantId, x.Name }).IsUnique();
+            entity.HasOne<Tenant>().WithMany().HasForeignKey(x => x.TenantId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasQueryFilter(x => CurrentTenantId != null && x.TenantId == CurrentTenantId);
+            entity.Property(x => x.Code).HasMaxLength(40).IsRequired();
+            entity.Property(x => x.Name).HasMaxLength(120).IsRequired();
+            entity.Property(x => x.Revision).IsConcurrencyToken().HasDefaultValue(0L);
         });
 
         modelBuilder.Entity<CashMovement>(entity =>
@@ -312,6 +329,7 @@ public sealed class StoreDbContext(DbContextOptions<StoreDbContext> options)
             entity.Property(x => x.Amount).HasPrecision(14, 2);
             entity.Property(x => x.Method).HasConversion<int>();
             entity.Property(x => x.Reference).HasMaxLength(100);
+            entity.Property(x => x.RegisterCode).HasMaxLength(40).IsRequired();
         });
     }
 }

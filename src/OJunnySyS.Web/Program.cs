@@ -108,6 +108,7 @@ builder.Services.AddScoped<TenantSettingsService>();
 builder.Services.AddScoped<TenantUserService>();
 builder.Services.AddScoped<CustomerTagService>();
 builder.Services.AddScoped<CustomerSegmentService>();
+builder.Services.AddScoped<PosRegisterService>();
 
 var app = builder.Build();
 
@@ -149,6 +150,26 @@ tenantUsers.MapPost("/{id:guid}/activation", async (Guid id, SetTenantUserActive
     try { return Results.Ok(await service.SetActiveAsync(id, actorId, request.IsActive, ct)); }
     catch (KeyNotFoundException ex) { return Results.NotFound(new { error = ex.Message }); }
     catch (InvalidOperationException ex) { return Results.Conflict(new { error = ex.Message }); }
+});
+var posRegisters = api.MapGroup("/pos/registers").RequireAuthorization("TenantUserManagement");
+posRegisters.MapGet("", async (bool? includeInactive, PosRegisterService service, CancellationToken ct) =>
+    Results.Ok(await service.GetRegistersAsync(includeInactive ?? true, ct)));
+posRegisters.MapPost("", async (CreatePosRegisterRequest request, PosRegisterService service, CancellationToken ct) =>
+{
+    try { var register = await service.CreateAsync(request, ct); return Results.Created($"/api/v1/pos/registers/{register.Id}", register); }
+    catch (DomainException ex) { return Results.ValidationProblem(new Dictionary<string, string[]> { ["register"] = [ex.Message] }); }
+});
+posRegisters.MapPut("/{id:guid}", async (Guid id, UpdatePosRegisterRequest request, PosRegisterService service, CancellationToken ct) =>
+{
+    try { return Results.Ok(await service.UpdateAsync(id, request, ct)); }
+    catch (ConcurrencyConflictException ex) { return Results.Conflict(new { error = ex.Message }); }
+    catch (DomainException ex) { return Results.ValidationProblem(new Dictionary<string, string[]> { ["register"] = [ex.Message] }); }
+});
+posRegisters.MapPatch("/{id:guid}/activation", async (Guid id, SetPosRegisterActiveRequest request, PosRegisterService service, CancellationToken ct) =>
+{
+    try { return Results.Ok(await service.SetActiveAsync(id, request, ct)); }
+    catch (ConcurrencyConflictException ex) { return Results.Conflict(new { error = ex.Message }); }
+    catch (DomainException ex) { return Results.ValidationProblem(new Dictionary<string, string[]> { ["register"] = [ex.Message] }); }
 });
 api.MapGet("/products", async (string? search, bool? includeInactive, ClaimsPrincipal principal, StoreService store, CancellationToken ct) =>
 {
@@ -307,7 +328,7 @@ api.MapPost("/purchases/{id:guid}/cancel", async (Guid id, StoreService store, C
     catch (DomainException ex) { return Results.ValidationProblem(new Dictionary<string, string[]> { ["purchase"] = [ex.Message] }); }
 }).RequireAuthorization("PurchasingWrite");
 
-api.MapGet("/cash/session", async (StoreService store, CancellationToken ct) => Results.Ok(await store.GetCurrentCashSessionAsync()))
+api.MapGet("/cash/session", async (string? registerCode, StoreService store, CancellationToken ct) => Results.Ok(await store.GetCurrentCashSessionAsync(registerCode ?? "MAIN", ct)))
     .RequireAuthorization("CashManagement");
 api.MapGet("/cash/sessions", async (int? limit, StoreService store, CancellationToken ct) => Results.Ok(await store.GetRecentCashSessionsAsync(limit ?? 10, ct)))
     .RequireAuthorization("CashManagement");

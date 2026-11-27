@@ -4,14 +4,19 @@
 @inject OJunnySyS.Application.Abstractions.IBusinessClock Clock
 @inject AuthenticationStateProvider AuthenticationState
 @inject ILogger<Cash> Logger
+@inject PosRegisterService PosRegisters
 
 <PageTitle>Caja · OJunnySyS</PageTitle>
-<PageHeader Eyebrow="VENTAS / CAJA" Title="Caja y arqueo" Description="Abre un turno, registra entradas y retiros, y compara el efectivo esperado con el conteo real." />
+<PageHeader Eyebrow="VENTAS / CAJA" Title="Caja y arqueo" Description="Abre un turno, registra entradas y retiros, y compara el efectivo esperado con el conteo real.">
+    <Actions><label class="cash-register-select">Terminal<select @bind="_registerCode" @bind:after="OnRegisterChangedAsync"><option value="">Selecciona un terminal</option>@foreach (var register in _registers) { <option value="@register.Code">@register.Name</option> }</select></label><AuthorizeView Roles="Administrator"><a class="button button-secondary" href="/app/pos/registers">Administrar terminales</a></AuthorizeView></Actions>
+</PageHeader>
+
+@if (_registers.Count == 0) { <div class="inline-error cash-error">No hay terminales POS activos. Crea un terminal antes de abrir caja.</div> }
 
 @if (_current is null)
 {
-    <div class="cash-open-banner"><div><span class="eyebrow">CAJA PRINCIPAL · MAIN</span><h2>El turno está cerrado</h2><p>Abre la caja con el efectivo inicial antes de cobrar en el POS.</p></div>
-        <EditForm Model="_openForm" OnValidSubmit="OpenAsync"><DataAnnotationsValidator /><div class="cash-open-form"><label>Fondo inicial<InputNumber @bind-Value="_openForm.OpeningFloat" min="0" step="0.01" /></label><button class="button button-primary" type="submit" disabled="@_saving">@(_saving ? "Abriendo…" : "Abrir caja")</button></div></EditForm>
+    <div class="cash-open-banner"><div><span class="eyebrow">@(_registers.FirstOrDefault(x => x.Code == _registerCode)?.Name ?? "TERMINAL POS") · @_registerCode</span><h2>El turno está cerrado</h2><p>Abre el turno de este terminal con el efectivo inicial antes de cobrar.</p></div>
+        <EditForm Model="_openForm" OnValidSubmit="OpenAsync"><DataAnnotationsValidator /><div class="cash-open-form"><label>Fondo inicial<InputNumber @bind-Value="_openForm.OpeningFloat" min="0" step="0.01" /></label><button class="button button-primary" type="submit" disabled="@(_saving || string.IsNullOrEmpty(_registerCode))">@(_saving ? "Abriendo…" : "Abrir caja")</button></div></EditForm>
     </div>
 }
 else
@@ -36,19 +41,21 @@ else
 @if (!string.IsNullOrWhiteSpace(_error)) { <div class="inline-error cash-error">@_error</div> }
 @if (!string.IsNullOrWhiteSpace(_notice)) { <div class="toast">✓ @_notice</div> }
 
-<section class="panel cash-history"><div class="modal-heading"><div><span class="eyebrow">TRAZABILIDAD</span><h2>Turnos recientes</h2><p>El historial conserva los arqueos cerrados y sus movimientos.</p></div></div>
+    <section class="panel cash-history"><div class="modal-heading"><div><span class="eyebrow">TRAZABILIDAD</span><h2>Turnos recientes</h2><p>El historial conserva los arqueos de todos los terminales.</p></div></div>
     @if (_sessions.Count == 0) { <EmptyState Icon="＄" Title="Todavía no hay turnos" Description="Los turnos de caja aparecerán aquí cuando abras la caja principal." /> }
     else { <div class="table-wrap"><table><thead><tr><th>APERTURA</th><th>CIERRE</th><th>FONDO</th><th>ESPERADO</th><th>CONTADO</th><th>DIFERENCIA</th><th>ESTADO</th></tr></thead><tbody>@foreach (var session in _sessions) { <tr><td>@Clock.ToBusinessTime(session.OpenedAtUtc).ToString("dd MMM yyyy, HH:mm")</td><td>@(session.ClosedAtUtc is { } closedAt ? Clock.ToBusinessTime(closedAt).ToString("dd MMM yyyy, HH:mm") : "—")</td><td class="amount">@Money(session.OpeningFloat)</td><td class="amount">@Money(session.ExpectedCash)</td><td class="amount">@(session.CountedCash is { } counted ? Money(counted) : "—")</td><td class="amount">@(session.Difference is { } difference ? Money(difference) : "—")</td><td><span class="status-pill @(session.Status == CashSessionStatus.Open ? "" : "status-warning")"><i></i>@(session.Status == CashSessionStatus.Open ? "Abierta" : "Cerrada")</span></td></tr> }</tbody></table></div> }
 </section>
 
 @if (_current is not null && _current.Movements.Count > 0)
 {
-    <section class="panel cash-history"><div class="modal-heading"><div><span class="eyebrow">CAJA PRINCIPAL</span><h2>Movimientos recientes</h2></div></div><div class="table-wrap"><table><thead><tr><th>FECHA</th><th>TIPO</th><th>DESCRIPCIÓN</th><th class="align-right">IMPORTE</th></tr></thead><tbody>@foreach (var movement in _current.Movements) { <tr><td>@Clock.ToBusinessTime(movement.CreatedAtUtc).ToString("dd MMM, HH:mm")</td><td>@(movement.Kind == CashMovementKind.CashIn ? "Entrada" : "Retiro")</td><td>@movement.Description</td><td class="align-right amount">@(movement.Kind == CashMovementKind.CashIn ? "+" : "−")@Money(movement.Amount)</td></tr> }</tbody></table></div></section>
+    <section class="panel cash-history"><div class="modal-heading"><div><span class="eyebrow">@_current.RegisterCode</span><h2>Movimientos recientes</h2></div></div><div class="table-wrap"><table><thead><tr><th>FECHA</th><th>TIPO</th><th>DESCRIPCIÓN</th><th class="align-right">IMPORTE</th></tr></thead><tbody>@foreach (var movement in _current.Movements) { <tr><td>@Clock.ToBusinessTime(movement.CreatedAtUtc).ToString("dd MMM, HH:mm")</td><td>@(movement.Kind == CashMovementKind.CashIn ? "Entrada" : "Retiro")</td><td>@movement.Description</td><td class="align-right amount">@(movement.Kind == CashMovementKind.CashIn ? "+" : "−")@Money(movement.Amount)</td></tr> }</tbody></table></div></section>
 }
 
 @code {
     private Guid _userId;
     private CashSessionDto? _current;
+    private List<PosRegisterDto> _registers = [];
+    private string _registerCode = "MAIN";
     private List<CashSessionDto> _sessions = [];
     private OpenForm _openForm = new();
     private MovementForm _movementForm = new();
@@ -60,20 +67,30 @@ else
     {
         var principal = (await AuthenticationState.GetAuthenticationStateAsync()).User;
         if (!Guid.TryParse(principal.FindFirstValue(System.Security.Claims.ClaimTypes.NameIdentifier), out _userId)) throw new InvalidOperationException("La sesión autenticada no tiene un identificador válido.");
+        _registers = (await PosRegisters.GetRegistersAsync(includeInactive: false)).ToList();
+        if (_registers.All(x => x.Code != _registerCode)) _registerCode = _registers.FirstOrDefault()?.Code ?? "";
         await LoadAsync();
     }
 
     private async Task LoadAsync()
     {
-        _current = await Store.GetCurrentCashSessionAsync();
+        _current = string.IsNullOrEmpty(_registerCode) ? null : await Store.GetCurrentCashSessionAsync(_registerCode);
         _sessions = (await Store.GetRecentCashSessionsAsync(10)).ToList();
         if (_current is not null) _closeForm.CountedCash = _current.ExpectedCash;
+    }
+
+    private async Task OnRegisterChangedAsync()
+    {
+        _error = null;
+        _notice = null;
+        _closeForm = new();
+        await LoadAsync();
     }
 
     private async Task OpenAsync()
     {
         _saving = true; _error = null;
-        try { await Store.OpenCashSessionAsync(_userId, new OpenCashSessionRequest("MAIN", _openForm.OpeningFloat)); _openForm = new(); _notice = "Caja abierta. Ya puedes registrar ventas en el POS."; await LoadAsync(); }
+        try { await Store.OpenCashSessionAsync(_userId, new OpenCashSessionRequest(_registerCode, _openForm.OpeningFloat)); _openForm = new(); _notice = "Turno abierto. Ya puedes registrar ventas en este terminal."; await LoadAsync(); }
         catch (DomainException ex) { _error = ex.Message; }
         catch (Exception ex) { Logger.LogError(ex, "No se pudo abrir la caja."); _error = "No se pudo abrir la caja."; }
         finally { _saving = false; }

@@ -36,6 +36,10 @@ Base path: `/api/v1`. Todas las rutas requieren sesión autenticada. Las respues
 | GET | `/reports/sales?from=AAAA-MM-DD&to=AAAA-MM-DD` | Administrador, Gerente | Ventas, pagos, días y productos destacados |
 | GET | `/reports/payables-aging?asOf=AAAA-MM-DD` | Administrador, Gerente | Saldos abiertos agrupados por vencimiento según la fecha y zona horaria comercial |
 | POST | `/pos/checkout` | Administrador, Gerente, Cajero | Registrar cobro y salida de inventario; requiere `idempotencyKey` UUID estable por intento y devuelve la venta original al reintentar la misma solicitud |
+| GET | `/pos/registers?includeInactive=false` | Administrador | Consultar terminales de la empresa |
+| POST | `/pos/registers` | Administrador | Crear terminal con código permanente y nombre visible |
+| PUT | `/pos/registers/{id}` | Administrador | Renombrar terminal con revisión optimista |
+| PATCH | `/pos/registers/{id}/activation` | Administrador | Activar/desactivar; impide desactivar la última terminal o una con turno abierto |
 | GET | `/suppliers?search=` | Administrador, Gerente, Agente de compras | Buscar proveedores activos |
 | POST | `/suppliers` | Administrador, Gerente, Agente de compras | Crear proveedor |
 | PUT | `/suppliers/{id}` | Administrador, Gerente, Agente de compras | Editar proveedor con revisión optimista |
@@ -43,10 +47,10 @@ Base path: `/api/v1`. Todas las rutas requieren sesión autenticada. Las respues
 | GET | `/purchases` | Administrador, Gerente, Agente de compras | Consultar órdenes recientes con sus líneas |
 | POST | `/purchases` | Administrador, Gerente, Agente de compras | Crear orden de compra (no altera existencias) |
 | POST | `/purchases/{id}/receive` | Administrador, Gerente, Agente de compras | Recibir cantidades por línea; aumenta existencias y registra movimientos en una transacción |
-| POST | `/purchases/{id}/payments` | Administrador, Gerente | Registrar abono con `idempotencyKey`, importe, método y referencia opcional; los pagos en efectivo generan salida de caja atómica |
+| POST | `/purchases/{id}/payments` | Administrador, Gerente | Registrar abono con `idempotencyKey`, importe, método, referencia opcional y `registerCode`; los pagos en efectivo generan salida en el turno de esa terminal |
 | POST | `/purchases/{id}/cancel` | Administrador, Gerente, Agente de compras | Cancelar una orden sin recepciones ni pagos; no modifica inventario |
 
-Checkout recibe `customerId` opcional, `paymentMethod` (`Cash`, `Card` o `Transfer`), `idempotencyKey` UUID y `lines` con `{ productId, quantity }`. Reutiliza la clave solo para reintentar el mismo intento; si se envía con otros datos devuelve error. El servidor toma precios, descripciones y existencias de MySQL; no acepta esos valores desde el cliente.
+Checkout recibe `customerId` opcional, `paymentMethod` (`Cash`, `Card` o `Transfer`), `registerCode`, `idempotencyKey` UUID y `lines` con `{ productId, quantity }`. Reutiliza la clave solo para reintentar el mismo intento; si se envía con otros datos devuelve error. El servidor toma precios, descripciones y existencias de MySQL; no acepta esos valores desde el cliente.
 
 Para una compra se envía `supplierId`, referencia opcional, `dueDate` opcional (`AAAA-MM-DD`) y `lines` con `{ productId, quantity, unitCost }`. Las recepciones envían una colección de `{ lineId, quantity }`, permitiendo recepciones parciales repetidas hasta completar cada línea. Un mismo producto debe consolidarse en una línea por orden. Las salidas del POS y las entradas por recepción se reflejan en el libro `InventoryMovements`.
 
@@ -56,13 +60,13 @@ Errores de dominio se devuelven como Problem Details de validación. La platafor
 
 | Método | Ruta | Permiso | Uso |
 |---|---|---|---|
-| GET | `/cash/session` | Administrador, Gerente, Cajero | Consultar la caja principal abierta y su arqueo esperado |
+| GET | `/cash/session?registerCode=MAIN` | Administrador, Gerente, Cajero | Consultar el turno abierto de una terminal y su arqueo esperado |
 | GET | `/cash/sessions?limit=10` | Administrador, Gerente, Cajero | Consultar turnos recientes y cierres |
-| POST | `/cash/sessions` | Administrador, Gerente, Cajero | Abrir turno; cuerpo `{ registerCode, openingFloat }` (por ahora se configura `MAIN`) |
+| POST | `/cash/sessions` | Administrador, Gerente, Cajero | Abrir turno; cuerpo `{ registerCode, openingFloat }` para una terminal activa |
 | POST | `/cash/sessions/{id}/movements` | Administrador, Gerente, Cajero | Registrar `CashIn` o `CashOut` con importe y motivo |
 | POST | `/cash/sessions/{id}/close` | Administrador, Gerente, Cajero | Cerrar turno y guardar `{ countedCash }` |
 | GET | `/sales/{id}/receipt` | Administrador, Gerente, Cajero | Consultar recibo de una venta del tenant |
 
-El arqueo esperado suma fondo inicial, ventas completadas en efectivo y movimientos de entrada; resta retiros. Una venta nueva requiere caja principal abierta y se registra con su usuario y turno. El recibo imprimible se presenta en `/app/receipts/{id}`.
+El arqueo esperado suma fondo inicial, ventas completadas en efectivo y movimientos de entrada; resta retiros. Una venta nueva requiere un turno abierto para el `registerCode` indicado y se registra con su usuario y turno. El recibo imprimible se presenta en `/app/receipts/{id}`.
 
 El módulo actual registra un método de pago por venta. Pagos divididos, idempotencia, conciliación bancaria y recibos fiscales oficiales siguen pendientes.

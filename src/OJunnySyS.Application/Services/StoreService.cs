@@ -79,7 +79,7 @@ public sealed class StoreService(IStoreRepository repository, IBusinessClock clo
         return Map(sale);
     }
 
-    public Task<CashSessionDto?> GetCurrentCashSessionAsync(CancellationToken ct = default) => repository.GetCurrentCashSessionAsync(ct);
+    public Task<CashSessionDto?> GetCurrentCashSessionAsync(string registerCode = "MAIN", CancellationToken ct = default) => repository.GetCurrentCashSessionAsync(registerCode, ct);
     public Task<IReadOnlyList<CashSessionDto>> GetRecentCashSessionsAsync(int count = 10, CancellationToken ct = default) => repository.GetRecentCashSessionsAsync(count, ct);
     public async Task<CashSessionReport> GetCashSessionReportAsync(DateOnly from, DateOnly to, CancellationToken ct = default)
     {

@@ -3,6 +3,7 @@
 @inject StoreService Store
 @inject ILogger<Purchases> Logger
 @inject AuthenticationStateProvider AuthenticationStateProvider
+@inject PosRegisterService PosRegisters
 
 <PageTitle>Compras · OJunnySyS</PageTitle>
 <PageHeader Eyebrow="ABASTECIMIENTO" Title="Compras y proveedores" Description="Organiza las órdenes, registra recepciones y mantén el inventario trazable." />
@@ -42,12 +43,13 @@
 @if (_pendingSupplierDeactivation is not null) { <div class="modal-backdrop" @onclick="() => _pendingSupplierDeactivation = null"><section class="modal-card confirm-card" @onclick:stopPropagation="true"><div class="modal-heading"><div><span class="eyebrow">DIRECTORIO DE PROVEEDORES</span><h2>Desactivar proveedor</h2><p>@_pendingSupplierDeactivation.Name dejará de estar disponible para nuevas órdenes. Sus compras y pagos históricos se conservarán.</p></div><button class="icon-button" @onclick="() => _pendingSupplierDeactivation = null">×</button></div>@if (_error is not null) { <div class="inline-error">@_error</div> }<div class="modal-actions"><button class="button button-secondary" @onclick="() => _pendingSupplierDeactivation = null">Cancelar</button><button class="button button-primary" @onclick="DeactivateSupplierAsync" disabled="@_saving">Desactivar proveedor</button></div></section></div> }
 @if (_cancelOrder is not null) { <div class="modal-backdrop" @onclick="() => _cancelOrder = null"><section class="modal-card confirm-card" @onclick:stopPropagation="true"><div class="modal-heading"><div><span class="eyebrow">ORDEN DE COMPRA</span><h2>Cancelar orden</h2><p>Se cancelará @_cancelOrder.Number. No se ha recibido ni pagado, por lo que no se modificará inventario ni caja.</p></div><button class="icon-button" @onclick="() => _cancelOrder = null">×</button></div>@if (_error is not null) { <div class="inline-error">@_error</div> }<div class="modal-actions"><button class="button button-secondary" @onclick="() => _cancelOrder = null">Volver</button><button class="button button-primary" @onclick="CancelPurchaseAsync" disabled="@_saving">Confirmar cancelación</button></div></section></div> }
 
-@if (_paymentOrder is not null) { <div class="modal-backdrop" @onclick="ClosePayment"><section class="modal-card" @onclick:stopPropagation="true"><div class="modal-heading"><div><span class="eyebrow">CUENTAS POR PAGAR</span><h2>Abonar a proveedor</h2><p>@_paymentOrder.SupplierName · Orden @_paymentOrder.Number · Saldo @Money(_paymentOrder.BalanceDue)</p></div><button class="icon-button" @onclick="ClosePayment">×</button></div><EditForm Model="_paymentForm" OnValidSubmit="SavePaymentAsync"><DataAnnotationsValidator /><div class="form-grid"><label>Importe<InputNumber @bind-Value="_paymentForm.Amount" min="0.01" step="0.01" max="@_paymentOrder.BalanceDue" /></label><label>Método<select @bind="_paymentForm.Method">@foreach (var method in Enum.GetValues<SupplierPaymentMethod>()) { <option value="@method">@PaymentMethodLabel(method)</option> }</select></label><label class="full-span">Referencia <span class="optional">Opcional</span><InputText @bind-Value="_paymentForm.Reference" maxlength="100" placeholder="Transferencia, cheque o comprobante" /></label></div><ValidationSummary />@if (_error is not null) { <div class="inline-error">@_error</div> }<div class="modal-actions"><button type="button" class="button button-secondary" @onclick="ClosePayment">Cancelar</button><button class="button button-primary" disabled="@_saving">@(_saving ? "Registrando…" : "Registrar pago")</button></div></EditForm></section></div> }
+@if (_paymentOrder is not null) { <div class="modal-backdrop" @onclick="ClosePayment"><section class="modal-card" @onclick:stopPropagation="true"><div class="modal-heading"><div><span class="eyebrow">CUENTAS POR PAGAR</span><h2>Abonar a proveedor</h2><p>@_paymentOrder.SupplierName · Orden @_paymentOrder.Number · Saldo @Money(_paymentOrder.BalanceDue)</p></div><button class="icon-button" @onclick="ClosePayment">×</button></div><EditForm Model="_paymentForm" OnValidSubmit="SavePaymentAsync"><DataAnnotationsValidator /><div class="form-grid"><label>Importe<InputNumber @bind-Value="_paymentForm.Amount" min="0.01" step="0.01" max="@_paymentOrder.BalanceDue" /></label><label>Método<select @bind="_paymentForm.Method">@foreach (var method in Enum.GetValues<SupplierPaymentMethod>()) { <option value="@method">@PaymentMethodLabel(method)</option> }</select></label>@if (_paymentForm.Method == SupplierPaymentMethod.Cash) { <label class="full-span">Terminal de caja<select @bind="_paymentForm.RegisterCode">@foreach (var register in _registers) { <option value="@register.Code">@register.Name</option> }</select></label> }<label class="full-span">Referencia <span class="optional">Opcional</span><InputText @bind-Value="_paymentForm.Reference" maxlength="100" placeholder="Transferencia, cheque o comprobante" /></label></div><ValidationSummary />@if (_error is not null) { <div class="inline-error">@_error</div> }<div class="modal-actions"><button type="button" class="button button-secondary" @onclick="ClosePayment">Cancelar</button><button class="button button-primary" disabled="@_saving">@(_saving ? "Registrando…" : "Registrar pago")</button></div></EditForm></section></div> }
 
 @code {
     private List<SupplierDto> _suppliers = [];
     private List<ProductDto> _products = [];
     private List<PurchaseOrderDto> _orders = [];
+    private List<PosRegisterDto> _registers = [];
     private PayablesAgingReport _agingReport = new(DateOnly.FromDateTime(DateTime.Today), 0, 0, [], []);
     private readonly List<PurchaseDraftLine> _draftLines = [];
     private readonly Dictionary<Guid, int> _receiveQuantities = [];
@@ -65,7 +67,11 @@
     private PurchaseOrderDto? _cancelOrder;
     private string? _error, _notice;
 
-    protected override Task OnInitializedAsync() => LoadAsync();
+    protected override async Task OnInitializedAsync()
+    {
+        _registers = (await PosRegisters.GetRegistersAsync(includeInactive: false)).ToList();
+        await LoadAsync();
+    }
 
     private async Task LoadAsync()
     {
@@ -134,7 +140,7 @@
         finally { _saving = false; }
     }
 
-    private void OpenPayment(PurchaseOrderDto order) { _paymentOrder = order; _paymentForm = new SupplierPaymentForm { Amount = order.BalanceDue, IdempotencyKey = Guid.NewGuid() }; _error = null; }
+    private void OpenPayment(PurchaseOrderDto order) { _paymentOrder = order; _paymentForm = new SupplierPaymentForm { Amount = order.BalanceDue, IdempotencyKey = Guid.NewGuid(), RegisterCode = _registers.FirstOrDefault(x => x.Code == "MAIN")?.Code ?? _registers.FirstOrDefault()?.Code ?? "MAIN" }; _error = null; }
     private void ClosePayment() { if (!_saving) _paymentOrder = null; }
 
     private async Task SavePaymentAsync()
@@ -145,7 +151,7 @@
         {
             var auth = await AuthenticationStateProvider.GetAuthenticationStateAsync();
             var actorId = Guid.Parse(auth.User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)!.Value);
-            await Store.RecordSupplierPaymentAsync(order.Id, actorId, new CreateSupplierPaymentRequest(_paymentForm.IdempotencyKey, _paymentForm.Amount, _paymentForm.Method, _paymentForm.Reference));
+            await Store.RecordSupplierPaymentAsync(order.Id, actorId, new CreateSupplierPaymentRequest(_paymentForm.IdempotencyKey, _paymentForm.Amount, _paymentForm.Method, _paymentForm.Reference, _paymentForm.RegisterCode));
             _paymentOrder = null; _notice = "Pago guardado; el saldo del proveedor fue actualizado."; await LoadAsync();
         }
         catch (DomainException ex) { _error = ex.Message; }
@@ -205,5 +211,5 @@
     private sealed record PurchaseDraftLine(Guid ProductId, string ProductName, int Quantity, decimal UnitCost);
     private sealed class SupplierForm { [System.ComponentModel.DataAnnotations.Required(ErrorMessage = "El nombre es obligatorio.")] public string Name { get; set; } = ""; public string? TaxIdentifier { get; set; } [System.ComponentModel.DataAnnotations.EmailAddress(ErrorMessage = "El correo no es válido.")] public string Email { get; set; } = ""; public string Phone { get; set; } = ""; [System.ComponentModel.DataAnnotations.StringLength(1000)] public string? Notes { get; set; } }
     private sealed class PurchaseForm { public Guid SupplierId { get; set; } [System.ComponentModel.DataAnnotations.StringLength(100)] public string? Reference { get; set; } public DateOnly? DueDate { get; set; } }
-    private sealed class SupplierPaymentForm { public Guid IdempotencyKey { get; set; } [System.ComponentModel.DataAnnotations.Range(typeof(decimal), "0.01", "999999999999.99", ErrorMessage = "El importe debe ser mayor que cero.")] public decimal Amount { get; set; } public SupplierPaymentMethod Method { get; set; } = SupplierPaymentMethod.BankTransfer; [System.ComponentModel.DataAnnotations.StringLength(100)] public string? Reference { get; set; } }
+    private sealed class SupplierPaymentForm { public Guid IdempotencyKey { get; set; } [System.ComponentModel.DataAnnotations.Range(typeof(decimal), "0.01", "999999999999.99", ErrorMessage = "El importe debe ser mayor que cero.")] public decimal Amount { get; set; } public SupplierPaymentMethod Method { get; set; } = SupplierPaymentMethod.BankTransfer; public string RegisterCode { get; set; } = "MAIN"; [System.ComponentModel.DataAnnotations.StringLength(100)] public string? Reference { get; set; } }
 }

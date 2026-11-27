@@ -8,6 +8,7 @@ using OJunnySyS.Domain.Customers;
 using OJunnySyS.Domain.Sales;
 using OJunnySyS.Domain.Purchasing;
 using OJunnySyS.Domain.Cash;
+using OJunnySyS.Domain.Pos;
 
 namespace OJunnySyS.Infrastructure.Persistence;
 
@@ -147,6 +148,7 @@ public sealed class EfStoreRepository(IDbContextFactory<StoreDbContext> contextF
         if (request.Lines.Count == 0) throw new DomainException("Agrega productos antes de cobrar.");
         if (request.Lines.Count > 200 || request.Lines.Any(x => x.ProductId == Guid.Empty || x.Quantity <= 0)) throw new DomainException("La venta debe tener hasta 200 líneas con productos y cantidades válidas.");
         if (request.IdempotencyKey == Guid.Empty) throw new DomainException("La clave de idempotencia del cobro es obligatoria.");
+        var registerCode = PosRegister.NormalizeCode(request.RegisterCode);
         if (request.PaymentMethod == PaymentMethod.Credit) throw new DomainException("Las ventas a crédito aún no están habilitadas.");
         if (cashierUserId == Guid.Empty) throw new DomainException("No se pudo identificar al cajero.");
         var tenantId = tenantContext.GetRequiredTenantId();
@@ -156,16 +158,18 @@ public sealed class EfStoreRepository(IDbContextFactory<StoreDbContext> contextF
             .SingleOrDefaultAsync(x => x.IdempotencyKey == request.IdempotencyKey, cancellationToken);
         if (priorSale is not null)
         {
-            EnsureSameCheckout(priorSale, request, cashierUserId);
+            EnsureSameCheckout(priorSale, request, cashierUserId, registerCode);
             await transaction.CommitAsync(cancellationToken);
             return priorSale;
         }
-        var cashSession = await db.CashSessions.FromSqlInterpolated($"SELECT * FROM CashSessions WHERE TenantId = {tenantId} AND RegisterCode = {"MAIN"} AND Status = {(int)CashSessionStatus.Open} FOR UPDATE").SingleOrDefaultAsync(cancellationToken)
-            ?? throw new DomainException("Abre la caja principal antes de registrar ventas.");
+        if (!await db.PosRegisters.AnyAsync(x => x.Code == registerCode && x.IsActive, cancellationToken))
+            throw new DomainException("El terminal seleccionado no existe o está inactivo.");
+        var cashSession = await db.CashSessions.FromSqlInterpolated($"SELECT * FROM CashSessions WHERE TenantId = {tenantId} AND RegisterCode = {registerCode} AND Status = {(int)CashSessionStatus.Open} FOR UPDATE").SingleOrDefaultAsync(cancellationToken)
+            ?? throw new DomainException("Abre el turno del terminal seleccionado antes de registrar ventas.");
         priorSale = await LoadSaleByCheckoutKeyAsync(db, tenantId, request.IdempotencyKey, cancellationToken);
         if (priorSale is not null)
         {
-            EnsureSameCheckout(priorSale, request, cashierUserId);
+            EnsureSameCheckout(priorSale, request, cashierUserId, registerCode);
             await transaction.CommitAsync(cancellationToken);
             return priorSale;
         }
@@ -189,7 +193,7 @@ public sealed class EfStoreRepository(IDbContextFactory<StoreDbContext> contextF
             lines.Add(new SaleLine(product.Id, product.Sku, product.Name, product.UnitPrice, quantity));
         }
 
-        var sale = new Sale(tenantId, $"V-{DateTimeOffset.UtcNow:yyyyMMddHHmmss}-{Guid.NewGuid():N}", customer, request.PaymentMethod, lines, cashSession.Id, cashierUserId, tenant.DefaultTaxRate, request.IdempotencyKey);
+        var sale = new Sale(tenantId, $"V-{DateTimeOffset.UtcNow:yyyyMMddHHmmss}-{Guid.NewGuid():N}", customer, request.PaymentMethod, lines, cashSession.Id, cashierUserId, tenant.DefaultTaxRate, request.IdempotencyKey, registerCode);
         foreach (var movement in stockMovements)
             db.InventoryMovements.Add(new InventoryMovement(tenantId, movement.Product.Id, InventoryMovementType.Sale, -movement.Quantity, movement.Product.StockOnHand, sale.Number));
         customer?.RecordPurchase(sale.Total);
@@ -203,20 +207,21 @@ public sealed class EfStoreRepository(IDbContextFactory<StoreDbContext> contextF
         await db.Sales.FromSqlInterpolated($"SELECT * FROM Sales WHERE TenantId = {tenantId} AND IdempotencyKey = {idempotencyKey} FOR UPDATE")
             .AsSplitQuery().Include(x => x.Lines).SingleOrDefaultAsync(ct);
 
-    private static void EnsureSameCheckout(Sale sale, CheckoutRequest request, Guid cashierUserId)
+    private static void EnsureSameCheckout(Sale sale, CheckoutRequest request, Guid cashierUserId, string registerCode)
     {
         var requestedLines = request.Lines.GroupBy(x => x.ProductId).ToDictionary(x => x.Key, x => SumQuantities(x.Select(line => line.Quantity)));
         var storedLines = sale.Lines.ToDictionary(x => x.ProductId, x => x.Quantity);
-        if (sale.CashierUserId != cashierUserId || sale.CustomerId != request.CustomerId || sale.PaymentMethod != request.PaymentMethod
+        if (sale.CashierUserId != cashierUserId || sale.CustomerId != request.CustomerId || sale.PaymentMethod != request.PaymentMethod || sale.RegisterCode != registerCode
             || requestedLines.Count != storedLines.Count || requestedLines.Any(x => !storedLines.TryGetValue(x.Key, out var quantity) || quantity != x.Value))
             throw new DomainException("La clave de idempotencia ya se utilizó con otros datos de cobro.");
     }
 
-    public async Task<CashSessionDto?> GetCurrentCashSessionAsync(CancellationToken cancellationToken = default)
+    public async Task<CashSessionDto?> GetCurrentCashSessionAsync(string registerCode = "MAIN", CancellationToken cancellationToken = default)
     {
         await using var db = await CreateDbContextAsync(cancellationToken);
+        registerCode = PosRegister.NormalizeCode(registerCode);
         var session = await db.CashSessions.AsNoTracking()
-            .Where(x => x.RegisterCode == "MAIN" && x.Status == CashSessionStatus.Open)
+            .Where(x => x.RegisterCode == registerCode && x.Status == CashSessionStatus.Open)
             .OrderByDescending(x => x.CreatedAtUtc).FirstOrDefaultAsync(cancellationToken);
         return session is null ? null : await MapCashSessionAsync(db, session, cancellationToken);
     }
@@ -247,10 +252,11 @@ public sealed class EfStoreRepository(IDbContextFactory<StoreDbContext> contextF
         await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
         _ = await db.Tenants.FromSqlInterpolated($"SELECT * FROM Tenants WHERE Id = {tenantId} FOR UPDATE").SingleOrDefaultAsync(cancellationToken)
             ?? throw new DomainException("La empresa activa no existe.");
-        var registerCode = string.IsNullOrWhiteSpace(request.RegisterCode) ? "MAIN" : request.RegisterCode.Trim().ToUpperInvariant();
-        if (registerCode != "MAIN") throw new DomainException("Por ahora, la empresa tiene configurada la caja principal (MAIN).");
-        if (await db.CashSessions.AnyAsync(x => x.Status == CashSessionStatus.Open, cancellationToken))
-            throw new DomainException("Esta caja ya tiene un turno abierto.");
+        var registerCode = PosRegister.NormalizeCode(request.RegisterCode);
+        if (!await db.PosRegisters.AnyAsync(x => x.Code == registerCode && x.IsActive, cancellationToken))
+            throw new DomainException("El terminal seleccionado no existe o está inactivo.");
+        if (await db.CashSessions.AnyAsync(x => x.RegisterCode == registerCode && x.Status == CashSessionStatus.Open, cancellationToken))
+            throw new DomainException("Este terminal ya tiene un turno abierto.");
         var session = new CashSession(tenantId, registerCode, request.OpeningFloat, userId);
         db.CashSessions.Add(session);
         await db.SaveChangesAsync(cancellationToken);
@@ -481,6 +487,7 @@ public sealed class EfStoreRepository(IDbContextFactory<StoreDbContext> contextF
             .Include(x => x.Lines)
             .Include(x => x.Payments)
             .SingleOrDefaultAsync(cancellationToken) ?? throw new DomainException("La orden de compra no existe.");
+        var registerCode = PosRegister.NormalizeCode(request.RegisterCode);
 
         var existingPayment = await db.SupplierPayments.AsNoTracking().SingleOrDefaultAsync(x => x.IdempotencyKey == request.IdempotencyKey, cancellationToken);
         if (existingPayment is not null)
@@ -488,6 +495,7 @@ public sealed class EfStoreRepository(IDbContextFactory<StoreDbContext> contextF
             var sameRequest = existingPayment.PurchaseOrderId == order.Id
                 && existingPayment.Amount == decimal.Round(request.Amount, 2, MidpointRounding.AwayFromZero)
                 && existingPayment.Method == request.Method
+                && existingPayment.RegisterCode == registerCode
                 && existingPayment.Reference == (string.IsNullOrWhiteSpace(request.Reference) ? null : request.Reference.Trim());
             if (sameRequest) return order;
             throw new DomainException("La clave de idempotencia ya corresponde a otro pago.");
@@ -496,12 +504,14 @@ public sealed class EfStoreRepository(IDbContextFactory<StoreDbContext> contextF
         CashSession? cashSession = null;
         if (request.Method == SupplierPaymentMethod.Cash)
         {
-            cashSession = await db.CashSessions.FromSqlInterpolated($"SELECT * FROM CashSessions WHERE TenantId = {tenantId} AND RegisterCode = {"MAIN"} AND Status = {(int)CashSessionStatus.Open} FOR UPDATE").SingleOrDefaultAsync(cancellationToken)
-                ?? throw new DomainException("Para pagar en efectivo debe estar abierta la caja principal.");
+            if (!await db.PosRegisters.AnyAsync(x => x.Code == registerCode && x.IsActive, cancellationToken))
+                throw new DomainException("El terminal seleccionado no existe o está inactivo.");
+            cashSession = await db.CashSessions.FromSqlInterpolated($"SELECT * FROM CashSessions WHERE TenantId = {tenantId} AND RegisterCode = {registerCode} AND Status = {(int)CashSessionStatus.Open} FOR UPDATE").SingleOrDefaultAsync(cancellationToken)
+                ?? throw new DomainException("Para pagar en efectivo debe estar abierto el turno del terminal seleccionado.");
         }
 
         var payment = new SupplierPayment(tenantId, order.Id, paidByUserId, request.IdempotencyKey, request.Amount,
-            request.Method, request.Reference, cashSession?.Id);
+            request.Method, request.Reference, cashSession?.Id, registerCode);
         order.RecordPayment(payment);
         db.SupplierPayments.Add(payment);
         if (cashSession is not null)

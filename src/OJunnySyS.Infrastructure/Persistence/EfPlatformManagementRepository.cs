@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using OJunnySyS.Application.Abstractions;
 using OJunnySyS.Domain.Common;
 using OJunnySyS.Domain.Tenancy;
+using OJunnySyS.Domain.Pos;
 using OJunnySyS.Infrastructure.Identity;
 
 namespace OJunnySyS.Infrastructure.Persistence;
@@ -28,6 +29,9 @@ public sealed class EfPlatformManagementRepository(
 
         await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
         db.Tenants.Add(tenant);
+        await db.SaveChangesAsync(cancellationToken);
+        db.CurrentTenantId = tenant.Id;
+        db.PosRegisters.Add(new PosRegister(tenant.Id, "MAIN", "Caja principal"));
         await db.SaveChangesAsync(cancellationToken);
 
         var user = new ApplicationUser
