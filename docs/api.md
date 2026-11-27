@@ -40,6 +40,11 @@ Base path: `/api/v1`. Todas las rutas requieren sesión autenticada. Las respues
 | POST | `/pos/registers` | Administrador | Crear terminal con código permanente y nombre visible |
 | PUT | `/pos/registers/{id}` | Administrador | Renombrar terminal con revisión optimista |
 | PATCH | `/pos/registers/{id}/activation` | Administrador | Activar/desactivar; impide desactivar la última terminal o una con turno abierto |
+| GET | `/inventory/warehouses?includeInactive=false` | Administrador | Consultar almacenes de la empresa |
+| POST | `/inventory/warehouses` | Administrador | Crear almacén e inicializar saldos cero para el catálogo existente |
+| PUT | `/inventory/warehouses/{id}` | Administrador | Renombrar almacén con revisión optimista |
+| PATCH | `/inventory/warehouses/{id}/activation` | Administrador | Activar/desactivar; protege existencias, órdenes pendientes y terminales asignadas |
+| POST | `/inventory/transfers` | Administrador, Gerente | Trasladar unidades entre almacenes con salida y entrada atómicas |
 | GET | `/suppliers?search=` | Administrador, Gerente, Agente de compras | Buscar proveedores activos |
 | POST | `/suppliers` | Administrador, Gerente, Agente de compras | Crear proveedor |
 | PUT | `/suppliers/{id}` | Administrador, Gerente, Agente de compras | Editar proveedor con revisión optimista |
@@ -52,7 +57,7 @@ Base path: `/api/v1`. Todas las rutas requieren sesión autenticada. Las respues
 
 Checkout recibe `customerId` opcional, `paymentMethod` (`Cash`, `Card` o `Transfer`), `registerCode`, `idempotencyKey` UUID y `lines` con `{ productId, quantity }`. Reutiliza la clave solo para reintentar el mismo intento; si se envía con otros datos devuelve error. El servidor toma precios, descripciones y existencias de MySQL; no acepta esos valores desde el cliente.
 
-Para una compra se envía `supplierId`, referencia opcional, `dueDate` opcional (`AAAA-MM-DD`) y `lines` con `{ productId, quantity, unitCost }`. Las recepciones envían una colección de `{ lineId, quantity }`, permitiendo recepciones parciales repetidas hasta completar cada línea. Un mismo producto debe consolidarse en una línea por orden. Las salidas del POS y las entradas por recepción se reflejan en el libro `InventoryMovements`.
+Para una compra se envía `supplierId`, `warehouseId`, referencia opcional, `dueDate` opcional (`AAAA-MM-DD`) y `lines` con `{ productId, quantity, unitCost }`. Las recepciones envían una colección de `{ lineId, quantity }`, permitiendo recepciones parciales repetidas hasta completar cada línea. Un mismo producto debe consolidarse en una línea por orden. Las salidas del POS, las entradas por recepción y los traslados se reflejan por almacén en `InventoryMovements`; el saldo global del producto equivale a la suma de sus almacenes.
 
 Errores de dominio se devuelven como Problem Details de validación. La plataforma protege la API con cookie `HttpOnly`; fuera de desarrollo usa HTTPS. La limitación de solicitudes, idempotencia de pagos y credenciales de integración aún deben completarse antes de publicar endpoints en Internet.
 
@@ -67,6 +72,6 @@ Errores de dominio se devuelven como Problem Details de validación. La platafor
 | POST | `/cash/sessions/{id}/close` | Administrador, Gerente, Cajero | Cerrar turno y guardar `{ countedCash }` |
 | GET | `/sales/{id}/receipt` | Administrador, Gerente, Cajero | Consultar recibo de una venta del tenant |
 
-El arqueo esperado suma fondo inicial, ventas completadas en efectivo y movimientos de entrada; resta retiros. Una venta nueva requiere un turno abierto para el `registerCode` indicado y se registra con su usuario y turno. El recibo imprimible se presenta en `/app/receipts/{id}`.
+El arqueo esperado suma fondo inicial, ventas completadas en efectivo y movimientos de entrada; resta retiros. Una venta nueva requiere un turno abierto para el `registerCode` indicado; el terminal determina el almacén y el checkout descuenta sus existencias sin consumir stock de otras ubicaciones. El recibo imprimible se presenta en `/app/receipts/{id}`.
 
 El módulo actual registra un método de pago por venta. Pagos divididos, idempotencia, conciliación bancaria y recibos fiscales oficiales siguen pendientes.

@@ -12,14 +12,14 @@ public sealed class PosRegisterService(IPosRegisterRepository repository)
     public async Task<PosRegisterDto> CreateAsync(CreatePosRegisterRequest request, CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(request);
-        return (await repository.CreateRegisterAsync(request.Code, request.Name, ct)).ToDto();
+        return (await repository.CreateRegisterAsync(request.Code, request.Name, request.WarehouseId, ct)).ToDto();
     }
 
     public async Task<PosRegisterDto> UpdateAsync(Guid id, UpdatePosRegisterRequest request, CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(request);
         if (id == Guid.Empty) throw new DomainException("Selecciona un terminal válido.");
-        return (await repository.UpdateRegisterAsync(id, request.Name, request.ExpectedRevision, ct)).ToDto();
+        return (await repository.UpdateRegisterAsync(id, request.Name, request.WarehouseId, request.ExpectedRevision, ct)).ToDto();
     }
 
     public async Task<PosRegisterDto> SetActiveAsync(Guid id, SetPosRegisterActiveRequest request, CancellationToken ct = default)

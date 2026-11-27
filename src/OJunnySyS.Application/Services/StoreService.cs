@@ -13,6 +13,10 @@ public sealed class StoreService(IStoreRepository repository, IBusinessClock clo
     public async Task<IReadOnlyList<ProductDto>> SearchProductsAsync(string? query, bool includeInactive = false, CancellationToken ct = default) =>
         (await repository.SearchProductsAsync(query, includeInactive, ct)).Select(Map).ToArray();
 
+    public async Task<IReadOnlyList<ProductDto>> SearchProductsInWarehouseAsync(string? query, Guid warehouseId, CancellationToken ct = default) =>
+        (await repository.SearchProductsInWarehouseAsync(query, warehouseId, ct))
+            .Select(x => Map(x.Product) with { StockOnHand = x.WarehouseStock }).ToArray();
+
     public async Task<IReadOnlyList<CustomerDto>> SearchCustomersAsync(string? query, CancellationToken ct = default) =>
         (await repository.SearchCustomersAsync(query, ct)).Select(Map).ToArray();
 
@@ -72,6 +76,9 @@ public sealed class StoreService(IStoreRepository repository, IBusinessClock clo
 
     public async Task<ProductDto> SetProductActiveAsync(Guid id, SetProductActiveRequest request, CancellationToken ct = default) =>
         Map(await repository.SetProductActiveAsync(id, request, ct));
+
+    public Task<InventoryTransferResult> TransferInventoryAsync(InventoryTransferRequest request, CancellationToken ct = default) =>
+        repository.TransferInventoryAsync(request, ct);
 
     public async Task<SaleDto> CheckoutAsync(CheckoutRequest request, Guid cashierUserId, CancellationToken ct = default)
     {
@@ -161,5 +168,5 @@ public sealed class StoreService(IStoreRepository repository, IBusinessClock clo
     private static SupplierDto Map(Supplier supplier) => new(supplier.Id, supplier.Name, supplier.TaxIdentifier, supplier.Email, supplier.Phone, supplier.Notes, supplier.Revision);
     private static PurchaseOrderDto Map(PurchaseOrder order) => new(order.Id, order.Number, order.SupplierName, order.Reference, order.DueDate, order.Status, order.Total, order.AmountPaid, order.BalanceDue, order.CreatedAtUtc,
         order.Lines.Select(x => new PurchaseLineDto(x.Id, x.ProductId, x.Sku, x.ProductName, x.Quantity, x.ReceivedQuantity, x.UnitCost, x.LineTotal)).ToArray(),
-        order.Payments.OrderByDescending(x => x.CreatedAtUtc).Select(x => new SupplierPaymentDto(x.Id, x.IdempotencyKey, x.Amount, x.Method, x.Reference, x.PaidByUserId, x.CreatedAtUtc)).ToArray());
+        order.Payments.OrderByDescending(x => x.CreatedAtUtc).Select(x => new SupplierPaymentDto(x.Id, x.IdempotencyKey, x.Amount, x.Method, x.Reference, x.PaidByUserId, x.CreatedAtUtc)).ToArray(), order.WarehouseId);
 }

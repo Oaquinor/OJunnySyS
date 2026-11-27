@@ -1,4 +1,5 @@
 using OJunnySyS.Domain.Common;
+using OJunnySyS.Domain.Inventory;
 
 namespace OJunnySyS.Domain.Purchasing;
 
@@ -10,11 +11,12 @@ public sealed class PurchaseOrder : TenantEntity
     private readonly List<SupplierPayment> _payments = [];
     private PurchaseOrder() { }
 
-    public PurchaseOrder(Guid tenantId, string number, Supplier supplier, IEnumerable<PurchaseOrderLine> lines, string? reference = null, DateOnly? dueDate = null) : base(tenantId)
+    public PurchaseOrder(Guid tenantId, string number, Supplier supplier, IEnumerable<PurchaseOrderLine> lines, string? reference = null, DateOnly? dueDate = null, Guid warehouseId = default) : base(tenantId)
     {
         if (string.IsNullOrWhiteSpace(number)) throw new DomainException("El número de compra es obligatorio.");
         if (number.Length > 64 || (reference?.Trim().Length ?? 0) > 100) throw new DomainException("El número o referencia de compra supera el largo permitido.");
         if (supplier.TenantId != tenantId || !supplier.IsActive) throw new DomainException("El proveedor no existe o está inactivo.");
+        if (warehouseId == Guid.Empty) throw new DomainException("El almacén de recepción es obligatorio.");
         _lines.AddRange(lines);
         if (_lines.Count == 0) throw new DomainException("La compra debe incluir al menos un producto.");
         if (_lines.Count > 200) throw new DomainException("Una orden no puede incluir más de 200 productos distintos.");
@@ -22,6 +24,7 @@ public sealed class PurchaseOrder : TenantEntity
         Number = number.Trim(); SupplierId = supplier.Id; SupplierName = supplier.Name;
         Reference = string.IsNullOrWhiteSpace(reference) ? null : reference.Trim();
         DueDate = dueDate;
+        WarehouseId = warehouseId;
         Status = PurchaseStatus.Draft;
         Total = decimal.Round(_lines.Sum(x => x.LineTotal), 2);
         if (Total > 999999999999.99m) throw new DomainException("El total de la compra supera el máximo permitido.");
@@ -32,6 +35,7 @@ public sealed class PurchaseOrder : TenantEntity
     public string SupplierName { get; private set; } = "";
     public string? Reference { get; private set; }
     public DateOnly? DueDate { get; private set; }
+    public Guid WarehouseId { get; private set; }
     public PurchaseStatus Status { get; private set; }
     public decimal Total { get; private set; }
     public IReadOnlyCollection<PurchaseOrderLine> Lines => _lines;
@@ -136,18 +140,19 @@ public sealed class PurchaseOrderLine
     }
 }
 
-public enum InventoryMovementType { PurchaseReceipt, Sale, SaleReturn, StockAdjustment }
+public enum InventoryMovementType { PurchaseReceipt, Sale, SaleReturn, StockAdjustment, TransferOut, TransferIn }
 
 public sealed class InventoryMovement : TenantEntity
 {
     private InventoryMovement() { }
-    public InventoryMovement(Guid tenantId, Guid productId, InventoryMovementType type, int quantityDelta, int balanceAfter, string reference) : base(tenantId)
+    public InventoryMovement(Guid tenantId, Guid productId, InventoryMovementType type, int quantityDelta, int balanceAfter, string reference, Guid warehouseId = default) : base(tenantId)
     {
-        if (productId == Guid.Empty || quantityDelta == 0 || balanceAfter < 0) throw new DomainException("El movimiento de inventario no es válido.");
+        if (productId == Guid.Empty || warehouseId == Guid.Empty || quantityDelta == 0 || balanceAfter < 0) throw new DomainException("El movimiento de inventario no es válido.");
         if (string.IsNullOrWhiteSpace(reference) || reference.Length > 100) throw new DomainException("La referencia del movimiento no es válida.");
-        ProductId = productId; Type = type; QuantityDelta = quantityDelta; BalanceAfter = balanceAfter; Reference = reference;
+        ProductId = productId; WarehouseId = warehouseId; Type = type; QuantityDelta = quantityDelta; BalanceAfter = balanceAfter; Reference = reference;
     }
     public Guid ProductId { get; private set; }
+    public Guid WarehouseId { get; private set; }
     public InventoryMovementType Type { get; private set; }
     public int QuantityDelta { get; private set; }
     public int BalanceAfter { get; private set; }

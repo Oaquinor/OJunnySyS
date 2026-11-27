@@ -9,6 +9,7 @@ using OJunnySyS.Domain.Sales;
 using OJunnySyS.Domain.Purchasing;
 using OJunnySyS.Domain.Cash;
 using OJunnySyS.Domain.Pos;
+using OJunnySyS.Domain.Inventory;
 
 namespace OJunnySyS.Infrastructure.Persistence;
 
@@ -21,6 +22,21 @@ public sealed class EfStoreRepository(IDbContextFactory<StoreDbContext> contextF
         if (!includeInactive) products = products.Where(x => x.IsActive);
         if (!string.IsNullOrWhiteSpace(query)) products = products.Where(x => x.Name.Contains(query) || x.Sku.Contains(query) || (x.Barcode != null && x.Barcode.Contains(query)));
         return await products.OrderBy(x => x.Name).Take(100).ToListAsync(cancellationToken);
+    }
+
+    public async Task<IReadOnlyList<ProductStockSnapshot>> SearchProductsInWarehouseAsync(string? query, Guid warehouseId, CancellationToken cancellationToken = default)
+    {
+        await using var db = await CreateDbContextAsync(cancellationToken);
+        if (!await db.Warehouses.AnyAsync(x => x.Id == warehouseId && x.IsActive, cancellationToken))
+            throw new DomainException("El almacén del terminal no existe o está inactivo.");
+        var products = from stock in db.WarehouseStocks.AsNoTracking()
+                       join product in db.Products.AsNoTracking() on new { stock.TenantId, stock.ProductId } equals new { product.TenantId, ProductId = product.Id }
+                       where stock.WarehouseId == warehouseId && product.IsActive
+                       select new { Product = product, stock.Quantity };
+        if (!string.IsNullOrWhiteSpace(query))
+            products = products.Where(x => x.Product.Name.Contains(query) || x.Product.Sku.Contains(query) || (x.Product.Barcode != null && x.Product.Barcode.Contains(query)));
+        return await products.OrderBy(x => x.Product.Name).Take(100)
+            .Select(x => new ProductStockSnapshot(x.Product, x.Quantity)).ToListAsync(cancellationToken);
     }
 
     public async Task<IReadOnlyList<Customer>> SearchCustomersAsync(string? query, CancellationToken cancellationToken = default)
@@ -102,11 +118,19 @@ public sealed class EfStoreRepository(IDbContextFactory<StoreDbContext> contextF
         var tenantId = tenantContext.GetRequiredTenantId();
         var product = new Product(tenantId, sku, name, category, unitPrice, stock, barcode);
         await using var db = await CreateDbContextAsync(cancellationToken);
+        await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
+        _ = await db.Tenants.FromSqlInterpolated($"SELECT * FROM Tenants WHERE Id = {tenantId} FOR UPDATE").SingleOrDefaultAsync(cancellationToken)
+            ?? throw new DomainException("La empresa activa no existe.");
         if (await db.Products.AnyAsync(x => x.Sku == product.Sku || (product.Barcode != null && x.Barcode == product.Barcode), cancellationToken))
             throw new DomainException("Ya existe un producto con ese SKU o código de barras.");
+        var warehouses = await db.Warehouses.Where(x => x.IsActive).OrderBy(x => x.Code).ToListAsync(cancellationToken);
+        var mainWarehouse = warehouses.SingleOrDefault(x => x.Code == "MAIN") ?? throw new DomainException("Configura el almacén principal antes de crear productos.");
         db.Products.Add(product);
-        if (stock > 0) db.InventoryMovements.Add(new InventoryMovement(tenantId, product.Id, InventoryMovementType.StockAdjustment, stock, stock, "Existencias iniciales del producto"));
+        foreach (var warehouse in warehouses)
+            db.WarehouseStocks.Add(new WarehouseStock(tenantId, warehouse.Id, product.Id, warehouse.Id == mainWarehouse.Id ? stock : 0));
+        if (stock > 0) db.InventoryMovements.Add(new InventoryMovement(tenantId, product.Id, InventoryMovementType.StockAdjustment, stock, stock, "Existencias iniciales del producto", mainWarehouse.Id));
         await db.SaveChangesAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
         return product;
     }
 
@@ -143,6 +167,39 @@ public sealed class EfStoreRepository(IDbContextFactory<StoreDbContext> contextF
         return product;
     }
 
+    public async Task<InventoryTransferResult> TransferInventoryAsync(InventoryTransferRequest request, CancellationToken cancellationToken = default)
+    {
+        if (request.ProductId == Guid.Empty || request.SourceWarehouseId == Guid.Empty || request.DestinationWarehouseId == Guid.Empty || request.SourceWarehouseId == request.DestinationWarehouseId)
+            throw new DomainException("Selecciona un producto y dos almacenes distintos.");
+        if (request.Quantity <= 0) throw new DomainException("La cantidad a trasladar debe ser mayor que cero.");
+        if (request.Reference?.Trim().Length > 100) throw new DomainException("La referencia del traslado no puede superar 100 caracteres.");
+        var tenantId = tenantContext.GetRequiredTenantId();
+        await using var db = await CreateDbContextAsync(cancellationToken);
+        await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
+        _ = await db.Tenants.FromSqlInterpolated($"SELECT * FROM Tenants WHERE Id = {tenantId} FOR UPDATE").SingleOrDefaultAsync(cancellationToken)
+            ?? throw new DomainException("La empresa activa no existe.");
+        var product = await db.Products.FromSqlInterpolated($"SELECT * FROM Products WHERE Id = {request.ProductId} AND TenantId = {tenantId} AND IsActive = 1 FOR UPDATE").SingleOrDefaultAsync(cancellationToken)
+            ?? throw new DomainException("El producto no existe o está inactivo.");
+        var warehouseIds = new[] { request.SourceWarehouseId, request.DestinationWarehouseId }.Order().ToArray();
+        foreach (var warehouseId in warehouseIds)
+            if (!await db.Warehouses.AnyAsync(x => x.Id == warehouseId && x.IsActive, cancellationToken))
+                throw new DomainException("Los dos almacenes deben existir y estar activos en esta empresa.");
+        var stocks = new Dictionary<Guid, WarehouseStock>();
+        foreach (var warehouseId in warehouseIds)
+            stocks[warehouseId] = await db.WarehouseStocks.FromSqlInterpolated($"SELECT * FROM WarehouseStocks WHERE TenantId = {tenantId} AND WarehouseId = {warehouseId} AND ProductId = {product.Id} FOR UPDATE").SingleOrDefaultAsync(cancellationToken)
+                ?? throw new DomainException("No existe el saldo del producto en uno de los almacenes.");
+        var source = stocks[request.SourceWarehouseId];
+        var destination = stocks[request.DestinationWarehouseId];
+        source.Adjust(-request.Quantity);
+        destination.Adjust(request.Quantity);
+        var reference = string.IsNullOrWhiteSpace(request.Reference) ? $"TR-{Guid.NewGuid():N}" : request.Reference.Trim();
+        db.InventoryMovements.Add(new InventoryMovement(tenantId, product.Id, InventoryMovementType.TransferOut, -request.Quantity, source.Quantity, reference, request.SourceWarehouseId));
+        db.InventoryMovements.Add(new InventoryMovement(tenantId, product.Id, InventoryMovementType.TransferIn, request.Quantity, destination.Quantity, reference, request.DestinationWarehouseId));
+        await db.SaveChangesAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
+        return new InventoryTransferResult(reference, request.Quantity, product.Id, request.SourceWarehouseId, source.Quantity, request.DestinationWarehouseId, destination.Quantity);
+    }
+
     public async Task<Sale> CheckoutAsync(CheckoutRequest request, Guid cashierUserId, CancellationToken cancellationToken = default)
     {
         if (request.Lines.Count == 0) throw new DomainException("Agrega productos antes de cobrar.");
@@ -162,8 +219,11 @@ public sealed class EfStoreRepository(IDbContextFactory<StoreDbContext> contextF
             await transaction.CommitAsync(cancellationToken);
             return priorSale;
         }
-        if (!await db.PosRegisters.AnyAsync(x => x.Code == registerCode && x.IsActive, cancellationToken))
-            throw new DomainException("El terminal seleccionado no existe o está inactivo.");
+        var register = await db.PosRegisters.SingleOrDefaultAsync(x => x.Code == registerCode && x.IsActive, cancellationToken)
+            ?? throw new DomainException("El terminal seleccionado no existe o está inactivo.");
+        var warehouseId = register.WarehouseId;
+        if (!await db.Warehouses.AnyAsync(x => x.Id == warehouseId && x.IsActive, cancellationToken))
+            throw new DomainException("El almacén asignado al terminal no existe o está inactivo.");
         var cashSession = await db.CashSessions.FromSqlInterpolated($"SELECT * FROM CashSessions WHERE TenantId = {tenantId} AND RegisterCode = {registerCode} AND Status = {(int)CashSessionStatus.Open} FOR UPDATE").SingleOrDefaultAsync(cancellationToken)
             ?? throw new DomainException("Abre el turno del terminal seleccionado antes de registrar ventas.");
         priorSale = await LoadSaleByCheckoutKeyAsync(db, tenantId, request.IdempotencyKey, cancellationToken);
@@ -181,21 +241,24 @@ public sealed class EfStoreRepository(IDbContextFactory<StoreDbContext> contextF
         var tenant = await db.Tenants.SingleOrDefaultAsync(x => x.Id == tenantId, cancellationToken)
             ?? throw new DomainException("No se encontró la empresa activa.");
         var lines = new List<SaleLine>();
-        var stockMovements = new List<(Product Product, int Quantity)>();
+        var stockMovements = new List<(Product Product, int Quantity, int WarehouseBalance)>();
         foreach (var groupedLine in request.Lines.GroupBy(x => x.ProductId).OrderBy(x => x.Key))
         {
             var quantity = SumQuantities(groupedLine.Select(x => x.Quantity));
             if (quantity <= 0) throw new DomainException("La cantidad debe ser mayor que cero.");
             var product = await db.Products.FromSqlInterpolated($"SELECT * FROM Products WHERE Id = {groupedLine.Key} AND TenantId = {tenantId} AND IsActive = 1 FOR UPDATE").SingleOrDefaultAsync(cancellationToken)
                 ?? throw new DomainException("Uno de los productos ya no está disponible.");
+            var warehouseStock = await db.WarehouseStocks.FromSqlInterpolated($"SELECT * FROM WarehouseStocks WHERE TenantId = {tenantId} AND WarehouseId = {warehouseId} AND ProductId = {product.Id} FOR UPDATE").SingleOrDefaultAsync(cancellationToken)
+                ?? throw new DomainException("No hay un saldo inicializado para este producto en el almacén del terminal.");
+            warehouseStock.Adjust(-quantity);
             product.AdjustStock(-quantity);
-            stockMovements.Add((product, quantity));
+            stockMovements.Add((product, quantity, warehouseStock.Quantity));
             lines.Add(new SaleLine(product.Id, product.Sku, product.Name, product.UnitPrice, quantity));
         }
 
-        var sale = new Sale(tenantId, $"V-{DateTimeOffset.UtcNow:yyyyMMddHHmmss}-{Guid.NewGuid():N}", customer, request.PaymentMethod, lines, cashSession.Id, cashierUserId, tenant.DefaultTaxRate, request.IdempotencyKey, registerCode);
+        var sale = new Sale(tenantId, $"V-{DateTimeOffset.UtcNow:yyyyMMddHHmmss}-{Guid.NewGuid():N}", customer, request.PaymentMethod, lines, cashSession.Id, cashierUserId, tenant.DefaultTaxRate, request.IdempotencyKey, registerCode, warehouseId);
         foreach (var movement in stockMovements)
-            db.InventoryMovements.Add(new InventoryMovement(tenantId, movement.Product.Id, InventoryMovementType.Sale, -movement.Quantity, movement.Product.StockOnHand, sale.Number));
+            db.InventoryMovements.Add(new InventoryMovement(tenantId, movement.Product.Id, InventoryMovementType.Sale, -movement.Quantity, movement.WarehouseBalance, sale.Number, warehouseId));
         customer?.RecordPurchase(sale.Total);
         db.Sales.Add(sale);
         await db.SaveChangesAsync(cancellationToken);
@@ -414,6 +477,11 @@ public sealed class EfStoreRepository(IDbContextFactory<StoreDbContext> contextF
         await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
         var supplier = await db.Suppliers.FromSqlInterpolated($"SELECT * FROM Suppliers WHERE Id = {request.SupplierId} AND TenantId = {tenantId} AND IsActive = 1 FOR UPDATE").SingleOrDefaultAsync(cancellationToken)
             ?? throw new DomainException("El proveedor no existe o está inactivo.");
+        var warehouseId = request.WarehouseId;
+        if (warehouseId == Guid.Empty)
+            warehouseId = await db.Warehouses.Where(x => x.Code == "MAIN" && x.IsActive).Select(x => x.Id).SingleOrDefaultAsync(cancellationToken);
+        if (!await db.Warehouses.AnyAsync(x => x.Id == warehouseId && x.IsActive, cancellationToken))
+            throw new DomainException("Selecciona un almacén activo para recibir la compra.");
         var lines = new List<PurchaseOrderLine>();
         foreach (var grouped in request.Lines.GroupBy(x => x.ProductId).OrderBy(x => x.Key))
         {
@@ -426,7 +494,7 @@ public sealed class EfStoreRepository(IDbContextFactory<StoreDbContext> contextF
             lines.Add(new PurchaseOrderLine(product.Id, product.Sku, product.Name, quantity, distinctCosts[0]));
         }
         var number = $"C-{DateTimeOffset.UtcNow:yyyyMMddHHmmss}-{Guid.NewGuid():N}";
-        var order = new PurchaseOrder(tenantId, number, supplier, lines, request.Reference, request.DueDate);
+        var order = new PurchaseOrder(tenantId, number, supplier, lines, request.Reference, request.DueDate, warehouseId);
         db.PurchaseOrders.Add(order);
         await db.SaveChangesAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);
@@ -452,8 +520,11 @@ public sealed class EfStoreRepository(IDbContextFactory<StoreDbContext> contextF
             var line = order.Receive(receipt.LineId, receipt.Quantity);
             var product = await db.Products.FromSqlInterpolated($"SELECT * FROM Products WHERE Id = {line.ProductId} AND TenantId = {tenantId} FOR UPDATE").SingleOrDefaultAsync(cancellationToken)
                 ?? throw new DomainException("El producto de la orden ya no existe.");
+            var warehouseStock = await db.WarehouseStocks.FromSqlInterpolated($"SELECT * FROM WarehouseStocks WHERE TenantId = {tenantId} AND WarehouseId = {order.WarehouseId} AND ProductId = {product.Id} FOR UPDATE").SingleOrDefaultAsync(cancellationToken)
+                ?? throw new DomainException("No existe el saldo del producto en el almacén de recepción.");
+            warehouseStock.Adjust(receipt.Quantity);
             product.AdjustStock(receipt.Quantity);
-            db.InventoryMovements.Add(new InventoryMovement(tenantId, product.Id, InventoryMovementType.PurchaseReceipt, receipt.Quantity, product.StockOnHand, order.Number));
+            db.InventoryMovements.Add(new InventoryMovement(tenantId, product.Id, InventoryMovementType.PurchaseReceipt, receipt.Quantity, warehouseStock.Quantity, order.Number, order.WarehouseId));
         }
         await db.SaveChangesAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);

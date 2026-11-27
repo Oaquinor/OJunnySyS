@@ -619,7 +619,7 @@ namespace OJunnySyS.Infrastructure.Persistence.Migrations
                     b.ToTable("CustomerTagAssignments");
                 });
 
-            modelBuilder.Entity("OJunnySyS.Domain.Pos.PosRegister", b =>
+            modelBuilder.Entity("OJunnySyS.Domain.Inventory.Warehouse", b =>
                 {
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
@@ -655,8 +655,97 @@ namespace OJunnySyS.Infrastructure.Persistence.Migrations
 
                     b.HasKey("Id");
 
+                    b.HasAlternateKey("TenantId", "Code");
+
                     b.HasIndex("TenantId", "Name")
                         .IsUnique();
+
+                    b.ToTable("Warehouses");
+                });
+
+            modelBuilder.Entity("OJunnySyS.Domain.Inventory.WarehouseStock", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("char(36)");
+
+                    b.Property<DateTimeOffset>("CreatedAtUtc")
+                        .HasColumnType("datetime");
+
+                    b.Property<Guid>("ProductId")
+                        .HasColumnType("char(36)");
+
+                    b.Property<int>("Quantity")
+                        .HasColumnType("int");
+
+                    b.Property<long>("Revision")
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint")
+                        .HasDefaultValue(0L);
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("char(36)");
+
+                    b.Property<DateTimeOffset?>("UpdatedAtUtc")
+                        .HasColumnType("datetime");
+
+                    b.Property<Guid>("WarehouseId")
+                        .HasColumnType("char(36)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TenantId", "ProductId");
+
+                    b.HasIndex("TenantId", "WarehouseId", "ProductId")
+                        .IsUnique();
+
+                    b.ToTable("WarehouseStocks");
+                });
+
+            modelBuilder.Entity("OJunnySyS.Domain.Pos.PosRegister", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("char(36)");
+
+                    b.Property<string>("Code")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("varchar(40)");
+
+                    b.Property<DateTimeOffset>("CreatedAtUtc")
+                        .HasColumnType("datetime");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("tinyint(1)");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(120)
+                        .HasColumnType("varchar(120)");
+
+                    b.Property<long>("Revision")
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint")
+                        .HasDefaultValue(0L);
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("char(36)");
+
+                    b.Property<DateTimeOffset?>("UpdatedAtUtc")
+                        .HasColumnType("datetime");
+
+                    b.Property<Guid>("WarehouseId")
+                        .HasColumnType("char(36)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TenantId", "Name")
+                        .IsUnique();
+
+                    b.HasIndex("TenantId", "WarehouseId");
 
                     b.ToTable("PosRegisters");
                 });
@@ -693,11 +782,14 @@ namespace OJunnySyS.Infrastructure.Persistence.Migrations
                     b.Property<DateTimeOffset?>("UpdatedAtUtc")
                         .HasColumnType("datetime");
 
+                    b.Property<Guid>("WarehouseId")
+                        .HasColumnType("char(36)");
+
                     b.HasKey("Id");
 
                     b.HasIndex("ProductId");
 
-                    b.HasIndex("TenantId", "ProductId", "CreatedAtUtc");
+                    b.HasIndex("TenantId", "WarehouseId", "ProductId", "CreatedAtUtc");
 
                     b.ToTable("InventoryMovements");
                 });
@@ -744,6 +836,9 @@ namespace OJunnySyS.Infrastructure.Persistence.Migrations
                     b.Property<DateTimeOffset?>("UpdatedAtUtc")
                         .HasColumnType("datetime");
 
+                    b.Property<Guid>("WarehouseId")
+                        .HasColumnType("char(36)");
+
                     b.HasKey("Id");
 
                     b.HasIndex("SupplierId");
@@ -752,6 +847,8 @@ namespace OJunnySyS.Infrastructure.Persistence.Migrations
 
                     b.HasIndex("TenantId", "Number")
                         .IsUnique();
+
+                    b.HasIndex("TenantId", "WarehouseId");
 
                     b.ToTable("PurchaseOrders");
                 });
@@ -976,6 +1073,9 @@ namespace OJunnySyS.Infrastructure.Persistence.Migrations
                     b.Property<DateTimeOffset?>("UpdatedAtUtc")
                         .HasColumnType("datetime");
 
+                    b.Property<Guid>("WarehouseId")
+                        .HasColumnType("char(36)");
+
                     b.HasKey("Id");
 
                     b.HasIndex("CashSessionId");
@@ -989,6 +1089,8 @@ namespace OJunnySyS.Infrastructure.Persistence.Migrations
 
                     b.HasIndex("TenantId", "Number")
                         .IsUnique();
+
+                    b.HasIndex("TenantId", "WarehouseId");
 
                     b.HasIndex("TenantId", "CustomerId", "CreatedAtUtc");
 
@@ -1478,11 +1580,44 @@ namespace OJunnySyS.Infrastructure.Persistence.Migrations
                         .IsRequired();
                 });
 
+            modelBuilder.Entity("OJunnySyS.Domain.Inventory.Warehouse", b =>
+                {
+                    b.HasOne("OJunnySyS.Domain.Tenancy.Tenant", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("OJunnySyS.Domain.Inventory.WarehouseStock", b =>
+                {
+                    b.HasOne("OJunnySyS.Domain.Catalog.Product", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "ProductId")
+                        .HasPrincipalKey("TenantId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("OJunnySyS.Domain.Inventory.Warehouse", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "WarehouseId")
+                        .HasPrincipalKey("TenantId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("OJunnySyS.Domain.Pos.PosRegister", b =>
                 {
                     b.HasOne("OJunnySyS.Domain.Tenancy.Tenant", null)
                         .WithMany()
                         .HasForeignKey("TenantId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("OJunnySyS.Domain.Inventory.Warehouse", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "WarehouseId")
+                        .HasPrincipalKey("TenantId", "Id")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
                 });
@@ -1500,6 +1635,13 @@ namespace OJunnySyS.Infrastructure.Persistence.Migrations
                         .HasForeignKey("TenantId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
+
+                    b.HasOne("OJunnySyS.Domain.Inventory.Warehouse", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "WarehouseId")
+                        .HasPrincipalKey("TenantId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
                 });
 
             modelBuilder.Entity("OJunnySyS.Domain.Purchasing.PurchaseOrder", b =>
@@ -1513,6 +1655,13 @@ namespace OJunnySyS.Infrastructure.Persistence.Migrations
                     b.HasOne("OJunnySyS.Domain.Tenancy.Tenant", null)
                         .WithMany()
                         .HasForeignKey("TenantId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("OJunnySyS.Domain.Inventory.Warehouse", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "WarehouseId")
+                        .HasPrincipalKey("TenantId", "Id")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
                 });
@@ -1582,6 +1731,13 @@ namespace OJunnySyS.Infrastructure.Persistence.Migrations
                     b.HasOne("OJunnySyS.Domain.Tenancy.Tenant", null)
                         .WithMany()
                         .HasForeignKey("TenantId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("OJunnySyS.Domain.Inventory.Warehouse", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "WarehouseId")
+                        .HasPrincipalKey("TenantId", "Id")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
                 });

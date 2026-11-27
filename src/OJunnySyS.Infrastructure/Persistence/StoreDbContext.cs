@@ -10,6 +10,7 @@ using OJunnySyS.Domain.Purchasing;
 using OJunnySyS.Domain.Cash;
 using OJunnySyS.Domain.Crm;
 using OJunnySyS.Domain.Pos;
+using OJunnySyS.Domain.Inventory;
 using OJunnySyS.Infrastructure.Identity;
 
 namespace OJunnySyS.Infrastructure.Persistence;
@@ -34,6 +35,8 @@ public sealed class StoreDbContext(DbContextOptions<StoreDbContext> options)
     public DbSet<CrmActivity> CrmActivities => Set<CrmActivity>();
     public DbSet<SupplierPayment> SupplierPayments => Set<SupplierPayment>();
     public DbSet<PosRegister> PosRegisters => Set<PosRegister>();
+    public DbSet<Warehouse> Warehouses => Set<Warehouse>();
+    public DbSet<WarehouseStock> WarehouseStocks => Set<WarehouseStock>();
     public Guid? CurrentTenantId { get; set; }
 
     public override int SaveChanges()
@@ -98,6 +101,7 @@ public sealed class StoreDbContext(DbContextOptions<StoreDbContext> options)
         modelBuilder.Entity<Product>(entity =>
         {
             entity.HasKey(x => x.Id);
+            entity.HasAlternateKey(x => new { x.TenantId, x.Id });
             entity.Property(x => x.Barcode).HasMaxLength(64);
             entity.HasIndex(x => new { x.TenantId, x.Sku }).IsUnique();
             entity.HasIndex(x => new { x.TenantId, x.Barcode }).IsUnique();
@@ -177,6 +181,7 @@ public sealed class StoreDbContext(DbContextOptions<StoreDbContext> options)
             entity.HasQueryFilter(x => CurrentTenantId != null && x.TenantId == CurrentTenantId);
             entity.Property(x => x.Number).HasMaxLength(64).IsRequired();
             entity.Property(x => x.RegisterCode).HasMaxLength(40).IsRequired();
+            entity.HasOne<Warehouse>().WithMany().HasForeignKey(x => new { x.TenantId, x.WarehouseId }).HasPrincipalKey(x => new { x.TenantId, x.Id }).OnDelete(DeleteBehavior.Restrict);
             entity.Property(x => x.IdempotencyKey).IsRequired(false);
             entity.Property(x => x.CustomerName).HasMaxLength(220).IsRequired();
             entity.Property(x => x.Subtotal).HasPrecision(14, 2);
@@ -223,6 +228,7 @@ public sealed class StoreDbContext(DbContextOptions<StoreDbContext> options)
             entity.Property(x => x.Number).HasMaxLength(64).IsRequired();
             entity.Property(x => x.SupplierName).HasMaxLength(160).IsRequired();
             entity.Property(x => x.Reference).HasMaxLength(100);
+            entity.HasOne<Warehouse>().WithMany().HasForeignKey(x => new { x.TenantId, x.WarehouseId }).HasPrincipalKey(x => new { x.TenantId, x.Id }).OnDelete(DeleteBehavior.Restrict);
             entity.Property(x => x.Total).HasPrecision(14, 2);
             entity.HasMany<PurchaseOrderLine>(nameof(PurchaseOrder.Lines)).WithOne().HasForeignKey(line => line.PurchaseOrderId).OnDelete(DeleteBehavior.Cascade);
             entity.Navigation(nameof(PurchaseOrder.Lines)).UsePropertyAccessMode(PropertyAccessMode.Field);
@@ -241,9 +247,10 @@ public sealed class StoreDbContext(DbContextOptions<StoreDbContext> options)
         modelBuilder.Entity<InventoryMovement>(entity =>
         {
             entity.HasKey(x => x.Id);
-            entity.HasIndex(x => new { x.TenantId, x.ProductId, x.CreatedAtUtc });
+            entity.HasIndex(x => new { x.TenantId, x.WarehouseId, x.ProductId, x.CreatedAtUtc });
             entity.HasOne<Tenant>().WithMany().HasForeignKey(x => x.TenantId).OnDelete(DeleteBehavior.Restrict);
             entity.HasOne<Product>().WithMany().HasForeignKey(x => x.ProductId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne<Warehouse>().WithMany().HasForeignKey(x => new { x.TenantId, x.WarehouseId }).HasPrincipalKey(x => new { x.TenantId, x.Id }).OnDelete(DeleteBehavior.Restrict);
             entity.HasQueryFilter(x => CurrentTenantId != null && x.TenantId == CurrentTenantId);
             entity.Property(x => x.Reference).HasMaxLength(100).IsRequired();
         });
@@ -268,9 +275,33 @@ public sealed class StoreDbContext(DbContextOptions<StoreDbContext> options)
             entity.HasAlternateKey(x => new { x.TenantId, x.Code });
             entity.HasIndex(x => new { x.TenantId, x.Name }).IsUnique();
             entity.HasOne<Tenant>().WithMany().HasForeignKey(x => x.TenantId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne<Warehouse>().WithMany().HasForeignKey(x => new { x.TenantId, x.WarehouseId }).HasPrincipalKey(x => new { x.TenantId, x.Id }).OnDelete(DeleteBehavior.Restrict);
             entity.HasQueryFilter(x => CurrentTenantId != null && x.TenantId == CurrentTenantId);
             entity.Property(x => x.Code).HasMaxLength(40).IsRequired();
             entity.Property(x => x.Name).HasMaxLength(120).IsRequired();
+            entity.Property(x => x.Revision).IsConcurrencyToken().HasDefaultValue(0L);
+        });
+
+        modelBuilder.Entity<Warehouse>(entity =>
+        {
+            entity.HasKey(x => x.Id);
+            entity.HasAlternateKey(x => new { x.TenantId, x.Id });
+            entity.HasAlternateKey(x => new { x.TenantId, x.Code });
+            entity.HasIndex(x => new { x.TenantId, x.Name }).IsUnique();
+            entity.HasOne<Tenant>().WithMany().HasForeignKey(x => x.TenantId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasQueryFilter(x => CurrentTenantId != null && x.TenantId == CurrentTenantId);
+            entity.Property(x => x.Code).HasMaxLength(40).IsRequired();
+            entity.Property(x => x.Name).HasMaxLength(120).IsRequired();
+            entity.Property(x => x.Revision).IsConcurrencyToken().HasDefaultValue(0L);
+        });
+
+        modelBuilder.Entity<WarehouseStock>(entity =>
+        {
+            entity.HasKey(x => x.Id);
+            entity.HasIndex(x => new { x.TenantId, x.WarehouseId, x.ProductId }).IsUnique();
+            entity.HasOne<Warehouse>().WithMany().HasForeignKey(x => new { x.TenantId, x.WarehouseId }).HasPrincipalKey(x => new { x.TenantId, x.Id }).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne<Product>().WithMany().HasForeignKey(x => new { x.TenantId, x.ProductId }).HasPrincipalKey(x => new { x.TenantId, x.Id }).OnDelete(DeleteBehavior.Restrict);
+            entity.HasQueryFilter(x => CurrentTenantId != null && x.TenantId == CurrentTenantId);
             entity.Property(x => x.Revision).IsConcurrencyToken().HasDefaultValue(0L);
         });
 

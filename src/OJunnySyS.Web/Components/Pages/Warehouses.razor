@@ -1,0 +1,104 @@
+@page "/app/inventory/warehouses"
+@attribute [Authorize(Roles = "Administrator")]
+@inject WarehouseService WarehouseManager
+@inject StoreService Store
+@inject ILogger<Warehouses> Logger
+
+<PageTitle>Almacenes · OJunnySyS</PageTitle>
+<PageHeader Eyebrow="INVENTARIO / CONFIGURACIÓN" Title="Almacenes" Description="Separa existencias por ubicación y asigna cada terminal a su almacén de venta.">
+    <Actions><a class="button button-secondary" href="/app/pos/registers">Configurar terminales POS</a></Actions>
+</PageHeader>
+
+@if (_loading) { <div class="loading-panel">Cargando almacenes…</div> }
+else
+{
+    @if (_notice is not null) { <div class="success-banner">✓ @_notice</div> }
+    @if (_error is not null) { <div class="inline-error">@_error</div> }
+    <div class="pos-register-layout">
+        <section class="panel pos-register-list"><div class="panel-heading"><div><span class="eyebrow">UBICACIONES</span><h2>Almacenes configurados</h2><p>Las existencias se guardan por almacén. El saldo del catálogo muestra el total de la empresa.</p></div></div>
+            @if (_warehouses.Count == 0) { <EmptyState Icon="▤" Title="No hay almacenes" Description="Crea un almacén para registrar existencias y habilitar las terminales." /> }
+            else { <div class="table-wrap"><table><thead><tr><th>ALMACÉN</th><th>CÓDIGO</th><th>ESTADO</th><th>ACCIONES</th></tr></thead><tbody>@foreach (var warehouse in _warehouses) { <tr><td><strong>@warehouse.Name</strong></td><td><span class="mono">@warehouse.Code</span></td><td><span class="status-pill @(warehouse.IsActive ? "" : "status-warning")"><i></i>@(warehouse.IsActive ? "Activo" : "Inactivo")</span></td><td class="pos-register-actions"><button class="button button-secondary" @onclick="() => Select(warehouse)">Editar nombre</button><button class="button @(warehouse.IsActive ? "button-secondary" : "button-primary")" @onclick="() => ToggleActiveAsync(warehouse)">@((warehouse.IsActive ? "Desactivar" : "Activar"))</button></td></tr> }</tbody></table></div> }
+        </section>
+        <section class="panel pos-register-form-panel"><div class="panel-heading"><div><span class="eyebrow">NUEVA UBICACIÓN</span><h2>Crear almacén</h2><p>Los productos existentes iniciarán con saldo cero aquí.</p></div></div>
+            <EditForm Model="_create" OnValidSubmit="CreateAsync"><DataAnnotationsValidator /><div class="form-grid"><label>Código<InputText @bind-Value="_create.Code" maxlength="40" placeholder="NORTE" /></label><label>Nombre visible<InputText @bind-Value="_create.Name" maxlength="120" placeholder="Almacén Norte" /></label></div><ValidationSummary /><button class="button button-primary" type="submit" disabled="@_saving">@(_saving ? "Creando…" : "Crear almacén")</button></EditForm>
+            @if (_edit is not null) { <hr /><div class="panel-heading"><div><span class="eyebrow">EDITAR ALMACÉN</span><h2>@_edit.Code</h2></div></div><EditForm Model="_edit" OnValidSubmit="SaveNameAsync"><DataAnnotationsValidator /><label>Nombre visible<InputText @bind-Value="_edit.Name" maxlength="120" /></label><ValidationSummary /><div class="modal-actions"><button class="button button-secondary" type="button" @onclick="() => _edit = null">Cancelar</button><button class="button button-primary" type="submit" disabled="@_saving">Guardar nombre</button></div></EditForm> }
+        </section>
+    </div>
+    <section class="panel pos-register-form-panel warehouse-transfer-panel"><div class="panel-heading"><div><span class="eyebrow">OPERACIÓN DE INVENTARIO</span><h2>Trasladar existencias</h2><p>El traslado descuenta y acredita las dos ubicaciones en una sola operación auditable.</p></div></div>
+        <EditForm Model="_transfer" OnValidSubmit="TransferAsync"><DataAnnotationsValidator /><div class="form-grid"><label>Almacén de origen<InputSelect @bind-Value="_transfer.SourceWarehouseId" @bind-Value:after="LoadSourceProductsAsync"><option value="">Selecciona origen</option>@foreach (var warehouse in _warehouses.Where(x => x.IsActive)) { <option value="@warehouse.Id">@warehouse.Name</option> }</InputSelect></label><label>Almacén de destino<InputSelect @bind-Value="_transfer.DestinationWarehouseId"><option value="">Selecciona destino</option>@foreach (var warehouse in _warehouses.Where(x => x.IsActive && x.Id != _transfer.SourceWarehouseId)) { <option value="@warehouse.Id">@warehouse.Name</option> }</InputSelect></label><label>Producto<InputSelect @bind-Value="_transfer.ProductId"><option value="">Selecciona producto</option>@foreach (var product in _sourceProducts.Where(x => x.StockOnHand > 0)) { <option value="@product.Id">@product.Name · disponible @product.StockOnHand</option> }</InputSelect></label><label>Cantidad<InputNumber @bind-Value="_transfer.Quantity" min="1" /></label><label class="full-span">Referencia <span class="optional">Opcional</span><InputText @bind-Value="_transfer.Reference" maxlength="100" placeholder="Traspaso interno o número de documento" /></label></div><ValidationSummary /><button class="button button-primary" type="submit" disabled="@(_saving || _transfer.ProductId == Guid.Empty || _transfer.SourceWarehouseId == Guid.Empty || _transfer.DestinationWarehouseId == Guid.Empty)">@(_saving ? "Trasladando…" : "Confirmar traslado")</button></EditForm>
+    </section>
+    <p class="muted-foot pos-register-note">No se puede desactivar un almacén si aún tiene existencias, órdenes pendientes o terminales activos asignados. Traslada el inventario primero; el historial de ventas y compras conserva su almacén de origen.</p>
+}
+
+@code {
+    private List<WarehouseDto> _warehouses = [];
+    private List<ProductDto> _sourceProducts = [];
+    private CreateModel _create = new();
+    private EditModel? _edit;
+    private TransferModel _transfer = new();
+    private bool _loading = true, _saving;
+    private string? _error, _notice;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadAsync();
+        _transfer.SourceWarehouseId = _warehouses.FirstOrDefault(x => x.Code == "MAIN")?.Id ?? _warehouses.FirstOrDefault(x => x.IsActive)?.Id ?? Guid.Empty;
+        _transfer.DestinationWarehouseId = _warehouses.FirstOrDefault(x => x.IsActive && x.Id != _transfer.SourceWarehouseId)?.Id ?? Guid.Empty;
+        await LoadSourceProductsAsync();
+    }
+    private async Task LoadAsync()
+    {
+        try { _warehouses = (await WarehouseManager.GetAsync()).ToList(); }
+        catch (Exception ex) { Logger.LogError(ex, "No se pudieron cargar los almacenes."); _error = "No se pudieron cargar los almacenes."; }
+        finally { _loading = false; }
+    }
+    private async Task CreateAsync()
+    {
+        _saving = true; _error = null; _notice = null;
+        try { var item = await WarehouseManager.CreateAsync(new CreateWarehouseRequest(_create.Code, _create.Name)); _create = new(); _notice = $"Almacén {item.Name} creado."; await LoadAsync(); }
+        catch (DomainException ex) { _error = ex.Message; }
+        catch (Exception ex) { Logger.LogError(ex, "No se pudo crear el almacén."); _error = "No se pudo crear el almacén."; }
+        finally { _saving = false; }
+    }
+    private void Select(WarehouseDto item) => _edit = new EditModel { Id = item.Id, Code = item.Code, Name = item.Name, Revision = item.Revision };
+    private async Task SaveNameAsync()
+    {
+        if (_edit is null) return; _saving = true; _error = null; _notice = null;
+        try { await WarehouseManager.UpdateAsync(_edit.Id, new UpdateWarehouseRequest(_edit.Name, _edit.Revision)); _edit = null; _notice = "Nombre del almacén actualizado."; await LoadAsync(); }
+        catch (ConcurrencyConflictException ex) { _error = ex.Message; await LoadAsync(); }
+        catch (DomainException ex) { _error = ex.Message; }
+        catch (Exception ex) { Logger.LogError(ex, "No se pudo renombrar el almacén."); _error = "No se pudo actualizar el almacén."; }
+        finally { _saving = false; }
+    }
+    private async Task ToggleActiveAsync(WarehouseDto item)
+    {
+        _saving = true; _error = null; _notice = null;
+        try { await WarehouseManager.SetActiveAsync(item.Id, new SetWarehouseActiveRequest(!item.IsActive, item.Revision)); _notice = item.IsActive ? "Almacén desactivado." : "Almacén activado."; await LoadAsync(); }
+        catch (ConcurrencyConflictException ex) { _error = ex.Message; await LoadAsync(); }
+        catch (DomainException ex) { _error = ex.Message; }
+        catch (Exception ex) { Logger.LogError(ex, "No se pudo cambiar el estado del almacén."); _error = "No se pudo actualizar el almacén."; }
+        finally { _saving = false; }
+    }
+    private async Task LoadSourceProductsAsync()
+    {
+        _transfer.ProductId = Guid.Empty;
+        _sourceProducts = _transfer.SourceWarehouseId == Guid.Empty ? [] : (await Store.SearchProductsInWarehouseAsync(null, _transfer.SourceWarehouseId)).ToList();
+    }
+    private async Task TransferAsync()
+    {
+        _saving = true; _error = null; _notice = null;
+        try
+        {
+            var result = await Store.TransferInventoryAsync(new InventoryTransferRequest(_transfer.ProductId, _transfer.SourceWarehouseId, _transfer.DestinationWarehouseId, _transfer.Quantity, _transfer.Reference));
+            _notice = $"Traslado {result.Reference}: origen {result.SourceBalance}, destino {result.DestinationBalance} unidades.";
+            _transfer.ProductId = Guid.Empty; _transfer.Quantity = 1; _transfer.Reference = null;
+            await LoadSourceProductsAsync();
+        }
+        catch (DomainException ex) { _error = ex.Message; await LoadSourceProductsAsync(); }
+        catch (Exception ex) { Logger.LogError(ex, "No se pudo trasladar el inventario."); _error = "No se pudo completar el traslado."; }
+        finally { _saving = false; }
+    }
+    private sealed class CreateModel { [Required, StringLength(40, MinimumLength = 1), RegularExpression("^[A-Za-z0-9][A-Za-z0-9_-]*$")] public string Code { get; set; } = ""; [Required, StringLength(120, MinimumLength = 2)] public string Name { get; set; } = ""; }
+    private sealed class EditModel { public Guid Id { get; set; } public string Code { get; set; } = ""; public long Revision { get; set; } [Required, StringLength(120, MinimumLength = 2)] public string Name { get; set; } = ""; }
+    private sealed class TransferModel { public Guid ProductId { get; set; } public Guid SourceWarehouseId { get; set; } public Guid DestinationWarehouseId { get; set; } [Range(1, int.MaxValue)] public int Quantity { get; set; } = 1; [StringLength(100)] public string? Reference { get; set; } }
+}

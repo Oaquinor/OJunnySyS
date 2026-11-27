@@ -4,6 +4,7 @@ using OJunnySyS.Domain.Catalog;
 using OJunnySyS.Domain.Customers;
 using OJunnySyS.Infrastructure.Identity;
 using OJunnySyS.Domain.Purchasing;
+using OJunnySyS.Domain.Inventory;
 
 namespace OJunnySyS.Infrastructure.Persistence;
 
@@ -15,6 +16,7 @@ public static class DatabaseInitializer
         await using var db = await factory.CreateDbContextAsync(cancellationToken);
         await db.Database.MigrateAsync(cancellationToken);
         db.CurrentTenantId = TenantDefaults.LocalDemoTenantId;
+        var warehouse = await db.Warehouses.SingleAsync(x => x.Code == "MAIN", cancellationToken);
         if (await db.Products.AnyAsync(cancellationToken)) return;
 
         var products = new[]
@@ -26,7 +28,8 @@ public static class DatabaseInitializer
             new Product(TenantDefaults.LocalDemoTenantId, "ACC-002", "Filtro reutilizable", "Accesorios", 390m, 16, "746000000005")
         };
         db.Products.AddRange(products);
-        db.InventoryMovements.AddRange(products.Select(x => new InventoryMovement(x.TenantId, x.Id, InventoryMovementType.StockAdjustment, x.StockOnHand, x.StockOnHand, "Existencias iniciales de demostración")));
+        db.WarehouseStocks.AddRange(products.Select(x => new WarehouseStock(x.TenantId, warehouse.Id, x.Id, x.StockOnHand)));
+        db.InventoryMovements.AddRange(products.Select(x => new InventoryMovement(x.TenantId, x.Id, InventoryMovementType.StockAdjustment, x.StockOnHand, x.StockOnHand, "Existencias iniciales de demostración", warehouse.Id)));
         db.Customers.AddRange(
             new Customer(TenantDefaults.LocalDemoTenantId, "María", "Fernández", "maria.fernandez@example.com", "809-555-0142", "Estudio Norte"),
             new Customer(TenantDefaults.LocalDemoTenantId, "Carlos", "Méndez", "carlos.mendez@example.com", "829-555-0188"),

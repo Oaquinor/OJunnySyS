@@ -15,6 +15,7 @@ OJunnySyS se desarrolla en C#, ASP.NET Core .NET 10, Blazor Server interactivo, 
 - [x] Catálogo de productos, precios, código de barras y movimientos de inventario.
 - [x] POS transaccional, pagos divididos, caja, recibos, devoluciones y crédito.
 - [x] Administración multiempresa de terminales POS con caja por terminal y selección de caja en pagos en efectivo a proveedores.
+- [x] Almacenes por empresa, asignación de terminal/compra, saldos por ubicación, transferencias auditables y checkout limitado al stock de la sucursal.
 - [x] Proveedores, compras, recepciones parciales y completas, cuentas por pagar y antigüedad de saldos.
 - [x] Reportes por empresa y vendedor, con exportación autorizada.
 - [x] Administración inicial de tenants, planes, límites y facturación manual.

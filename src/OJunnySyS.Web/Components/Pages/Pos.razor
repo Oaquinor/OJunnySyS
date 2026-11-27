@@ -3,12 +3,13 @@
 @inject StoreService Store
 @inject TenantSettingsService TenantSettings
 @inject PosRegisterService PosRegisters
+@inject WarehouseService WarehouseService
 @inject AuthenticationStateProvider AuthenticationState
 @inject ILogger<Pos> Logger
 
 <PageTitle>Punto de venta · OjunnySyS</PageTitle>
 <PageHeader Eyebrow="VENTAS / PUNTO DE VENTA" Title="Punto de venta" Description="Agrega productos, elige cómo cobrar y listo.">
-    <Actions><div class="pos-terminal-select"><label for="pos-terminal">Terminal<select id="pos-terminal" @bind="_registerCode" @bind:after="OnRegisterChangedAsync"><option value="">Selecciona un terminal</option>@foreach (var register in _registers) { <option value="@register.Code">@register.Name</option> }</select></label></div><a class="register-status" href="/app/cash"><span class="@(CashOpen ? "online-dot" : "cash-closed-dot")"></span><span><strong>@(CashOpen ? "Caja abierta" : "Caja cerrada")</strong><small>@(_registers.FirstOrDefault(x => x.Code == _registerCode)?.Name ?? _registerCode) · administrar</small></span></a></Actions>
+    <Actions><div class="pos-terminal-select"><label for="pos-terminal">Terminal<select id="pos-terminal" @bind="_registerCode" @bind:after="OnRegisterChangedAsync"><option value="">Selecciona un terminal</option>@foreach (var register in _registers) { <option value="@register.Code">@register.Name</option> }</select></label></div><a class="register-status" href="/app/cash"><span class="@(CashOpen ? "online-dot" : "cash-closed-dot")"></span><span><strong>@(CashOpen ? "Caja abierta" : "Caja cerrada")</strong><small>@(_registers.FirstOrDefault(x => x.Code == _registerCode)?.Name ?? _registerCode) · @_warehouses.FirstOrDefault(x => x.Id == _warehouseId)?.Name · administrar</small></span></a></Actions>
 </PageHeader>
 @if (!string.IsNullOrWhiteSpace(_notice)) { <div class="success-banner">✓ @_notice @if (_lastSaleId is { } saleId) { <a class="receipt-quick-link" href="/app/receipts/@saleId">Ver recibo</a> }<button @onclick="() => _notice = null">×</button></div> }
 @if (!CashOpen && !string.IsNullOrEmpty(_registerCode)) { <div class="inline-error cash-error">Abre el turno de @_registers.FirstOrDefault(x => x.Code == _registerCode)?.Name antes de cobrar. <a href="/app/cash">Ir a caja y arqueo →</a></div> }
@@ -51,6 +52,7 @@
     private List<ProductDto> _products = [];
     private List<CustomerDto> _customers = [];
     private List<PosRegisterDto> _registers = [];
+    private List<WarehouseDto> _warehouses = [];
     private CashSessionDto? _cashSession;
     private Guid _cashierUserId;
     private Guid? _lastSaleId;
@@ -59,6 +61,7 @@
     private string? _category, _error, _notice;
     private Guid? _customerId;
     private string _registerCode = "MAIN";
+    private Guid _warehouseId;
     private PaymentMethod _payment = PaymentMethod.Cash;
     private bool _saving;
     private Guid _checkoutKey = Guid.NewGuid();
@@ -70,9 +73,9 @@
     private decimal Tax => decimal.Round(Subtotal * _taxRate, 2);
     private decimal Total => Subtotal + Tax;
     private bool CashOpen => _cashSession?.Status == CashSessionStatus.Open;
-    protected override async Task OnInitializedAsync() { var principal = (await AuthenticationState.GetAuthenticationStateAsync()).User; if (!Guid.TryParse(principal.FindFirstValue(System.Security.Claims.ClaimTypes.NameIdentifier), out _cashierUserId)) throw new InvalidOperationException("No se pudo identificar al cajero."); _registers = (await PosRegisters.GetRegistersAsync(includeInactive: false)).ToList(); if (_registers.All(x => x.Code != _registerCode)) _registerCode = _registers.FirstOrDefault()?.Code ?? ""; _taxRate = (await TenantSettings.GetAsync()).DefaultTaxRate; _cashSession = string.IsNullOrEmpty(_registerCode) ? null : await Store.GetCurrentCashSessionAsync(_registerCode); await LoadProductsAsync(); _customers = (await Store.SearchCustomersAsync(null)).ToList(); }
-    private async Task OnRegisterChangedAsync() { ClearCart(); _error = null; _cashSession = string.IsNullOrEmpty(_registerCode) ? null : await Store.GetCurrentCashSessionAsync(_registerCode); }
-    private async Task LoadProductsAsync() => _products = (await Store.SearchProductsAsync(_search)).ToList();
+    protected override async Task OnInitializedAsync() { var principal = (await AuthenticationState.GetAuthenticationStateAsync()).User; if (!Guid.TryParse(principal.FindFirstValue(System.Security.Claims.ClaimTypes.NameIdentifier), out _cashierUserId)) throw new InvalidOperationException("No se pudo identificar al cajero."); _registers = (await PosRegisters.GetRegistersAsync(includeInactive: false)).ToList(); _warehouses = (await WarehouseService.GetAsync(includeInactive: false)).ToList(); if (_registers.All(x => x.Code != _registerCode)) _registerCode = _registers.FirstOrDefault()?.Code ?? ""; _warehouseId = _registers.FirstOrDefault(x => x.Code == _registerCode)?.WarehouseId ?? Guid.Empty; _taxRate = (await TenantSettings.GetAsync()).DefaultTaxRate; _cashSession = string.IsNullOrEmpty(_registerCode) ? null : await Store.GetCurrentCashSessionAsync(_registerCode); await LoadProductsAsync(); _customers = (await Store.SearchCustomersAsync(null)).ToList(); }
+    private async Task OnRegisterChangedAsync() { ClearCart(); _error = null; _warehouseId = _registers.FirstOrDefault(x => x.Code == _registerCode)?.WarehouseId ?? Guid.Empty; _cashSession = string.IsNullOrEmpty(_registerCode) ? null : await Store.GetCurrentCashSessionAsync(_registerCode); await LoadProductsAsync(); }
+    private async Task LoadProductsAsync() => _products = _warehouseId == Guid.Empty ? [] : (await Store.SearchProductsInWarehouseAsync(_search, _warehouseId)).ToList();
     private void ResetCheckoutKey() => _checkoutKey = Guid.NewGuid();
     private void Add(ProductDto product) { if (_cart.GetValueOrDefault(product.Id) < product.StockOnHand) { _cart[product.Id] = _cart.GetValueOrDefault(product.Id) + 1; ResetCheckoutKey(); } _error = null; }
     private void ChangeQuantity(ProductDto product, int delta) { var quantity = _cart.GetValueOrDefault(product.Id) + delta; if (quantity <= 0) { _cart.Remove(product.Id); ResetCheckoutKey(); } else if (quantity <= product.StockOnHand) { _cart[product.Id] = quantity; ResetCheckoutKey(); } }

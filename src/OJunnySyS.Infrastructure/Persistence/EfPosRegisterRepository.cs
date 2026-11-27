@@ -19,11 +19,13 @@ public sealed class EfPosRegisterRepository(
         return await registers.OrderBy(x => x.Name).ToListAsync(cancellationToken);
     }
 
-    public async Task<PosRegister> CreateRegisterAsync(string code, string name, CancellationToken cancellationToken = default)
+    public async Task<PosRegister> CreateRegisterAsync(string code, string name, Guid warehouseId, CancellationToken cancellationToken = default)
     {
         var tenantId = tenantContext.GetRequiredTenantId();
-        var register = new PosRegister(tenantId, code, name);
+        var register = new PosRegister(tenantId, code, name, warehouseId);
         await using var db = await CreateDbContextAsync(cancellationToken);
+        if (!await db.Warehouses.AnyAsync(x => x.Id == warehouseId && x.IsActive, cancellationToken))
+            throw new DomainException("Selecciona un almacén activo de esta empresa.");
         if (await db.PosRegisters.AnyAsync(x => x.Code == register.Code || x.Name == register.Name, cancellationToken))
             throw new DomainException("Ya existe un terminal con ese código o nombre.");
         db.PosRegisters.Add(register);
@@ -32,19 +34,29 @@ public sealed class EfPosRegisterRepository(
         return register;
     }
 
-    public async Task<PosRegister> UpdateRegisterAsync(Guid id, string name, long expectedRevision, CancellationToken cancellationToken = default)
+    public async Task<PosRegister> UpdateRegisterAsync(Guid id, string name, Guid warehouseId, long expectedRevision, CancellationToken cancellationToken = default)
     {
+        var tenantId = tenantContext.GetRequiredTenantId();
         await using var db = await CreateDbContextAsync(cancellationToken);
-        var register = await db.PosRegisters.SingleOrDefaultAsync(x => x.Id == id, cancellationToken)
+        await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
+        _ = await db.Tenants.FromSqlInterpolated($"SELECT * FROM Tenants WHERE Id = {tenantId} FOR UPDATE").SingleOrDefaultAsync(cancellationToken)
+            ?? throw new DomainException("La empresa activa no existe.");
+        var register = await db.PosRegisters.FromSqlInterpolated($"SELECT * FROM PosRegisters WHERE Id = {id} AND TenantId = {tenantId} FOR UPDATE").SingleOrDefaultAsync(cancellationToken)
             ?? throw new DomainException("El terminal no existe en esta empresa.");
         if (register.Revision != expectedRevision)
             throw new ConcurrencyConflictException("El terminal cambió en otra sesión. Recarga la página antes de guardar.");
+        if (!await db.Warehouses.AnyAsync(x => x.Id == warehouseId && x.IsActive, cancellationToken))
+            throw new DomainException("Selecciona un almacén activo de esta empresa.");
+        if (warehouseId != register.WarehouseId && await db.CashSessions.AnyAsync(x => x.RegisterCode == register.Code && x.Status == CashSessionStatus.Open, cancellationToken))
+            throw new DomainException("Cierra el turno de esta terminal antes de cambiar su almacén.");
         register.Rename(name, expectedRevision);
+        register.ChangeWarehouse(warehouseId, register.Revision);
         if (await db.PosRegisters.AnyAsync(x => x.Id != id && x.Name == register.Name, cancellationToken))
             throw new DomainException("Ya existe un terminal con ese nombre.");
         try { await db.SaveChangesAsync(cancellationToken); }
         catch (DbUpdateConcurrencyException) { throw new ConcurrencyConflictException("El terminal cambió en otra sesión. Recarga la página antes de guardar."); }
         catch (DbUpdateException) { throw new DomainException("Ya existe un terminal con ese nombre."); }
+        await transaction.CommitAsync(cancellationToken);
         return register;
     }
 

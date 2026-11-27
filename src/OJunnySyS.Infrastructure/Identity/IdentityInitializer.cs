@@ -6,6 +6,7 @@ using Microsoft.EntityFrameworkCore;
 using OJunnySyS.Infrastructure.Persistence;
 using OJunnySyS.Domain.Tenancy;
 using OJunnySyS.Domain.Pos;
+using OJunnySyS.Domain.Inventory;
 
 namespace OJunnySyS.Infrastructure.Identity;
 
@@ -28,9 +29,16 @@ public static class IdentityInitializer
             await db.SaveChangesAsync(ct);
         }
         db.CurrentTenantId = tenant.Id;
+        var warehouse = await db.Warehouses.SingleOrDefaultAsync(x => x.Code == "MAIN", ct);
+        if (warehouse is null)
+        {
+            warehouse = new Warehouse(tenant.Id, "MAIN", "Almacén principal");
+            db.Warehouses.Add(warehouse);
+            await db.SaveChangesAsync(ct);
+        }
         if (!await db.PosRegisters.AnyAsync(x => x.Code == "MAIN", ct))
         {
-            db.PosRegisters.Add(new PosRegister(tenant.Id, "MAIN", "Caja principal"));
+            db.PosRegisters.Add(new PosRegister(tenant.Id, "MAIN", "Caja principal", warehouse.Id));
             await db.SaveChangesAsync(ct);
         }
 

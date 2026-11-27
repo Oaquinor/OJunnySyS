@@ -2,6 +2,7 @@ using OJunnySyS.Domain.Common;
 using OJunnySyS.Domain.Customers;
 using OJunnySyS.Domain.Cash;
 using OJunnySyS.Domain.Pos;
+using OJunnySyS.Domain.Inventory;
 
 namespace OJunnySyS.Domain.Sales;
 
@@ -13,7 +14,7 @@ public sealed class Sale : TenantEntity
     private Sale() { }
     private readonly List<SaleLine> _lines = [];
 
-    public Sale(Guid tenantId, string number, Customer? customer, PaymentMethod paymentMethod, IEnumerable<SaleLine> lines, Guid cashSessionId, Guid cashierUserId, decimal taxRate = 0.18m, Guid? idempotencyKey = null, string registerCode = "MAIN") : base(tenantId)
+    public Sale(Guid tenantId, string number, Customer? customer, PaymentMethod paymentMethod, IEnumerable<SaleLine> lines, Guid cashSessionId, Guid cashierUserId, decimal taxRate = 0.18m, Guid? idempotencyKey = null, string registerCode = "MAIN", Guid warehouseId = default) : base(tenantId)
     {
         if (string.IsNullOrWhiteSpace(number)) throw new DomainException("El número de venta es obligatorio.");
         if (number.Length > 64) throw new DomainException("El número de venta no puede superar 64 caracteres.");
@@ -21,6 +22,8 @@ public sealed class Sale : TenantEntity
         if (!Enum.IsDefined(paymentMethod)) throw new DomainException("El método de pago no es válido.");
         if (taxRate is < 0 or > 1) throw new DomainException("La tasa de impuesto debe estar entre 0 y 1.");
         RegisterCode = PosRegister.NormalizeCode(registerCode);
+        if (warehouseId == Guid.Empty) throw new DomainException("El almacén de la venta es obligatorio.");
+        WarehouseId = warehouseId;
         Number = number; CustomerId = customer?.Id; CustomerName = customer?.FullName ?? "Consumidor final";
         CashSessionId = cashSessionId; CashierUserId = cashierUserId;
         PaymentMethod = paymentMethod; TaxRate = taxRate; IdempotencyKey = idempotencyKey;
@@ -33,6 +36,7 @@ public sealed class Sale : TenantEntity
     public string Number { get; private set; } = "";
     public Guid? CashSessionId { get; private set; }
     public string RegisterCode { get; private set; } = "MAIN";
+    public Guid WarehouseId { get; private set; }
     public Guid? CashierUserId { get; private set; }
     public Guid? IdempotencyKey { get; private set; }
     public Guid? CustomerId { get; private set; }

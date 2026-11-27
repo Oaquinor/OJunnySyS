@@ -109,6 +109,7 @@ builder.Services.AddScoped<TenantUserService>();
 builder.Services.AddScoped<CustomerTagService>();
 builder.Services.AddScoped<CustomerSegmentService>();
 builder.Services.AddScoped<PosRegisterService>();
+builder.Services.AddScoped<WarehouseService>();
 
 var app = builder.Build();
 
@@ -171,6 +172,31 @@ posRegisters.MapPatch("/{id:guid}/activation", async (Guid id, SetPosRegisterAct
     catch (ConcurrencyConflictException ex) { return Results.Conflict(new { error = ex.Message }); }
     catch (DomainException ex) { return Results.ValidationProblem(new Dictionary<string, string[]> { ["register"] = [ex.Message] }); }
 });
+var warehouses = api.MapGroup("/inventory/warehouses").RequireAuthorization("TenantUserManagement");
+warehouses.MapGet("", async (bool? includeInactive, WarehouseService service, CancellationToken ct) =>
+    Results.Ok(await service.GetAsync(includeInactive ?? true, ct)));
+warehouses.MapPost("", async (CreateWarehouseRequest request, WarehouseService service, CancellationToken ct) =>
+{
+    try { var warehouse = await service.CreateAsync(request, ct); return Results.Created($"/api/v1/inventory/warehouses/{warehouse.Id}", warehouse); }
+    catch (DomainException ex) { return Results.ValidationProblem(new Dictionary<string, string[]> { ["warehouse"] = [ex.Message] }); }
+});
+warehouses.MapPut("/{id:guid}", async (Guid id, UpdateWarehouseRequest request, WarehouseService service, CancellationToken ct) =>
+{
+    try { return Results.Ok(await service.UpdateAsync(id, request, ct)); }
+    catch (ConcurrencyConflictException ex) { return Results.Conflict(new { error = ex.Message }); }
+    catch (DomainException ex) { return Results.ValidationProblem(new Dictionary<string, string[]> { ["warehouse"] = [ex.Message] }); }
+});
+warehouses.MapPatch("/{id:guid}/activation", async (Guid id, SetWarehouseActiveRequest request, WarehouseService service, CancellationToken ct) =>
+{
+    try { return Results.Ok(await service.SetActiveAsync(id, request, ct)); }
+    catch (ConcurrencyConflictException ex) { return Results.Conflict(new { error = ex.Message }); }
+    catch (DomainException ex) { return Results.ValidationProblem(new Dictionary<string, string[]> { ["warehouse"] = [ex.Message] }); }
+});
+api.MapPost("/inventory/transfers", async (InventoryTransferRequest request, StoreService store, CancellationToken ct) =>
+{
+    try { return Results.Ok(await store.TransferInventoryAsync(request, ct)); }
+    catch (DomainException ex) { return Results.ValidationProblem(new Dictionary<string, string[]> { ["inventory"] = [ex.Message] }); }
+}).RequireAuthorization("CatalogWrite");
 api.MapGet("/products", async (string? search, bool? includeInactive, ClaimsPrincipal principal, StoreService store, CancellationToken ct) =>
 {
     var canSeeInactive = principal.IsInRole(AppRoles.Administrator) || principal.IsInRole(AppRoles.Manager);

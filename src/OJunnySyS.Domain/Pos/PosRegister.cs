@@ -1,5 +1,6 @@
 using System.Text.RegularExpressions;
 using OJunnySyS.Domain.Common;
+using OJunnySyS.Domain.Inventory;
 
 namespace OJunnySyS.Domain.Pos;
 
@@ -8,15 +9,18 @@ public sealed class PosRegister : TenantEntity
 {
     private PosRegister() { }
 
-    public PosRegister(Guid tenantId, string code, string name) : base(tenantId)
+    public PosRegister(Guid tenantId, string code, string name, Guid warehouseId) : base(tenantId)
     {
+        if (warehouseId == Guid.Empty) throw new DomainException("El almacén del terminal es obligatorio.");
         Code = NormalizeCode(code);
         Name = NormalizeName(name);
+        WarehouseId = warehouseId;
         IsActive = true;
     }
 
     public string Code { get; private set; } = "";
     public string Name { get; private set; } = "";
+    public Guid WarehouseId { get; private set; }
     public bool IsActive { get; private set; }
     public long Revision { get; private set; }
 
@@ -24,6 +28,15 @@ public sealed class PosRegister : TenantEntity
     {
         EnsureRevision(expectedRevision);
         Name = NormalizeName(name);
+        AdvanceRevision();
+    }
+
+    public void ChangeWarehouse(Guid warehouseId, long expectedRevision)
+    {
+        EnsureRevision(expectedRevision);
+        if (warehouseId == Guid.Empty) throw new DomainException("El almacén del terminal es obligatorio.");
+        if (WarehouseId == warehouseId) return;
+        WarehouseId = warehouseId;
         AdvanceRevision();
     }
 

@@ -20,11 +20,13 @@ public sealed record ProductSalesSummary(string ProductName, int Quantity, decim
 public sealed record DailySalesSummary(DateOnly Date, decimal Total);
 public sealed record SupplierDto(Guid Id, string Name, string? TaxIdentifier, string Email, string Phone, string? Notes, long Revision);
 public sealed record PurchaseLineDto(Guid Id, Guid ProductId, string Sku, string ProductName, int Quantity, int ReceivedQuantity, decimal UnitCost, decimal LineTotal);
-public sealed record PurchaseOrderDto(Guid Id, string Number, string SupplierName, string? Reference, DateOnly? DueDate, PurchaseStatus Status, decimal Total, decimal AmountPaid, decimal BalanceDue, DateTimeOffset CreatedAtUtc, IReadOnlyList<PurchaseLineDto> Lines, IReadOnlyList<SupplierPaymentDto> Payments);
+public sealed record PurchaseOrderDto(Guid Id, string Number, string SupplierName, string? Reference, DateOnly? DueDate, PurchaseStatus Status, decimal Total, decimal AmountPaid, decimal BalanceDue, DateTimeOffset CreatedAtUtc, IReadOnlyList<PurchaseLineDto> Lines, IReadOnlyList<SupplierPaymentDto> Payments, Guid WarehouseId);
 public sealed record CreateSupplierRequest(string Name, string? TaxIdentifier, string Email, string Phone, string? Notes);
 public sealed record UpdateSupplierRequest(string Name, string? TaxIdentifier, string Email, string Phone, string? Notes, long ExpectedRevision);
 public sealed record CreatePurchaseLineRequest(Guid ProductId, int Quantity, decimal UnitCost);
-public sealed record CreatePurchaseOrderRequest(Guid SupplierId, string? Reference, IReadOnlyCollection<CreatePurchaseLineRequest> Lines, DateOnly? DueDate = null);
+public sealed record CreatePurchaseOrderRequest(Guid SupplierId, string? Reference, IReadOnlyCollection<CreatePurchaseLineRequest> Lines, DateOnly? DueDate = null, Guid WarehouseId = default);
+public sealed record InventoryTransferRequest(Guid ProductId, Guid SourceWarehouseId, Guid DestinationWarehouseId, int Quantity, string? Reference = null);
+public sealed record InventoryTransferResult(string Reference, int Quantity, Guid ProductId, Guid SourceWarehouseId, int SourceBalance, Guid DestinationWarehouseId, int DestinationBalance);
 public sealed record ReceivePurchaseLineRequest(Guid LineId, int Quantity);
 public sealed record SupplierPaymentDto(Guid Id, Guid IdempotencyKey, decimal Amount, SupplierPaymentMethod Method, string? Reference, Guid PaidByUserId, DateTimeOffset CreatedAtUtc);
 public sealed record CreateSupplierPaymentRequest(Guid IdempotencyKey, decimal Amount, SupplierPaymentMethod Method, string? Reference, string RegisterCode = "MAIN");
