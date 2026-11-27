@@ -81,6 +81,14 @@ public sealed class StoreDbContext(DbContextOptions<StoreDbContext> options)
             entity.Property(x => x.ReceiptShowCustomer).HasDefaultValue(true);
             entity.Property(x => x.ReceiptShowSku).HasDefaultValue(true);
             entity.Property(x => x.ReceiptShowTax).HasDefaultValue(true);
+            entity.Property(x => x.ReceiptDesign).HasMaxLength(20).HasDefaultValue("classic").IsRequired();
+            entity.Property(x => x.ReceiptCompactLineSpacing).HasDefaultValue(false);
+            entity.Property(x => x.ReceiptFontFamily).HasMaxLength(20).HasDefaultValue("modern").IsRequired();
+            entity.Property(x => x.ReceiptFontSize).HasDefaultValue(12);
+            entity.Property(x => x.ReceiptMarginLeftMm).HasDefaultValue(0);
+            entity.Property(x => x.ReceiptMarginRightMm).HasDefaultValue(0);
+            entity.Property(x => x.ReceiptShowUnitPrice).HasDefaultValue(true);
+            entity.Property(x => x.ReceiptShowLineTotals).HasDefaultValue(true);
             entity.Property(x => x.DefaultTaxRate).HasPrecision(5, 4).HasDefaultValue(0.18m);
             entity.Property(x => x.PlanCode).HasMaxLength(40).IsRequired();
         });

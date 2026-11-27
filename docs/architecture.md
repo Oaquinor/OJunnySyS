@@ -49,7 +49,7 @@ Autenticación, autorización por empresa/rol, auditoría, idempotencia de check
 
 La caja principal admite un turno abierto por empresa. La apertura, cada entrada/retiro, checkout y cierre trabajan dentro de transacciones MySQL y bloquean las filas de tenant/sesión que serializan operaciones concurrentes. El efectivo esperado se calcula como fondo inicial + ventas completadas en efectivo + entradas − retiros; tarjetas/transferencias no afectan el efectivo del cajón. El cierre conserva valor esperado, conteo y diferencia, además de quién abrió/cerró.
 
-Cada venta queda asociada al turno y al usuario autenticado. El recibo consulta el snapshot de líneas, impuestos y total guardado; su página tiene diseño de impresión para rollo térmico de 80 mm.
+Cada venta queda asociada al turno y al usuario autenticado. El recibo consulta el snapshot de líneas, impuestos y total guardado; sus preferencias por empresa incluyen diseño clásico/minimalista/detallado, papel térmico/A4, tipografía, tamaño, márgenes, densidad y visibilidad de datos. Estas preferencias afectan solo la representación impresa, nunca los importes históricos. La operación guarda los cambios junto a la configuración fiscal/empresarial mediante la capa de aplicación y una migración versionada.
 # Estado de arquitectura
 
 Esta es la arquitectura objetivo de OJunnySyS: ASP.NET Core .NET 10, Blazor Server interactivo y MySQL mediante EF Core. La interfaz Blazor usa la misma aplicación C# para renderizar flujos web y PWA instalables.

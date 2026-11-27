@@ -55,7 +55,7 @@ La prueba está en República Dominicana y muestra numeración fiscal NCF, DOP, 
 
 ## Comparación con la implementación actual
 
-OJunnySyS ya tiene catálogo con SKU/barcode, stock, búsqueda POS, cliente, cobro por efectivo/tarjeta/transferencia, caja principal, movimiento de entrada/retiro, cierre con efectivo contado/diferencia, historial, ventas idempotentes, recibo térmico parametrizable y PWA. La factura POS es transaccional: inventario, venta y turno se escriben coordinadamente.
+OJunnySyS ya tiene catálogo con SKU/barcode, stock, búsqueda POS, cliente, cobro por efectivo/tarjeta/transferencia, caja principal, movimiento de entrada/retiro, cierre con efectivo contado/diferencia, historial, ventas idempotentes y PWA. La factura POS es transaccional: inventario, venta y turno se escriben coordinadamente. El recibo ahora también permite configurar diseño clásico/minimalista/detallado, ancho de papel, tipografía, tamaño, márgenes, densidad de líneas y visibilidad del precio unitario/importe por artículo; estas preferencias se guardan por empresa y se aplican en la vista imprimible.
 
 La revisión confirma que los siguientes trabajos son concretos y necesarios:
 
@@ -63,7 +63,7 @@ La revisión confirma que los siguientes trabajos son concretos y necesarios:
 2. **Medios de pago configurables**: crear/desactivar medios propios por tenant y asociar cada uno a su cuenta; combinar pagos en una misma venta con importes cuya suma valide el total.
 3. **Vendedores vinculados a ventas**: catálogo y asignación; conservar vendedor en el snapshot de venta y permitir informes por vendedor.
 4. **Preferencias de venta**: descuento, venta rápida, venta simple, propina/impuestos locales, monedas y ventas pendientes, siempre con validación transaccional.
-5. **Diseñador de recibo**: presets, tamaño térmico, densidad/márgenes, tipografía, orden/visibilidad de campos, mensaje, QR, vista previa y prueba de impresión.
+5. **Diseñador de recibo**: presets, ancho térmico/A4, densidad/márgenes, tipografía, precio unitario/importe, cliente/SKU/impuesto y mensaje ya están en configuración; siguen pendientes orden/visibilidad de más campos, QR, vista previa en vivo y prueba de impresión.
 6. **Caja por terminal**: mantener serialización transaccional actual al pasar de una caja global a sesiones simultáneas por sucursal/terminal, con entradas/retiros y cierre por medio de pago.
 7. **Dispositivos**: interfaz de extensión para balanza, lector y futuras impresoras; degradación limpia cuando el navegador/dispositivo no es compatible.
 8. **Caja de auditoría/reportes**: cierres por operador/terminal, ventas por método y vendedor, conciliación y trazabilidad de cambios.

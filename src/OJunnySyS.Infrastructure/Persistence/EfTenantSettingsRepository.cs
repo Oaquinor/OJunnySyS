@@ -37,7 +37,10 @@ public sealed class EfTenantSettingsRepository(
         catch (InvalidTimeZoneException) { throw new DomainException("La zona horaria configurada no es válida."); }
         tenant.UpdateBusinessSettings(request.TimeZoneId, request.CurrencyCode, request.DefaultTaxRate);
         tenant.UpdateReceiptSettings(request.LegalName, request.TaxIdentifier, request.BusinessPhone, request.BusinessAddress,
-            request.ReceiptHeader, request.ReceiptFooter, request.ReceiptPaperWidthMm, request.ReceiptShowCustomer, request.ReceiptShowSku, request.ReceiptShowTax);
+            request.ReceiptHeader, request.ReceiptFooter, request.ReceiptPaperWidthMm, request.ReceiptShowCustomer, request.ReceiptShowSku,
+            request.ReceiptShowTax, request.ReceiptDesign, request.ReceiptCompactLineSpacing, request.ReceiptFontFamily,
+            request.ReceiptFontSize, request.ReceiptMarginLeftMm, request.ReceiptMarginRightMm,
+            request.ReceiptShowUnitPrice, request.ReceiptShowLineTotals);
         await db.SaveChangesAsync(cancellationToken);
         return Map(tenant);
     }
@@ -45,5 +48,7 @@ public sealed class EfTenantSettingsRepository(
     private static TenantBusinessSettingsDto Map(OJunnySyS.Domain.Tenancy.Tenant tenant) =>
         new(tenant.Name, tenant.Slug, tenant.TimeZoneId, tenant.CurrencyCode, tenant.DefaultTaxRate,
             tenant.LegalName, tenant.TaxIdentifier, tenant.BusinessPhone, tenant.BusinessAddress, tenant.ReceiptHeader, tenant.ReceiptFooter,
-            tenant.ReceiptPaperWidthMm, tenant.ReceiptShowCustomer, tenant.ReceiptShowSku, tenant.ReceiptShowTax);
+            tenant.ReceiptPaperWidthMm, tenant.ReceiptShowCustomer, tenant.ReceiptShowSku, tenant.ReceiptShowTax, tenant.ReceiptDesign,
+            tenant.ReceiptCompactLineSpacing, tenant.ReceiptFontFamily, tenant.ReceiptFontSize, tenant.ReceiptMarginLeftMm,
+            tenant.ReceiptMarginRightMm, tenant.ReceiptShowUnitPrice, tenant.ReceiptShowLineTotals);
 }
