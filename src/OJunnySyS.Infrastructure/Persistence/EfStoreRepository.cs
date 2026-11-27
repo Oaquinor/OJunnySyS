@@ -10,6 +10,7 @@ using OJunnySyS.Domain.Purchasing;
 using OJunnySyS.Domain.Cash;
 using OJunnySyS.Domain.Pos;
 using OJunnySyS.Domain.Inventory;
+using OJunnySyS.Domain.Accounting;
 using OJunnySyS.Infrastructure.Identity;
 
 namespace OJunnySyS.Infrastructure.Persistence;
@@ -268,9 +269,39 @@ public sealed class EfStoreRepository(IDbContextFactory<StoreDbContext> contextF
             db.InventoryMovements.Add(new InventoryMovement(tenantId, movement.Product.Id, InventoryMovementType.Sale, -movement.Quantity, movement.WarehouseBalance, sale.Number, warehouseId));
         customer?.RecordPurchase(sale.Total);
         db.Sales.Add(sale);
+        await PostSaleJournalEntryAsync(db, tenantId, sale, cashierUserId, cancellationToken);
         await db.SaveChangesAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);
         return sale;
+    }
+
+    private static async Task PostSaleJournalEntryAsync(StoreDbContext db, Guid tenantId, Sale sale, Guid actorId, CancellationToken ct)
+    {
+        if (sale.Total <= 0) return;
+
+        var codes = sale.TaxAmount > 0 ? new[] { "1000", "2100", "4000" } : new[] { "1000", "4000" };
+        var accounts = await db.ChartAccounts.Where(x => codes.Contains(x.Code) && x.IsActive)
+            .ToDictionaryAsync(x => x.Code, ct);
+        if (accounts.Count != codes.Length)
+            throw new DomainException("Faltan las cuentas contables base para registrar la venta. Revisa el catálogo contable.");
+
+        var lines = new List<JournalEntryLine>
+        {
+            new(tenantId, accounts["1000"].Id, accounts["1000"].Code, accounts["1000"].Name,
+                sale.Total, 0, $"Cobro de venta {sale.Number}")
+        };
+        if (sale.Subtotal > 0)
+            lines.Add(new JournalEntryLine(tenantId, accounts["4000"].Id, accounts["4000"].Code,
+                accounts["4000"].Name, 0, sale.Subtotal, $"Venta {sale.Number}"));
+        if (sale.TaxAmount > 0)
+            lines.Add(new JournalEntryLine(tenantId, accounts["2100"].Id, accounts["2100"].Code,
+                accounts["2100"].Name, 0, sale.TaxAmount, $"Impuesto de venta {sale.Number}"));
+
+        var entryDate = DateOnly.FromDateTime(sale.CreatedAtUtc.UtcDateTime);
+        var number = $"AUTO-{entryDate:yyyyMMdd}-{sale.Id:N}"[..36];
+        var entry = new JournalEntry(tenantId, number, entryDate,
+            $"Venta POS {sale.Number}", actorId, lines, "SALE", sale.Id);
+        db.JournalEntries.Add(entry);
     }
 
     private static async Task<Sale?> LoadSaleByCheckoutKeyAsync(StoreDbContext db, Guid tenantId, Guid idempotencyKey, CancellationToken ct) =>
