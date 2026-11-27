@@ -20,6 +20,7 @@ OJunnySyS se desarrolla en C#, ASP.NET Core .NET 10, Blazor Server interactivo, 
 - [x] Administración multiempresa de terminales POS con caja por terminal y selección de caja en pagos en efectivo a proveedores.
 - [x] Almacenes por empresa, asignación de terminal/compra, saldos por ubicación, transferencias auditables y checkout limitado al stock de la sucursal.
 - [x] Proveedores, compras, recepciones parciales y completas, cuentas por pagar y antigüedad de saldos.
+- [x] Contabilización de cada recepción de compra con inventario, impuesto acreditable y cuentas por pagar; abonos idempotentes reducen la cuenta por pagar y acreditan la cuenta de pago correspondiente.
 - [x] Reportes por empresa y vendedor, con exportación autorizada; detalle de ventas y notas de crédito por numeración, desglose de subtotales/impuestos/cobros/saldos y CSV coherente con filtros.
 - [x] Estados financieros con comparación del período/corte anterior, análisis vertical por cuenta y vistas gráficas basadas en asientos publicados.
 - [x] Administración inicial de tenants, planes, límites y facturación manual.
@@ -37,7 +38,7 @@ OJunnySyS se desarrolla en C#, ASP.NET Core .NET 10, Blazor Server interactivo, 
 
 ## Operación y producción
 
-- [ ] Ampliar pruebas MySQL a flujos autenticados completos de venta, devolución, cobro y compras; ya se verifican en MySQL movimientos manuales de caja, idempotencia, cierre con diferencia, conciliación bancaria y aislamiento tenant.
+- [ ] Ampliar pruebas MySQL a flujos autenticados completos de venta, devolución y cobro; ya se verifican en MySQL recepciones/pagos parciales de compra, movimientos de caja, idempotencia, cierre con diferencia, conciliación bancaria y aislamiento tenant.
 - [ ] Observabilidad, límites de solicitudes, alertas y auditoría operativa completa.
 - [ ] Copias de seguridad cifradas con restauración practicada.
 - [ ] CI/CD, migración controlada, rollback y revisión de seguridad.
