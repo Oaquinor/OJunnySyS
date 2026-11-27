@@ -1,0 +1,82 @@
+@page "/app/pos"
+@attribute [Authorize(Roles = "Administrator,Manager,Cashier")]
+@inject StoreService Store
+@inject TenantSettingsService TenantSettings
+@inject AuthenticationStateProvider AuthenticationState
+@inject ILogger<Pos> Logger
+
+<PageTitle>Punto de venta · OjunnySyS</PageTitle>
+<PageHeader Eyebrow="VENTAS / PUNTO DE VENTA" Title="Punto de venta" Description="Agrega productos, elige cómo cobrar y listo.">
+    <Actions><a class="register-status" href="/app/cash"><span class="@(CashOpen ? "online-dot" : "cash-closed-dot")"></span><span><strong>@(CashOpen ? "Caja abierta" : "Caja cerrada")</strong><small>Mostrador principal · administrar</small></span></a></Actions>
+</PageHeader>
+@if (!string.IsNullOrWhiteSpace(_notice)) { <div class="success-banner">✓ @_notice @if (_lastSaleId is { } saleId) { <a class="receipt-quick-link" href="/app/receipts/@saleId">Ver recibo</a> }<button @onclick="() => _notice = null">×</button></div> }
+@if (!CashOpen) { <div class="inline-error cash-error">Abre la caja principal antes de cobrar. <a href="/app/cash">Ir a caja y arqueo →</a></div> }
+<div class="pos-layout">
+    <section class="pos-catalog">
+        <div class="pos-search-row"><SearchField @bind-Value="_search" @bind-Value:after="LoadProductsAsync" CssClass="search-box pos-search" Placeholder="Buscar producto o escanear código…" /><span class="result-count">@_filteredProducts.Count() productos</span></div>
+        <div class="category-tabs"><button class="@CategoryClass(null)" @onclick="() => _category = null">Todos</button>@foreach (var category in _categories) { <button class="@CategoryClass(category)" @onclick="() => _category = category">@category</button> }</div>
+        <div class="pos-product-grid">
+            @foreach (var product in _filteredProducts)
+            {
+                var inCart = _cart.GetValueOrDefault(product.Id);
+                <button class="pos-product-card" @onclick="() => Add(product)" disabled="@(inCart >= product.StockOnHand)">
+                    <span class="pos-product-art @ArtClass(product.Category)">@ProductIcon(product.Category)<span class="add-product">＋</span></span>
+                    <span class="pos-product-info"><strong>@product.Name</strong><small>@product.Category · @_cart.GetValueOrDefault(product.Id) en orden</small><b>@Money(product.UnitPrice)</b></span>
+                    @if (product.StockOnHand <= 5) { <span class="stock-hint">Quedan @product.StockOnHand</span> }
+                </button>
+            }
+        </div>
+    </section>
+    <aside class="order-panel">
+        <div class="order-header"><div><span class="eyebrow">VENTA ACTUAL</span><h2>Tu orden <span class="order-count">@_cart.Values.Sum()</span></h2></div><button class="clear-button" @onclick="ClearCart" disabled="@(_cart.Count == 0)">Vaciar</button></div>
+        <div class="customer-select"><label for="customer">Cliente</label><select id="customer" @bind="_customerId" @bind:after="ResetCheckoutKey"><option value="">Consumidor final</option>@foreach (var customer in _customers) { <option value="@customer.Id">@customer.Name</option> }</select></div>
+        <div class="order-lines">
+            @if (_cart.Count == 0) { <div class="cart-empty"><span>▣</span><strong>Tu orden está vacía</strong><p>Selecciona un producto para comenzar la venta.</p></div> }
+            @foreach (var line in CartLines)
+            {
+                <div class="order-line"><span class="line-art @ArtClass(line.Product.Category)">@ProductIcon(line.Product.Category)</span><div class="line-details"><strong>@line.Product.Name</strong><small>@Money(line.Product.UnitPrice) / unidad</small><div class="quantity-control"><button @onclick="() => ChangeQuantity(line.Product, -1)">−</button><span>@line.Quantity</span><button @onclick="() => ChangeQuantity(line.Product, 1)" disabled="@(line.Quantity >= line.Product.StockOnHand)">＋</button></div></div><strong class="line-total">@Money(line.Product.UnitPrice * line.Quantity)</strong></div>
+            }
+        </div>
+        <div class="order-summary"><div><span>Subtotal</span><strong>@Money(Subtotal)</strong></div><div><span>Impuesto (@(_taxRate * 100m)%)</span><strong>@Money(Tax)</strong></div><div class="grand-total"><span>Total</span><strong>@Money(Total)</strong></div></div>
+        <div class="payment-method"><label for="payment">Método de pago</label><select id="payment" @bind="_payment" @bind:after="ResetCheckoutKey"><option value="@PaymentMethod.Cash">Efectivo</option><option value="@PaymentMethod.Card">Tarjeta</option><option value="@PaymentMethod.Transfer">Transferencia</option></select></div>
+        <button class="button button-primary checkout-button" @onclick="CheckoutAsync" disabled="@(_cart.Count == 0 || _saving || !CashOpen)">@(_saving ? "Procesando…" : "Cobrar · " + Money(Total)) <span>→</span></button>
+        @if (!string.IsNullOrWhiteSpace(_error)) { <div class="inline-error">@_error</div> }
+        <div class="secure-note">▣ Transacción registrada de forma segura</div>
+    </aside>
+</div>
+
+@code {
+    private List<ProductDto> _products = [];
+    private List<CustomerDto> _customers = [];
+    private CashSessionDto? _cashSession;
+    private Guid _cashierUserId;
+    private Guid? _lastSaleId;
+    private readonly Dictionary<Guid, int> _cart = [];
+    private string _search = "";
+    private string? _category, _error, _notice;
+    private Guid? _customerId;
+    private PaymentMethod _payment = PaymentMethod.Cash;
+    private bool _saving;
+    private Guid _checkoutKey = Guid.NewGuid();
+    private decimal _taxRate = 0.18m;
+    private IReadOnlyList<string> _categories => _products.Select(x => x.Category).Distinct().Order().ToArray();
+    private IEnumerable<ProductDto> _filteredProducts => _products.Where(x => (_category is null || x.Category == _category) && x.StockOnHand > 0);
+    private IEnumerable<(ProductDto Product, int Quantity)> CartLines => _cart.Select(x => (_products.FirstOrDefault(p => p.Id == x.Key), x.Value)).Where(x => x.Item1 is not null).Select(x => (x.Item1!, x.Value));
+    private decimal Subtotal => CartLines.Sum(x => x.Product.UnitPrice * x.Quantity);
+    private decimal Tax => decimal.Round(Subtotal * _taxRate, 2);
+    private decimal Total => Subtotal + Tax;
+    private bool CashOpen => _cashSession?.Status == CashSessionStatus.Open;
+    protected override async Task OnInitializedAsync() { var principal = (await AuthenticationState.GetAuthenticationStateAsync()).User; if (!Guid.TryParse(principal.FindFirstValue(System.Security.Claims.ClaimTypes.NameIdentifier), out _cashierUserId)) throw new InvalidOperationException("No se pudo identificar al cajero."); _taxRate = (await TenantSettings.GetAsync()).DefaultTaxRate; _cashSession = await Store.GetCurrentCashSessionAsync(); await LoadProductsAsync(); _customers = (await Store.SearchCustomersAsync(null)).ToList(); }
+    private async Task LoadProductsAsync() => _products = (await Store.SearchProductsAsync(_search)).ToList();
+    private void ResetCheckoutKey() => _checkoutKey = Guid.NewGuid();
+    private void Add(ProductDto product) { if (_cart.GetValueOrDefault(product.Id) < product.StockOnHand) { _cart[product.Id] = _cart.GetValueOrDefault(product.Id) + 1; ResetCheckoutKey(); } _error = null; }
+    private void ChangeQuantity(ProductDto product, int delta) { var quantity = _cart.GetValueOrDefault(product.Id) + delta; if (quantity <= 0) { _cart.Remove(product.Id); ResetCheckoutKey(); } else if (quantity <= product.StockOnHand) { _cart[product.Id] = quantity; ResetCheckoutKey(); } }
+    private void ClearCart() { _cart.Clear(); ResetCheckoutKey(); _error = null; }
+    private async Task CheckoutAsync() { _saving = true; _error = null; try { var sale = await Store.CheckoutAsync(new CheckoutRequest(_customerId, _payment, _cart.Select(x => new CheckoutLine(x.Key, x.Value)).ToArray(), _checkoutKey), _cashierUserId); _notice = $"Venta {sale.Number} completada · {Money(sale.Total)}"; _lastSaleId = sale.Id; ClearCart(); _cashSession = await Store.GetCurrentCashSessionAsync(); await LoadProductsAsync(); } catch (DomainException ex) { _error = ex.Message; await LoadProductsAsync(); } catch (Exception ex) { Logger.LogError(ex, "No se pudo completar el checkout."); _error = "No se pudo completar el cobro. Revisa la caja y el inventario e inténtalo de nuevo; el mismo intento de cobro se reconocerá al reintentar."; await LoadProductsAsync(); } finally { _saving = false; } }
+    private string CategoryClass(string? value) => _category == value ? "category-tab active" : "category-tab";
+    private static string Money(decimal amount) => DisplayFormat.Money(amount, showCents: true);
+    private static string ProductIcon(string category) => category.Contains("Café", StringComparison.OrdinalIgnoreCase) ? "☕" : category.Contains("Bebida", StringComparison.OrdinalIgnoreCase) ? "◉" : category.Contains("Accesorio", StringComparison.OrdinalIgnoreCase) ? "◌" : "✳";
+    private static string ArtClass(string category) => category.Contains("Café", StringComparison.OrdinalIgnoreCase) ? "art-coffee" : category.Contains("Bebida", StringComparison.OrdinalIgnoreCase) ? "art-drink" : category.Contains("Accesorio", StringComparison.OrdinalIgnoreCase) ? "art-accessory" : "art-gift";
+}
+
+

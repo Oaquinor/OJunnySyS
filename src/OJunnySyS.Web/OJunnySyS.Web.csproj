@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <ItemGroup>
+    <ProjectReference Include="..\OJunnySyS.Application\OJunnySyS.Application.csproj" />
+    <ProjectReference Include="..\OJunnySyS.Infrastructure\OJunnySyS.Infrastructure.csproj" />
+    <ProjectReference Include="..\OJunnySyS.Domain\OJunnySyS.Domain.csproj" />
+  </ItemGroup>
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <BlazorDisableThrowNavigationException>true</BlazorDisableThrowNavigationException>
+  </PropertyGroup>
+
+</Project>

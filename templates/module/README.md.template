@@ -1,0 +1,5 @@
+# Módulo __FEATURE_LABEL__
+
+Generado por el scaffolder de OjunnySyS. El scaffold crea el tipo de dominio, un DTO, el contrato de aplicación y la página de lista.
+
+Completa el repositorio EF y el caso de uso en Application, la configuración del modelo en Infrastructure, el registro de dependencias y las reglas de acceso. Añade o ajusta una migración antes de guardar entidades nuevas. Mantén precios, stock y reglas del dominio en el servidor.

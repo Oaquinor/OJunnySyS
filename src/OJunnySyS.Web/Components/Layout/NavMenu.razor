@@ -1,0 +1,64 @@
+<div class="brand">
+    <div class="brand-mark">O<span>.</span></div>
+    <div><strong>ojunny<span>sys</span></strong><small>GESTIÓN COMERCIAL</small></div>
+</div>
+
+<nav class="navigation" aria-label="Navegación principal">
+    <span class="nav-caption">GENERAL</span>
+    <NavLink class="nav-link" href="/app" Match="NavLinkMatch.All"><span class="nav-icon">⌂</span> Resumen</NavLink>
+    <AuthorizeView Roles="Administrator,Manager">
+        <NavLink class="nav-link" href="/app/customers"><span class="nav-icon">♧</span> Clientes <span class="nav-count">CRM</span></NavLink>
+        <NavLink class="nav-link" href="/app/products"><span class="nav-icon">▦</span> Productos</NavLink>
+    </AuthorizeView>
+    <AuthorizeView Roles="Administrator,Manager,Salesperson">
+        <NavLink class="nav-link" href="/app/crm"><span class="nav-icon">↗</span> Oportunidades y tareas</NavLink>
+    </AuthorizeView>
+    <AuthorizeView Roles="Administrator,Manager">
+        <NavLink class="nav-link" href="/app/crm/segments"><span class="nav-icon">◉</span> Segmentos CRM</NavLink>
+    </AuthorizeView>
+    <AuthorizeView Roles="Administrator">
+        <NavLink class="nav-link" href="/app/users"><span class="nav-icon">♙</span> Usuarios y accesos</NavLink>
+        <NavLink class="nav-link" href="/app/settings"><span class="nav-icon">⚙</span> Empresa e impuestos</NavLink>
+    </AuthorizeView>
+    <AuthorizeView Roles="Administrator,Manager,PurchasingAgent">
+        <NavLink class="nav-link" href="/app/purchases"><span class="nav-icon">↗</span> Compras y proveedores</NavLink>
+    </AuthorizeView>
+    <span class="nav-caption section-caption">VENTAS</span>
+    <AuthorizeView Roles="Administrator,Manager,Cashier">
+        <NavLink class="nav-link" href="/app/cash"><span class="nav-icon">＄</span> Caja y arqueo</NavLink>
+        <NavLink class="nav-link" href="/app/pos"><span class="nav-icon">▣</span> Punto de venta <span class="nav-live">●</span></NavLink>
+        <NavLink class="nav-link" href="/app/sales"><span class="nav-icon">▤</span> Historial de ventas</NavLink>
+    </AuthorizeView>
+    <AuthorizeView Roles="Administrator,Manager">
+        <span class="nav-caption section-caption">ANÁLISIS</span>
+        <NavLink class="nav-link" href="/app/reports"><span class="nav-icon">▥</span> Reportes</NavLink>
+    </AuthorizeView>
+</nav>
+
+<div class="sidebar-bottom">
+    <AuthorizeView>
+        <Authorized Context="auth">
+            <div class="profile-row">
+                <div class="avatar profile-avatar">@Initials(auth.User.Identity?.Name)</div>
+                <div class="profile-details"><strong>@auth.User.Identity?.Name</strong><small>@RoleLabel(auth.User)</small></div>
+                <form method="post" action="/account/logout">
+                    <AntiforgeryToken />
+                    <button class="logout-button" type="submit" title="Cerrar sesión" aria-label="Cerrar sesión">Salir</button>
+                </form>
+            </div>
+        </Authorized>
+    </AuthorizeView>
+</div>
+
+@code {
+    private static string Initials(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value)) return "U";
+        var pieces = value.Split(['@', '.', ' ', '-'], StringSplitOptions.RemoveEmptyEntries);
+        return string.Concat(pieces.Take(2).Select(x => char.ToUpperInvariant(x[0])));
+    }
+
+    private static string RoleLabel(System.Security.Claims.ClaimsPrincipal user) =>
+        user.IsInRole("PlatformAdministrator") ? "Administración de plataforma" : user.IsInRole("Administrator") ? "Administrador" : user.IsInRole("Manager") ? "Gerente" : user.IsInRole("PurchasingAgent") ? "Compras" : user.IsInRole("Cashier") ? "Cajero" : "Usuario";
+}
+

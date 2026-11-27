@@ -1,0 +1,106 @@
+@page "/app/cash"
+@attribute [Authorize(Roles = "Administrator,Manager,Cashier")]
+@inject StoreService Store
+@inject OJunnySyS.Application.Abstractions.IBusinessClock Clock
+@inject AuthenticationStateProvider AuthenticationState
+@inject ILogger<Cash> Logger
+
+<PageTitle>Caja · OJunnySyS</PageTitle>
+<PageHeader Eyebrow="VENTAS / CAJA" Title="Caja y arqueo" Description="Abre un turno, registra entradas y retiros, y compara el efectivo esperado con el conteo real." />
+
+@if (_current is null)
+{
+    <div class="cash-open-banner"><div><span class="eyebrow">CAJA PRINCIPAL · MAIN</span><h2>El turno está cerrado</h2><p>Abre la caja con el efectivo inicial antes de cobrar en el POS.</p></div>
+        <EditForm Model="_openForm" OnValidSubmit="OpenAsync"><DataAnnotationsValidator /><div class="cash-open-form"><label>Fondo inicial<InputNumber @bind-Value="_openForm.OpeningFloat" min="0" step="0.01" /></label><button class="button button-primary" type="submit" disabled="@_saving">@(_saving ? "Abriendo…" : "Abrir caja")</button></div></EditForm>
+    </div>
+}
+else
+{
+    <div class="cash-status-bar"><div><span class="online-dot"></span><div><strong>Turno abierto · @_current.RegisterCode</strong><small>Desde @Clock.ToBusinessTime(_current.OpenedAtUtc).ToString("dd MMM yyyy, HH:mm")</small></div></div><span class="status-pill"><i></i> En operación</span></div>
+    <div class="cash-summary-grid">
+        <article><span>FONDO INICIAL</span><strong>@Money(_current.OpeningFloat)</strong></article>
+        <article><span>VENTAS EN EFECTIVO</span><strong>@Money(_current.CashSales)</strong></article>
+        <article><span>ENTRADAS / RETIROS</span><strong>@Money(_current.CashIn - _current.CashOut)</strong></article>
+        <article class="cash-expected"><span>EFECTIVO ESPERADO</span><strong>@Money(_current.ExpectedCash)</strong></article>
+    </div>
+    <div class="cash-actions-grid">
+        <section class="panel cash-action-card"><span class="eyebrow">MOVIMIENTO DE CAJA</span><h2>Registrar entrada o retiro</h2><p>Indica el importe y explica el motivo para mantener el arqueo claro.</p>
+            <EditForm Model="_movementForm" OnValidSubmit="RecordMovementAsync"><DataAnnotationsValidator /><div class="form-grid"><label>Tipo<InputSelect @bind-Value="_movementForm.Kind"><option value="@CashMovementKind.CashIn">Entrada de efectivo</option><option value="@CashMovementKind.CashOut">Retiro de efectivo</option></InputSelect></label><label>Importe<InputNumber @bind-Value="_movementForm.Amount" min="0.01" step="0.01" /></label><label class="full-span">Motivo<InputText @bind-Value="_movementForm.Description" placeholder="Ej. Fondo para cambio" /></label></div><ValidationSummary /><button class="button button-secondary" type="submit" disabled="@_saving">Registrar movimiento</button></EditForm>
+        </section>
+        <section class="panel cash-action-card cash-close-card"><span class="eyebrow">CIERRE DE TURNO</span><h2>Arqueo de efectivo</h2><p>Cuenta el dinero físico del cajón. El sistema calculará la diferencia contra el efectivo esperado.</p>
+            <EditForm Model="_closeForm" OnValidSubmit="CloseAsync"><DataAnnotationsValidator /><label>Efectivo contado<InputNumber @bind-Value="_closeForm.CountedCash" min="0" step="0.01" /></label><div class="cash-reconcile"><span>Esperado</span><strong>@Money(_current.ExpectedCash)</strong><span>Conteo</span><strong>@Money(_closeForm.CountedCash)</strong><span>Diferencia estimada</span><strong class="@(_closeForm.CountedCash - _current.ExpectedCash < 0 ? "alert-number" : "")">@Money(_closeForm.CountedCash - _current.ExpectedCash)</strong></div><button class="button button-primary" type="submit" disabled="@_saving">@(_saving ? "Cerrando…" : "Cerrar caja y guardar arqueo")</button></EditForm>
+        </section>
+    </div>
+}
+
+@if (!string.IsNullOrWhiteSpace(_error)) { <div class="inline-error cash-error">@_error</div> }
+@if (!string.IsNullOrWhiteSpace(_notice)) { <div class="toast">✓ @_notice</div> }
+
+<section class="panel cash-history"><div class="modal-heading"><div><span class="eyebrow">TRAZABILIDAD</span><h2>Turnos recientes</h2><p>El historial conserva los arqueos cerrados y sus movimientos.</p></div></div>
+    @if (_sessions.Count == 0) { <EmptyState Icon="＄" Title="Todavía no hay turnos" Description="Los turnos de caja aparecerán aquí cuando abras la caja principal." /> }
+    else { <div class="table-wrap"><table><thead><tr><th>APERTURA</th><th>CIERRE</th><th>FONDO</th><th>ESPERADO</th><th>CONTADO</th><th>DIFERENCIA</th><th>ESTADO</th></tr></thead><tbody>@foreach (var session in _sessions) { <tr><td>@Clock.ToBusinessTime(session.OpenedAtUtc).ToString("dd MMM yyyy, HH:mm")</td><td>@(session.ClosedAtUtc is { } closedAt ? Clock.ToBusinessTime(closedAt).ToString("dd MMM yyyy, HH:mm") : "—")</td><td class="amount">@Money(session.OpeningFloat)</td><td class="amount">@Money(session.ExpectedCash)</td><td class="amount">@(session.CountedCash is { } counted ? Money(counted) : "—")</td><td class="amount">@(session.Difference is { } difference ? Money(difference) : "—")</td><td><span class="status-pill @(session.Status == CashSessionStatus.Open ? "" : "status-warning")"><i></i>@(session.Status == CashSessionStatus.Open ? "Abierta" : "Cerrada")</span></td></tr> }</tbody></table></div> }
+</section>
+
+@if (_current is not null && _current.Movements.Count > 0)
+{
+    <section class="panel cash-history"><div class="modal-heading"><div><span class="eyebrow">CAJA PRINCIPAL</span><h2>Movimientos recientes</h2></div></div><div class="table-wrap"><table><thead><tr><th>FECHA</th><th>TIPO</th><th>DESCRIPCIÓN</th><th class="align-right">IMPORTE</th></tr></thead><tbody>@foreach (var movement in _current.Movements) { <tr><td>@Clock.ToBusinessTime(movement.CreatedAtUtc).ToString("dd MMM, HH:mm")</td><td>@(movement.Kind == CashMovementKind.CashIn ? "Entrada" : "Retiro")</td><td>@movement.Description</td><td class="align-right amount">@(movement.Kind == CashMovementKind.CashIn ? "+" : "−")@Money(movement.Amount)</td></tr> }</tbody></table></div></section>
+}
+
+@code {
+    private Guid _userId;
+    private CashSessionDto? _current;
+    private List<CashSessionDto> _sessions = [];
+    private OpenForm _openForm = new();
+    private MovementForm _movementForm = new();
+    private CloseForm _closeForm = new();
+    private bool _saving;
+    private string? _error, _notice;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var principal = (await AuthenticationState.GetAuthenticationStateAsync()).User;
+        if (!Guid.TryParse(principal.FindFirstValue(System.Security.Claims.ClaimTypes.NameIdentifier), out _userId)) throw new InvalidOperationException("La sesión autenticada no tiene un identificador válido.");
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        _current = await Store.GetCurrentCashSessionAsync();
+        _sessions = (await Store.GetRecentCashSessionsAsync(10)).ToList();
+        if (_current is not null) _closeForm.CountedCash = _current.ExpectedCash;
+    }
+
+    private async Task OpenAsync()
+    {
+        _saving = true; _error = null;
+        try { await Store.OpenCashSessionAsync(_userId, new OpenCashSessionRequest("MAIN", _openForm.OpeningFloat)); _openForm = new(); _notice = "Caja abierta. Ya puedes registrar ventas en el POS."; await LoadAsync(); }
+        catch (DomainException ex) { _error = ex.Message; }
+        catch (Exception ex) { Logger.LogError(ex, "No se pudo abrir la caja."); _error = "No se pudo abrir la caja."; }
+        finally { _saving = false; }
+    }
+
+    private async Task RecordMovementAsync()
+    {
+        if (_current is null) return;
+        _saving = true; _error = null;
+        try { await Store.RecordCashMovementAsync(_current.Id, _userId, new CashMovementRequest(_movementForm.Kind, _movementForm.Amount, _movementForm.Description)); _movementForm = new(); _notice = "Movimiento de caja registrado."; await LoadAsync(); }
+        catch (DomainException ex) { _error = ex.Message; }
+        catch (Exception ex) { Logger.LogError(ex, "No se pudo registrar el movimiento de caja."); _error = "No se pudo registrar el movimiento."; }
+        finally { _saving = false; }
+    }
+
+    private async Task CloseAsync()
+    {
+        if (_current is null) return;
+        _saving = true; _error = null;
+        try { var closed = await Store.CloseCashSessionAsync(_current.Id, _userId, _closeForm.CountedCash); _notice = $"Caja cerrada. Diferencia: {Money(closed.Difference ?? 0m)}."; _closeForm = new(); await LoadAsync(); }
+        catch (DomainException ex) { _error = ex.Message; }
+        catch (Exception ex) { Logger.LogError(ex, "No se pudo cerrar la caja."); _error = "No se pudo cerrar la caja."; }
+        finally { _saving = false; }
+    }
+
+    private static string Money(decimal value) => DisplayFormat.Money(value, showCents: true);
+    private sealed class OpenForm { [System.ComponentModel.DataAnnotations.Range(typeof(decimal), "0", "999999999999.99", ErrorMessage = "El fondo debe ser cero o mayor.")] public decimal OpeningFloat { get; set; } }
+    private sealed class MovementForm { public CashMovementKind Kind { get; set; } = CashMovementKind.CashIn; [System.ComponentModel.DataAnnotations.Range(typeof(decimal), "0.01", "999999999999.99", ErrorMessage = "El importe debe ser mayor que cero.")] public decimal Amount { get; set; } [System.ComponentModel.DataAnnotations.Required, System.ComponentModel.DataAnnotations.StringLength(200, MinimumLength = 2)] public string Description { get; set; } = ""; }
+    private sealed class CloseForm { [System.ComponentModel.DataAnnotations.Range(typeof(decimal), "0", "999999999999.99", ErrorMessage = "El efectivo contado debe ser cero o mayor.")] public decimal CountedCash { get; set; } }
+}

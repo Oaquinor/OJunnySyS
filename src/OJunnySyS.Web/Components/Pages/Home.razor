@@ -1,0 +1,39 @@
+@page "/app"
+@attribute [Authorize]
+@inject StoreService Store
+@inject OJunnySyS.Application.Abstractions.IBusinessClock Clock
+
+<PageTitle>Resumen · OjunnySyS</PageTitle>
+<PageHeader Eyebrow="INICIO / RESUMEN" Title="Buenos días, Ojunny" Description="Aquí tienes el pulso de tu negocio hoy.">
+    <Actions><a class="button button-primary" href="/app/pos"><span>＋</span> Nueva venta</a></Actions>
+</PageHeader>
+@if (_summary is null)
+{
+    <div class="loading-panel">Preparando el resumen de tu negocio…</div>
+}
+else
+{
+    <div class="stats-grid">
+        <MetricCard Label="VENTAS DE HOY" Value="@DisplayFormat.Money(_summary.SalesToday)" Icon="↗" Tone="green"><span class="stat-trend">En el día</span><span>zona horaria de negocio</span></MetricCard>
+        <MetricCard Label="ÓRDENES" Value="@_summary.OrdersToday.ToString("00")" Icon="▧" Tone="lilac"><span class="muted-foot">Completadas hoy</span></MetricCard>
+        <MetricCard Label="CLIENTES ACTIVOS" Value="@_summary.ActiveCustomers.ToString("00")" Icon="♧" Tone="blue"><span class="muted-foot">En tu cartera</span><a href="/app/customers">Ver clientes <span>→</span></a></MetricCard>
+        <MetricCard Label="STOCK POR REPONER" Value="@_summary.LowStockProducts.ToString("00")" Icon="⚠" Tone="amber"><span class="alert-foot">Necesitan atención</span><a href="/app/products">Ver inventario <span>→</span></a></MetricCard>
+    </div>
+    <div class="dashboard-grid">
+        <section class="panel sales-panel"><div class="panel-heading"><div><h2>Ventas recientes</h2><p>Las últimas transacciones de tu negocio</p></div><a class="text-link" href="/app/pos">Ver punto de venta <span>→</span></a></div>
+            @if (_summary.RecentSales.Count == 0) { <EmptyState Icon="↗" Title="Aún no hay ventas" Description="Cuando registres tu primera venta, aparecerá aquí."><ChildContent><a class="button button-secondary" href="/app/pos">Ir al punto de venta</a></ChildContent></EmptyState> }
+            else { <div class="table-wrap"><table><thead><tr><th>CLIENTE</th><th>REFERENCIA</th><th>FECHA</th><th>MÉTODO</th><th class="align-right">TOTAL</th></tr></thead><tbody>@foreach (var sale in _summary.RecentSales) { <tr><td><span class="customer-cell"><span class="mini-avatar">@Initials(sale.CustomerName)</span><strong>@sale.CustomerName</strong></span></td><td class="mono">@sale.Number</td><td>@Clock.ToBusinessTime(sale.CreatedAtUtc).ToString("dd MMM, HH:mm")</td><td><span class="payment-pill">@Payment(sale.PaymentMethod)</span></td><td class="align-right amount">@Money(sale.Total)</td></tr> }</tbody></table></div> }
+        </section>
+        <aside class="panel quick-panel"><div class="panel-heading"><div><h2>Accesos rápidos</h2><p>Lo que necesitas, en un toque</p></div></div><a class="quick-link" href="/app/pos"><span class="quick-icon quick-green">▣</span><span><strong>Registrar una venta</strong><small>Abre el punto de venta</small></span><span class="quick-arrow">↗</span></a><a class="quick-link" href="/app/customers"><span class="quick-icon quick-blue">♧</span><span><strong>Agregar un cliente</strong><small>Amplía tu comunidad</small></span><span class="quick-arrow">↗</span></a><a class="quick-link" href="/app/products"><span class="quick-icon quick-peach">▦</span><span><strong>Revisar productos</strong><small>Gestiona tu inventario</small></span><span class="quick-arrow">↗</span></a><div class="tip-card"><span class="tip-label">✦ CONSEJO DE HOY</span><p>Los clientes que vuelven son el corazón de tu negocio. <strong>Cuida cada detalle.</strong></p></div></aside>
+    </div>
+}
+
+@code {
+    private DashboardSummary? _summary;
+    protected override async Task OnInitializedAsync() => _summary = await Store.GetDashboardAsync();
+    private static string Money(decimal amount) => DisplayFormat.Money(amount);
+    private static string Initials(string value) => DisplayFormat.Initials(value);
+    private static string Payment(PaymentMethod method) => DisplayFormat.PaymentLabel(method);
+}
+
+

@@ -1,0 +1,35 @@
+@page "/__FEATURE_ROUTE__"
+@using OJunnySyS.Application.Features.__FEATURE_NAME__
+@inject I__FEATURE_NAME__Service FeatureService
+
+<PageTitle>__FEATURE_LABEL__ · OjunnySyS</PageTitle>
+<PageHeader Eyebrow="__FEATURE_UPPER__" Title="__FEATURE_LABEL__" Description="Administra __FEATURE_LABEL_LOWER__ desde este módulo." />
+<div class="panel list-panel">
+    <div class="list-toolbar">
+        <SearchField @bind-Value="_search" @bind-Value:after="LoadAsync" Placeholder="Buscar…" />
+        <span class="result-count">@_items.Count registros</span>
+    </div>
+    @if (_items.Count == 0)
+    {
+        <EmptyState Icon="◌" Title="No hay registros" Description="Crea el primer registro de este módulo para comenzar." />
+    }
+    else
+    {
+        <div class="table-wrap"><table><thead><tr><th>NOMBRE</th><th>ESTADO</th></tr></thead><tbody>
+        @foreach (var item in _items)
+        {
+            <tr><td><strong>@item.Name</strong></td><td><span class="status-pill"><i></i>@(item.IsActive ? "Activo" : "Inactivo")</span></td></tr>
+        }
+        </tbody></table></div>
+    }
+</div>
+
+@code {
+    private string _search = "";
+    private List<__FEATURE_NAME__Dto> _items = [];
+
+    protected override Task OnInitializedAsync() => LoadAsync();
+
+    private async Task LoadAsync() =>
+        _items = (await FeatureService.SearchAsync(_search)).ToList();
+}

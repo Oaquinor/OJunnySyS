@@ -1,0 +1,38 @@
+﻿<!DOCTYPE html>
+<html lang="es">
+
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#102b29" />
+    <base href="/" />
+    <ResourcePreloader />
+    <link rel="stylesheet" href="@Assets["lib/bootstrap/dist/css/bootstrap.min.css"]" />
+    <link rel="stylesheet" href="@Assets["app.css"]" />
+    <link rel="stylesheet" href="@Assets["features.css"]" />
+    <link rel="stylesheet" href="@Assets["identity.css"]" />
+    <link rel="stylesheet" href="@Assets["crm.css"]" />
+    <link rel="stylesheet" href="@Assets["customers.css"]" />
+    <link rel="stylesheet" href="@Assets["payables.css"]" />
+    <link rel="stylesheet" href="@Assets["users.css"]" />
+    <link rel="stylesheet" href="@Assets["OJunnySyS.Web.styles.css"]" />
+    <link rel="manifest" href="manifest.webmanifest" />
+    <link rel="icon" type="image/svg+xml" href="icons/ojunnysy-icon.svg" />
+    <link rel="apple-touch-icon" href="icons/ojunnysy-icon.svg" />
+    <ImportMap />
+    <link rel="icon" type="image/png" href="favicon.png" />
+    <HeadOutlet />
+</head>
+
+<body>
+    <Routes @rendermode="InteractiveServer" />
+    <ReconnectModal />
+    <script src="@Assets["_framework/blazor.web.js"]"></script>
+    <script>
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => navigator.serviceWorker.register('/service-worker.js', { scope: '/' }).catch(() => {}));
+        }
+    </script>
+</body>
+
+</html>

@@ -1,0 +1,30 @@
+@{
+    Layout = null;
+    ViewData["Title"] = "Acceso no disponible · OJunnySyS";
+}
+<!doctype html>
+<html lang="es-DO">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="robots" content="noindex,nofollow" />
+    <title>@ViewData["Title"]</title>
+    <style>
+        :root{--ink:#173129;--muted:#74847c;--green:#176c4a;--line:#e2e9e3}*{box-sizing:border-box}body{min-height:100vh;margin:0;display:grid;place-items:center;background:radial-gradient(circle at 80% 15%,#e0f0e3,transparent 35%),#f3f6f2;color:var(--ink);font:15px/1.6 system-ui,sans-serif}.identity-card{width:min(100% - 32px,500px);padding:42px;background:#fff;border:1px solid var(--line);border-radius:20px;box-shadow:0 22px 70px #183d2a13}.identity-mark{width:48px;height:48px;display:grid;place-items:center;border-radius:15px;background:#dbff8b;color:#143a2d;font-size:23px;font-weight:850}.identity-mark span{color:var(--green)}.identity-kicker{display:block;margin-top:30px;color:var(--green);font-size:10px;font-weight:800;letter-spacing:.14em}.identity-card h1{margin:8px 0;font-size:27px;letter-spacing:-.04em}.identity-card p{margin:0 0 24px;color:var(--muted)}.identity-submit{width:100%;min-height:46px;border:0;border-radius:9px;background:var(--green);color:white;font:700 14px system-ui;cursor:pointer}@@media(max-width:480px){.identity-card{padding:30px 23px}}
+    </style>
+</head>
+<body>
+    <main class="identity-shell">
+        <section class="identity-card">
+            <div class="identity-mark">O<span>.</span></div>
+            <span class="identity-kicker">ESPACIO DE TRABAJO</span>
+            <h1>Este espacio no está disponible</h1>
+            <p>El acceso de la empresa o de esta cuenta está suspendido, vencido o desactivado. Contacta a la persona administradora o al equipo de OjunnySyS para continuar.</p>
+            <form method="post" action="/account/logout">
+                @Html.AntiForgeryToken()
+                <button class="identity-submit" type="submit">Cerrar sesión</button>
+            </form>
+        </section>
+    </main>
+</body>
+</html>

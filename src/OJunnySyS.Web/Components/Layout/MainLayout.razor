@@ -1,0 +1,14 @@
+@inherits LayoutComponentBase
+@inject AuthenticationStateProvider AuthenticationStateProvider
+@inject TenantContext TenantScope
+<div class="app-shell"><aside class="sidebar"><NavMenu /></aside><main class="main-area"><header class="topbar"><div><span class="eyebrow">ESPACIO DE TRABAJO</span><strong>OJunnySyS</strong></div><div class="top-actions"><span class="online-dot"></span> Conectado</div></header><section class="content-area">@Body</section></main></div>
+<div id="blazor-error-ui" data-nosnippet>Ocurrió un error. <a href="." class="reload">Recargar</a><span class="dismiss">×</span></div>
+
+@code {
+    protected override async Task OnInitializedAsync()
+    {
+        var authenticationState = await AuthenticationStateProvider.GetAuthenticationStateAsync();
+        TenantScope.SetFromPrincipal(authenticationState.User);
+    }
+}
+

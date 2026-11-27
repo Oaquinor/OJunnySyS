@@ -1,0 +1,39 @@
+@page "/app/customers"
+@attribute [Authorize(Roles = "Administrator,Manager")]
+@inject StoreService Store
+@inject ILogger<Customers> Logger
+
+<PageTitle>Clientes · OjunnySyS</PageTitle>
+<PageHeader Eyebrow="CRM / CLIENTES" Title="Clientes" Description="Conoce y cuida a las personas que hacen crecer tu negocio.">
+    <Actions><button class="button button-primary" @onclick="OpenForm"><span>＋</span> Nuevo cliente</button></Actions>
+</PageHeader>
+@if (!string.IsNullOrWhiteSpace(_error) && !_showForm && _pendingDeactivation is null) { <div class="inline-error customer-page-error">@_error</div> }
+<div class="panel list-panel"><div class="list-toolbar"><SearchField @bind-Value="_search" @bind-Value:after="LoadAsync" Placeholder="Buscar por nombre, correo o empresa…" /><span class="result-count">@_customers.Count clientes</span></div>
+    @if (_customers.Count == 0) { <EmptyState Icon="♧" Title="No encontramos clientes" Description="Prueba con otra búsqueda o agrega tu primer cliente."><ChildContent><button class="button button-secondary" @onclick="OpenForm">Agregar cliente</button></ChildContent></EmptyState> }
+    else { <div class="table-wrap"><table><thead><tr><th>CLIENTE</th><th>EMPRESA</th><th>CORREO</th><th>TELÉFONO</th><th class="align-right">VALOR HISTÓRICO</th><th>ESTADO</th><th></th></tr></thead><tbody>@foreach (var customer in _customers) { <tr><td><span class="customer-cell"><span class="mini-avatar">@Initials(customer.Name)</span><strong>@customer.Name</strong></span></td><td>@(customer.Company ?? "—")</td><td>@customer.Email</td><td>@customer.Phone</td><td class="align-right amount">@Money(customer.LifetimeValue)</td><td><span class="status-pill"><i></i> Activo</span></td><td class="customer-actions"><a class="button button-secondary button-small" href="/app/customers/@customer.Id">Ver ficha</a><a class="button button-secondary button-small" href="/app/crm?customerId=@customer.Id">Seguimiento</a><button class="button button-secondary button-small" @onclick="() => EditCustomer(customer)">Editar</button><button class="button button-secondary button-small" @onclick="() => _pendingDeactivation = customer">Desactivar</button></td></tr> }</tbody></table></div> }
+</div>
+@if (_showForm) { <div class="modal-backdrop" @onclick="CloseForm"><section class="modal-card" @onclick:stopPropagation="true"><div class="modal-heading"><div><span class="eyebrow">CRM · REGISTRO</span><h2>@(_form.Id == Guid.Empty ? "Agregar cliente" : "Editar cliente")</h2><p>Actualiza los datos de contacto del cliente.</p></div><button class="icon-button" @onclick="CloseForm">×</button></div><EditForm Model="_form" OnValidSubmit="SaveAsync"><DataAnnotationsValidator /><div class="form-grid"><label>Nombre<InputText @bind-Value="_form.FirstName" placeholder="Ej. María" /></label><label>Apellido<InputText @bind-Value="_form.LastName" placeholder="Ej. Fernández" /></label><label>Correo electrónico<InputText @bind-Value="_form.Email" type="email" placeholder="nombre@correo.com" /></label><label>Teléfono<InputText @bind-Value="_form.Phone" placeholder="809-555-0100" /></label><label class="full-span">Empresa <span class="optional">Opcional</span><InputText @bind-Value="_form.Company" placeholder="Nombre del negocio" /></label></div><ValidationSummary />@if (!string.IsNullOrWhiteSpace(_error)) { <div class="inline-error">@_error</div>}<div class="modal-actions"><button type="button" class="button button-secondary" @onclick="CloseForm">Cancelar</button><button type="submit" class="button button-primary" disabled="@_saving">@(_saving ? "Guardando…" : _form.Id == Guid.Empty ? "Guardar cliente" : "Actualizar cliente")</button></div></EditForm></section></div> }
+@if (_pendingDeactivation is not null) { <div class="modal-backdrop" @onclick="() => _pendingDeactivation = null"><section class="modal-card confirm-card" @onclick:stopPropagation="true"><div class="modal-heading"><div><span class="eyebrow">CRM · CLIENTE</span><h2>Desactivar cliente</h2><p>@_pendingDeactivation.Name dejará de aparecer en búsquedas y en nuevas ventas. Su historial y registros asociados se conservarán.</p></div><button class="icon-button" @onclick="() => _pendingDeactivation = null">×</button></div>@if (_error is not null) { <div class="inline-error">@_error</div>}<div class="modal-actions"><button class="button button-secondary" @onclick="() => _pendingDeactivation = null">Cancelar</button><button class="button button-primary" disabled="@_saving" @onclick="DeactivateAsync">Desactivar cliente</button></div></section></div> }
+@if (!string.IsNullOrWhiteSpace(_notice)) { <div class="toast">✓ @_notice</div> }
+
+@code {
+    private List<CustomerDto> _customers = [];
+    private string _search = "";
+    private bool _showForm, _saving;
+    private CustomerDto? _pendingDeactivation;
+    private string? _error, _notice;
+    private CustomerForm _form = new();
+    protected override Task OnInitializedAsync() => LoadAsync();
+    private async Task LoadAsync() => _customers = (await Store.SearchCustomersAsync(_search)).ToList();
+    private void OpenForm() { _form = new(); _error = null; _showForm = true; }
+    private void EditCustomer(CustomerDto customer) { _form = new() { Id = customer.Id, ExpectedRevision = customer.Revision, FirstName = customer.FirstName, LastName = customer.LastName, Email = customer.Email, Phone = customer.Phone, Company = customer.Company }; _error = null; _showForm = true; }
+    private void CloseForm() => _showForm = false;
+    private async Task SaveAsync() { _saving = true; _error = null; try { if (_form.Id == Guid.Empty) await Store.CreateCustomerAsync(_form.FirstName, _form.LastName, _form.Email, _form.Phone, _form.Company); else await Store.UpdateCustomerAsync(_form.Id, new(_form.FirstName, _form.LastName, _form.Email, _form.Phone, _form.Company, _form.ExpectedRevision)); _showForm = false; _notice = _form.Id == Guid.Empty ? "Cliente agregado correctamente" : "Cliente actualizado correctamente"; await LoadAsync(); } catch (ConcurrencyConflictException ex) { _error = ex.Message; _showForm = false; await LoadAsync(); } catch (DomainException ex) { _error = ex.Message; } catch (Exception ex) { Logger.LogError(ex, "No se pudo guardar el cliente."); _error = "No se pudo guardar el cliente. Inténtalo de nuevo."; } finally { _saving = false; } }
+    private async Task DeactivateAsync() { if (_pendingDeactivation is not { } customer) return; _saving = true; _error = null; try { await Store.DeactivateCustomerAsync(customer.Id, customer.Revision); _pendingDeactivation = null; _notice = "Cliente desactivado; su historial se conservó"; await LoadAsync(); } catch (ConcurrencyConflictException ex) { _error = ex.Message; await LoadAsync(); _pendingDeactivation = _customers.SingleOrDefault(x => x.Id == customer.Id); } catch (Exception ex) { Logger.LogError(ex, "No se pudo desactivar el cliente."); _error = ex is DomainException domain ? domain.Message : "No se pudo desactivar el cliente."; } finally { _saving = false; } }
+    private static string Money(decimal amount) => DisplayFormat.Money(amount);
+    private static string Initials(string value) => DisplayFormat.Initials(value);
+    private sealed class CustomerForm { public Guid Id { get; set; } public long ExpectedRevision { get; set; } [System.ComponentModel.DataAnnotations.Required(ErrorMessage="El nombre es obligatorio.")] public string FirstName { get; set; } = ""; public string LastName { get; set; } = ""; [System.ComponentModel.DataAnnotations.Required, System.ComponentModel.DataAnnotations.EmailAddress] public string Email { get; set; } = ""; [System.ComponentModel.DataAnnotations.Required] public string Phone { get; set; } = ""; public string? Company { get; set; } }
+}
+
+
+

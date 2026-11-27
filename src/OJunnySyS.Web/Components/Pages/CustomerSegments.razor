@@ -1,0 +1,128 @@
+@page "/app/crm/segments"
+@attribute [Authorize(Roles = "Administrator,Manager")]
+@inject CustomerSegmentService SegmentManager
+@inject CustomerTagService TagManager
+@inject ILogger<CustomerSegments> Logger
+
+<PageTitle>Segmentos CRM · OJunnySyS</PageTitle>
+<PageHeader Eyebrow="CRM / AUDIENCIAS" Title="Segmentos de clientes" Description="Guarda criterios y consulta grupos que se recalculan con la información actual.">
+    <Actions><button class="button button-primary" @onclick="OpenCreate">＋ Nuevo segmento</button></Actions>
+</PageHeader>
+@if (!string.IsNullOrWhiteSpace(_error)) { <div class="inline-error">@_error</div> }
+<div class="segment-workspace">
+    <section class="panel segment-library">
+        <div class="panel-heading"><div><span class="eyebrow">EMPRESA · CRM</span><h2>Segmentos guardados</h2><p>@_segments.Count definiciones · se evalúan al abrirlas</p></div></div>
+        @if (_loading) { <div class="loading-panel">Cargando segmentos…</div> }
+        else if (_segments.Count == 0) { <div class="empty-state"><strong>Empieza con un grupo concreto</strong><p>Combina etiquetas, historial de compras y actividad para crear una audiencia reutilizable.</p><button class="button button-secondary" @onclick="OpenCreate">Crear segmento</button></div> }
+        else { <div class="segment-list">@foreach (var segment in _segments) { <article class="segment-list-item @( _selected?.Id == segment.Id ? "segment-selected" : "")"><button class="segment-select" @onclick="() => SelectAsync(segment)"><strong>@segment.Name</strong><small>@CriteriaSummary(segment)</small></button><button class="icon-button segment-icon" title="Editar segmento" aria-label="Editar @segment.Name" @onclick="() => OpenEdit(segment)">✎</button><button class="icon-button segment-icon segment-delete" title="Eliminar segmento" aria-label="Eliminar @segment.Name" @onclick="() => _pendingDelete = segment">×</button></article> }</div> }
+    </section>
+    <section class="panel segment-results">
+        @if (_selected is null) { <EmptyState Icon="◉" Title="Selecciona un segmento" Description="El resultado se calculará en el momento de abrir la definición." /> }
+        else {
+            <div class="panel-heading"><div><span class="eyebrow">AUDIENCIA DINÁMICA</span><h2>@_selected.Name</h2><p>@CriteriaSummary(_selected)</p></div><div class="segment-total"><strong>@(_members?.TotalCount ?? 0)</strong><small>clientes</small></div></div>
+            @if (_membersLoading) { <div class="loading-panel">Calculando miembros actuales…</div> }
+            else if (_members is not null && _members.Customers.Count == 0) { <EmptyState Icon="⌕" Title="Ningún cliente coincide todavía" Description="Puedes cambiar los criterios para ampliar este grupo." /> }
+            else if (_members is not null) { @if (_members.IsTruncated) { <div class="segment-cap-note">Mostrando los primeros @_members.Customers.Count de @_members.TotalCount clientes. Ajusta los filtros para revisar un grupo más pequeño.</div> }<div class="table-wrap"><table><thead><tr><th>CLIENTE</th><th>EMPRESA</th><th>CORREO</th><th class="align-right">VALOR HISTÓRICO</th><th></th></tr></thead><tbody>@foreach (var customer in _members.Customers) { <tr><td><strong>@customer.Name</strong></td><td>@(customer.Company ?? "—")</td><td>@customer.Email</td><td class="align-right amount">@DisplayFormat.Money(customer.LifetimeValue)</td><td><a class="button button-secondary button-small" href="/app/customers/@customer.Id">Ver ficha</a></td></tr> }</tbody></table></div> }
+        }
+    </section>
+</div>
+
+@if (_showForm) { <div class="modal-backdrop" @onclick="CloseForm"><section class="modal-card segment-form-card" @onclick:stopPropagation="true"><div class="modal-heading"><div><span class="eyebrow">CRM · SEGMENTACIÓN</span><h2>@(_form.Id == Guid.Empty ? "Crear segmento" : "Editar segmento")</h2><p>Las condiciones se aplican juntas y el grupo se actualiza con cada consulta.</p></div><button class="icon-button" @onclick="CloseForm">×</button></div>
+    <EditForm Model="_form" OnValidSubmit="SaveAsync"><DataAnnotationsValidator /><div class="form-grid">
+        <label class="full-span">Nombre del segmento<InputText @bind-Value="_form.Name" maxlength="100" placeholder="Ej. Clientes frecuentes" /></label>
+        <label class="full-span">Etiqueta requerida<InputSelect @bind-Value="_form.RequiredTagId"><option value="">Cualquier etiqueta</option>@foreach (var tag in _tags) { <option value="@tag.Id">@tag.Name · @tag.CustomerCount clientes</option> }</InputSelect></label>
+        <label>Valor histórico mínimo<InputNumber @bind-Value="_form.MinimumLifetimeValue" min="0" step="0.01" /></label>
+        <label>Valor histórico máximo<InputNumber @bind-Value="_form.MaximumLifetimeValue" min="0" step="0.01" /></label>
+        <label>Mínimo de compras<InputNumber @bind-Value="_form.MinimumSalesCount" min="1" max="100000" /></label>
+        <label>Compró en últimos (días)<InputNumber @bind-Value="_form.PurchasedWithinDays" min="1" max="3650" /></label>
+        <label class="full-span segment-active-filter"><InputCheckbox @bind-Value="_form.ActiveCustomersOnly" /> Incluir únicamente clientes activos</label>
+    </div><ValidationSummary />@if (!string.IsNullOrWhiteSpace(_formError)) { <div class="inline-error">@_formError</div> }<div class="modal-actions"><button type="button" class="button button-secondary" @onclick="CloseForm">Cancelar</button><button class="button button-primary" disabled="@_saving">@(_saving ? "Guardando…" : "Guardar segmento")</button></div></EditForm>
+</section></div> }
+@if (_pendingDelete is not null) { <div class="modal-backdrop" @onclick="() => _pendingDelete = null"><section class="modal-card confirm-card" @onclick:stopPropagation="true"><div class="modal-heading"><div><span class="eyebrow">CRM · SEGMENTACIÓN</span><h2>Eliminar segmento</h2><p>Se eliminará la definición «@_pendingDelete.Name». No se borrarán clientes, etiquetas ni ventas.</p></div><button class="icon-button" @onclick="() => _pendingDelete = null">×</button></div><div class="modal-actions"><button class="button button-secondary" @onclick="() => _pendingDelete = null">Cancelar</button><button class="button button-primary" disabled="@_saving" @onclick="DeleteAsync">Eliminar segmento</button></div></section></div> }
+
+@code {
+    private List<CustomerSegmentDto> _segments = [];
+    private List<CustomerTagDto> _tags = [];
+    private CustomerSegmentDto? _selected, _pendingDelete;
+    private CustomerSegmentMembersDto? _members;
+    private SegmentForm _form = new();
+    private bool _loading = true, _membersLoading, _showForm, _saving;
+    private string? _error, _formError;
+
+    protected override Task OnInitializedAsync() => LoadAsync();
+    private async Task LoadAsync()
+    {
+        _loading = true;
+        try
+        {
+            var segmentsTask = SegmentManager.GetSegmentsAsync();
+            var tagsTask = TagManager.GetTagsAsync();
+            await Task.WhenAll(segmentsTask, tagsTask);
+            _segments = (await segmentsTask).ToList();
+            _tags = (await tagsTask).ToList();
+            if (_selected is not null) _selected = _segments.SingleOrDefault(x => x.Id == _selected.Id);
+            if (_selected is null && _segments.Count > 0) _selected = _segments[0];
+            if (_selected is not null) await LoadMembersAsync(_selected);
+        }
+        catch (Exception ex) { Logger.LogError(ex, "No se pudieron cargar los segmentos de clientes."); _error = "No se pudieron cargar los segmentos."; }
+        finally { _loading = false; }
+    }
+    private async Task SelectAsync(CustomerSegmentDto segment) { _selected = segment; await LoadMembersAsync(segment); }
+    private async Task LoadMembersAsync(CustomerSegmentDto segment)
+    {
+        _membersLoading = true;
+        try { _members = await SegmentManager.GetMembersAsync(segment.Id); }
+        catch (Exception ex) { Logger.LogError(ex, "No se pudieron calcular los miembros del segmento {SegmentId}.", segment.Id); _members = null; _error = "No se pudieron calcular los clientes de este segmento."; }
+        finally { _membersLoading = false; }
+    }
+    private void OpenCreate() { _form = new(); _formError = null; _showForm = true; }
+    private void OpenEdit(CustomerSegmentDto segment) { _form = new() { Id = segment.Id, ExpectedRevision = segment.Revision, Name = segment.Name, RequiredTagId = segment.RequiredTagId, MinimumLifetimeValue = segment.MinimumLifetimeValue, MaximumLifetimeValue = segment.MaximumLifetimeValue, MinimumSalesCount = segment.MinimumSalesCount, PurchasedWithinDays = segment.PurchasedWithinDays, ActiveCustomersOnly = segment.ActiveCustomersOnly }; _formError = null; _showForm = true; }
+    private void CloseForm() => _showForm = false;
+    private async Task SaveAsync()
+    {
+        _saving = true; _formError = null;
+        try
+        {
+            if (_form.Id == Guid.Empty)
+                _selected = await SegmentManager.CreateAsync(new(_form.Name, _form.RequiredTagId, _form.MinimumLifetimeValue, _form.MaximumLifetimeValue, _form.MinimumSalesCount, _form.PurchasedWithinDays, _form.ActiveCustomersOnly));
+            else
+                _selected = await SegmentManager.UpdateAsync(_form.Id, new(_form.Name, _form.RequiredTagId, _form.MinimumLifetimeValue, _form.MaximumLifetimeValue, _form.MinimumSalesCount, _form.PurchasedWithinDays, _form.ActiveCustomersOnly, _form.ExpectedRevision));
+            _showForm = false; _error = null; await LoadAsync();
+        }
+        catch (DomainException ex) { _formError = ex.Message; }
+        catch (ConcurrencyConflictException ex) { _formError = ex.Message; await LoadAsync(); }
+        catch (Exception ex) { Logger.LogError(ex, "No se pudo guardar el segmento."); _formError = "No se pudo guardar el segmento."; }
+        finally { _saving = false; }
+    }
+    private async Task DeleteAsync()
+    {
+        if (_pendingDelete is not { } segment) return;
+        _saving = true;
+        try { await SegmentManager.DeleteAsync(segment.Id, segment.Revision); if (_selected?.Id == segment.Id) { _selected = null; _members = null; } _pendingDelete = null; _error = null; await LoadAsync(); }
+        catch (Exception ex) { Logger.LogError(ex, "No se pudo eliminar el segmento {SegmentId}.", segment.Id); _error = ex is DomainException or ConcurrencyConflictException ? ex.Message : "No se pudo eliminar el segmento."; _pendingDelete = null; await LoadAsync(); }
+        finally { _saving = false; }
+    }
+    private string CriteriaSummary(CustomerSegmentDto segment)
+    {
+        var criteria = new List<string>();
+        if (segment.RequiredTagName is not null) criteria.Add($"Etiqueta: {segment.RequiredTagName}");
+        if (segment.MinimumLifetimeValue is { } min) criteria.Add($"Desde {DisplayFormat.Money(min)}");
+        if (segment.MaximumLifetimeValue is { } max) criteria.Add($"Hasta {DisplayFormat.Money(max)}");
+        if (segment.MinimumSalesCount is { } count) criteria.Add($"{count}+ compras");
+        if (segment.PurchasedWithinDays is { } days) criteria.Add($"Compró en {days} días");
+        if (segment.ActiveCustomersOnly) criteria.Add("Activos");
+        return criteria.Count == 0 ? "Todos los clientes" : string.Join(" · ", criteria);
+    }
+    private sealed class SegmentForm
+    {
+        public Guid Id { get; set; }
+        public long ExpectedRevision { get; set; }
+        [Required, StringLength(100, MinimumLength = 2)] public string Name { get; set; } = "";
+        public Guid? RequiredTagId { get; set; }
+        [Range(typeof(decimal), "0", "999999999999")] public decimal? MinimumLifetimeValue { get; set; }
+        [Range(typeof(decimal), "0", "999999999999")] public decimal? MaximumLifetimeValue { get; set; }
+        [Range(1, 100000)] public int? MinimumSalesCount { get; set; }
+        [Range(1, 3650)] public int? PurchasedWithinDays { get; set; }
+        public bool ActiveCustomersOnly { get; set; } = true;
+    }
+}

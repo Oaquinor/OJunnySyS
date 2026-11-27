@@ -1,0 +1,121 @@
+@page "/app/customers/{CustomerId:guid}"
+@attribute [Authorize(Roles = "Administrator,Manager,Salesperson")]
+@inject StoreService Store
+@inject CrmService CrmManager
+@inject CustomerTagService CustomerTags
+@inject IBusinessClock Clock
+@inject AuthenticationStateProvider Authentication
+@inject ILogger<CustomerProfile> Logger
+
+<PageTitle>@(_customer?.Name ?? "Cliente") · CRM · OJunnySyS</PageTitle>
+@if (_loading) { <div class="loading-panel">Cargando la ficha del cliente…</div> }
+else if (_customer is null) { <PageHeader Eyebrow="CRM / CLIENTE" Title="Cliente no encontrado" Description="No encontramos este cliente en la empresa activa."><Actions><a class="button button-secondary" href="/app/customers">Volver a clientes</a></Actions></PageHeader> }
+else {
+    <PageHeader Eyebrow="CRM / FICHA DEL CLIENTE" Title="@_customer.Name" Description="Datos de contacto, relación comercial e historial en un solo lugar.">
+        <Actions><a class="button button-secondary" href="/app/crm?customerId=@CustomerId">Abrir seguimiento</a><a class="button button-secondary" href="/app/customers">Todos los clientes</a></Actions>
+    </PageHeader>
+    <div class="customer-profile-grid">
+        <section class="panel customer-profile-card">
+            <span class="eyebrow">INFORMACIÓN DE CONTACTO</span>
+            <div class="customer-profile-person"><span class="profile-large-avatar">@DisplayFormat.Initials(_customer.Name)</span><div><h2>@_customer.Name</h2><span>@(_customer.Company ?? "Cliente particular")</span></div></div>
+            <dl class="customer-contact-list"><div><dt>CORREO</dt><dd><a href="mailto:@_customer.Email">@_customer.Email</a></dd></div><div><dt>TELÉFONO</dt><dd><a href="tel:@_customer.Phone">@_customer.Phone</a></dd></div><div><dt>CLIENTE DESDE</dt><dd>@Clock.ToBusinessTime(_customer.CreatedAtUtc).ToString("dd MMM yyyy")</dd></div></dl>
+        </section>
+        <section class="panel customer-tags-card">
+            <div class="panel-heading"><div><span class="eyebrow">CRM · SEGMENTACIÓN</span><h2>Etiquetas</h2><p>Organiza a este cliente con etiquetas de la empresa.</p></div></div>
+            @if (_customerTags.Count == 0) { <div class="customer-tags-empty">Este cliente aún no tiene etiquetas.</div> }
+            else { <div class="customer-tag-list">@foreach (var tag in _customerTags) { <span class="customer-tag-pill @TagCss(tag.Color)">@tag.Name<AuthorizeView Roles="Administrator,Manager"><button type="button" title="Quitar etiqueta" aria-label="Quitar etiqueta @tag.Name" @onclick="() => RemoveTagAsync(tag.Id)">×</button></AuthorizeView></span> }</div> }
+            <AuthorizeView Roles="Administrator,Manager"><Authorized><div class="customer-tag-editor"><InputText @bind-Value="_tagName" maxlength="40" placeholder="Nombre de etiqueta" /><InputSelect @bind-Value="_tagColor">@foreach (var color in Enum.GetValues<CustomerTagColor>()) { <option value="@color">@TagColorLabel(color)</option> }</InputSelect><button type="button" class="button button-secondary button-small" @onclick="AddTagAsync" disabled="@_tagSaving">＋ Asignar</button></div>@if (!string.IsNullOrWhiteSpace(_tagError)) { <div class="inline-error">@_tagError</div> }</Authorized></AuthorizeView>
+        </section>
+        <section class="customer-profile-metrics"><article class="panel"><span>VALOR HISTÓRICO</span><strong>@DisplayFormat.Money(_customer.LifetimeValue)</strong><small>Ventas asociadas a este cliente</small></article><article class="panel"><span>OPORTUNIDADES</span><strong>@_opportunities.Count</strong><small>@DisplayFormat.Money(_opportunities.Where(x => x.Stage is not (OpportunityStage.Won or OpportunityStage.Lost)).Sum(x => x.ExpectedValue)) abiertas</small></article><article class="panel"><span>ACTIVIDADES</span><strong>@_activities.Count</strong><small>@_activities.Count(x => x.Kind == CrmActivityKind.Task && !x.IsCompleted) tareas pendientes</small></article></section>
+    </div>
+    @if (!string.IsNullOrWhiteSpace(_error)) { <div class="inline-error">@_error</div> }
+    <section class="panel customer-timeline-panel">
+        <div class="panel-heading"><div><span class="eyebrow">RELACIÓN COMERCIAL</span><h2>Cronología completa</h2><p>Ventas, oportunidades, tareas y actividades asociadas al cliente.</p></div><span class="result-count">@_timeline.Count eventos</span></div>
+        @if (_timeline.Count == 0) { <EmptyState Icon="◷" Title="Aún no hay actividad" Description="Las ventas y los seguimientos aparecerán aquí conforme el equipo trabaje con este cliente." /> }
+        else { <div class="customer-timeline">@foreach (var item in _timeline) { <article class="timeline-event"><span class="timeline-icon @item.CssClass">@item.Icon</span><div class="timeline-event-content"><div class="timeline-event-heading"><div><span class="timeline-kind">@item.Kind</span><h3>@item.Title</h3></div><time datetime="@item.AtUtc.ToString("O")">@Clock.ToBusinessTime(item.AtUtc).ToString("dd MMM yyyy · HH:mm")</time></div>@if (!string.IsNullOrWhiteSpace(item.Description)) { <p>@item.Description</p> }<div class="timeline-event-meta">@if (item.Amount is { } amount) { <strong>@DisplayFormat.Money(amount)</strong> }@if (!string.IsNullOrWhiteSpace(item.Status)) { <span class="category-pill">@item.Status</span> }@if (!string.IsNullOrWhiteSpace(item.Assignee)) { <span>Responsable: <b>@item.Assignee</b></span> }@if (!string.IsNullOrWhiteSpace(item.Url)) { <a href="@item.Url">Ver detalle →</a> }</div></div></article> }</div> }
+    </section>
+}
+
+@code {
+    [Parameter] public Guid CustomerId { get; set; }
+    private CustomerDto? _customer;
+    private List<OpportunityDto> _opportunities = [];
+    private List<CrmActivityDto> _activities = [];
+    private List<SaleDto> _sales = [];
+    private List<CustomerTagAssignmentDto> _customerTags = [];
+    private List<TimelineItem> _timeline = [];
+    private bool _loading = true;
+    private string? _error;
+    private string? _tagName, _tagError;
+    private CustomerTagColor _tagColor = CustomerTagColor.Green;
+    private bool _tagSaving;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        _loading = true; _error = null;
+        try
+        {
+            _customer = await Store.GetCustomerAsync(CustomerId);
+            if (_customer is null) return;
+            var opportunitiesTask = CrmManager.GetOpportunitiesAsync(CustomerId);
+            var activitiesTask = CrmManager.GetActivitiesAsync(CustomerId);
+            var salesTask = Store.GetCustomerSalesAsync(CustomerId);
+            var tagsTask = CustomerTags.GetCustomerTagsAsync(CustomerId);
+            await Task.WhenAll(opportunitiesTask, activitiesTask, salesTask, tagsTask);
+            _opportunities = (await opportunitiesTask).ToList();
+            _activities = (await activitiesTask).ToList();
+            _sales = (await salesTask).ToList();
+            _customerTags = (await tagsTask).ToList();
+            BuildTimeline();
+        }
+        catch (Exception ex) { Logger.LogError(ex, "No se pudo cargar la ficha CRM del cliente {CustomerId}.", CustomerId); _error = "No se pudo cargar el historial de este cliente."; }
+        finally { _loading = false; }
+    }
+
+    private async Task AddTagAsync()
+    {
+        _tagSaving = true; _tagError = null;
+        try
+        {
+            var auth = await Authentication.GetAuthenticationStateAsync();
+            var actorId = Guid.TryParse(auth.User.FindFirst(ClaimTypes.NameIdentifier)?.Value, out var id) ? id : Guid.Empty;
+            await CustomerTags.AddToCustomerAsync(CustomerId, new AddCustomerTagRequest(_tagName ?? "", _tagColor), actorId);
+            _tagName = null;
+            _customerTags = (await CustomerTags.GetCustomerTagsAsync(CustomerId)).ToList();
+        }
+        catch (DomainException ex) { _tagError = ex.Message; }
+        catch (Exception ex) { Logger.LogError(ex, "No se pudo asignar una etiqueta al cliente {CustomerId}.", CustomerId); _tagError = "No se pudo guardar la etiqueta."; }
+        finally { _tagSaving = false; }
+    }
+
+    private async Task RemoveTagAsync(Guid tagId)
+    {
+        _tagError = null;
+        try { await CustomerTags.RemoveFromCustomerAsync(CustomerId, tagId); _customerTags = (await CustomerTags.GetCustomerTagsAsync(CustomerId)).ToList(); }
+        catch (Exception ex) { Logger.LogError(ex, "No se pudo retirar una etiqueta del cliente {CustomerId}.", CustomerId); _tagError = "No se pudo quitar la etiqueta."; }
+    }
+
+    private void BuildTimeline()
+    {
+        _timeline = [new(_customer!.CreatedAtUtc, "CLIENTE", "Cliente agregado", $"Se creó el perfil de {_customer.Name}.", null, null, null, null, "♧", "timeline-customer")];
+        _timeline.AddRange(_opportunities.Select(x => new TimelineItem(x.CreatedAtUtc, "OPORTUNIDAD", x.Title,
+            x.Description ?? "Oportunidad registrada en el embudo comercial.", x.ExpectedValue, StageLabel(x.Stage), x.AssignedToName, null, "↗", "timeline-opportunity")));
+        _timeline.AddRange(_activities.Select(x => new TimelineItem(x.OccurredAtUtc,
+            x.Kind == CrmActivityKind.Task ? "TAREA" : "ACTIVIDAD", x.Subject,
+            x.Details ?? (x.DueAtUtc is { } due ? $"Vencimiento: {Clock.ToBusinessTime(due):dd MMM yyyy HH:mm}." : ""), null,
+            x.Kind == CrmActivityKind.Task ? (x.IsCompleted ? "Completada" : "Pendiente") : KindLabel(x.Kind), x.AssignedToName,
+            x.Kind == CrmActivityKind.Task && !x.IsCompleted ? $"/app/crm?customerId={CustomerId}" : null,
+            x.Kind == CrmActivityKind.Task ? "✓" : "✎", "timeline-activity")));
+        _timeline.AddRange(_sales.Select(x => new TimelineItem(x.CreatedAtUtc, "VENTA", $"Venta {x.Number}",
+            $"{PaymentLabel(x.PaymentMethod)} · {x.Status switch { SaleStatus.Completed => "Venta completada", _ => "Venta anulada" }}",
+            x.Total, x.Status == SaleStatus.Completed ? "Completada" : "Anulada", null, $"/app/receipts/{x.Id}", "＄", x.Status == SaleStatus.Completed ? "timeline-sale" : "timeline-void")));
+        _timeline = _timeline.OrderByDescending(x => x.AtUtc).ToList();
+    }
+
+    private static string StageLabel(OpportunityStage stage) => stage switch { OpportunityStage.Qualification => "Calificación", OpportunityStage.Proposal => "Propuesta", OpportunityStage.Negotiation => "Negociación", OpportunityStage.Won => "Ganada", _ => "Perdida" };
+    private static string KindLabel(CrmActivityKind kind) => kind switch { CrmActivityKind.Note => "Nota", CrmActivityKind.Call => "Llamada", CrmActivityKind.Email => "Correo", CrmActivityKind.Meeting => "Reunión", _ => "Tarea" };
+    private static string PaymentLabel(PaymentMethod method) => method switch { PaymentMethod.Cash => "Efectivo", PaymentMethod.Card => "Tarjeta", PaymentMethod.Transfer => "Transferencia", _ => "Crédito" };
+    private static string TagCss(CustomerTagColor color) => $"customer-tag-{color.ToString().ToLowerInvariant()}";
+    private static string TagColorLabel(CustomerTagColor color) => color switch { CustomerTagColor.Green => "Verde", CustomerTagColor.Blue => "Azul", CustomerTagColor.Purple => "Violeta", CustomerTagColor.Amber => "Ámbar", CustomerTagColor.Rose => "Rosa", _ => "Gris" };
+    private sealed record TimelineItem(DateTimeOffset AtUtc, string Kind, string Title, string Description, decimal? Amount, string? Status, string? Assignee, string? Url, string Icon, string CssClass);
+}

@@ -1,0 +1,209 @@
+@page "/app/purchases"
+@attribute [Authorize(Roles = "Administrator,Manager,PurchasingAgent")]
+@inject StoreService Store
+@inject ILogger<Purchases> Logger
+@inject AuthenticationStateProvider AuthenticationStateProvider
+
+<PageTitle>Compras · OJunnySyS</PageTitle>
+<PageHeader Eyebrow="ABASTECIMIENTO" Title="Compras y proveedores" Description="Organiza las órdenes, registra recepciones y mantén el inventario trazable." />
+@if (_error is not null && _paymentOrder is null && _cancelOrder is null && _pendingSupplierDeactivation is null) { <div class="inline-error customer-page-error">@_error</div> }
+
+<div class="inventory-summary"><div><span>PROVEEDORES ACTIVOS</span><strong>@_suppliers.Count</strong></div><div><span>ÓRDENES ABIERTAS</span><strong>@_orders.Count(x => x.Status is PurchaseStatus.Draft or PurchaseStatus.PartiallyReceived)</strong></div><div><span>POR RECIBIR</span><strong>@_orders.Sum(x => x.Lines.Sum(line => line.Quantity - line.ReceivedQuantity))</strong></div><div><span>SALDO POR PAGAR</span><strong>@Money(_orders.Sum(x => x.BalanceDue))</strong></div></div>
+
+<div class="purchases-grid">
+    <section class="panel list-panel">
+        <div class="modal-heading"><div><span class="eyebrow">DIRECTORIO</span><h2>Proveedores</h2><p>Contactos de abastecimiento de esta empresa.</p></div></div>
+        <EditForm Model="_supplierForm" OnValidSubmit="SaveSupplierAsync"><DataAnnotationsValidator /><div class="form-grid"><label>Nombre comercial<InputText @bind-Value="_supplierForm.Name" /></label><label>Identificador fiscal <span class="optional">Opcional</span><InputText @bind-Value="_supplierForm.TaxIdentifier" /></label><label>Correo<InputText @bind-Value="_supplierForm.Email" type="email" /></label><label>Teléfono<InputText @bind-Value="_supplierForm.Phone" /></label><label class="full-span">Notas <span class="optional">Opcional</span><InputText @bind-Value="_supplierForm.Notes" maxlength="1000" /></label></div><ValidationSummary /><div class="supplier-form-actions"><button class="button button-secondary" type="submit" disabled="@_saving">@(_editingSupplierId is null ? "Agregar proveedor" : "Actualizar proveedor")</button>@if (_editingSupplierId is not null) { <button class="button button-secondary" type="button" @onclick="ResetSupplierForm">Cancelar edición</button> }</div></EditForm>
+        <div class="table-wrap"><table><thead><tr><th>PROVEEDOR</th><th>IDENTIFICADOR</th><th>CONTACTO</th><th></th></tr></thead><tbody>@foreach (var supplier in _suppliers) { <tr><td><strong>@supplier.Name</strong><br /><small>@supplier.Notes</small></td><td>@(supplier.TaxIdentifier ?? "—")</td><td>@supplier.Email<br />@supplier.Phone</td><td class="customer-actions"><button class="button button-secondary button-small" @onclick="() => EditSupplier(supplier)">Editar</button><button class="button button-secondary button-small" @onclick="() => _pendingSupplierDeactivation = supplier">Desactivar</button></td></tr> }</tbody></table></div>
+    </section>
+
+    <section class="panel list-panel">
+        <div class="modal-heading"><div><span class="eyebrow">NUEVA ORDEN</span><h2>Preparar compra</h2><p>La orden no aumenta existencias hasta recibir los artículos.</p></div></div>
+        <EditForm Model="_purchaseForm" OnValidSubmit="CreatePurchaseAsync"><DataAnnotationsValidator />
+            <div class="form-grid"><label>Proveedor<InputSelect @bind-Value="_purchaseForm.SupplierId"><option value="">Selecciona proveedor</option>@foreach (var supplier in _suppliers) { <option value="@supplier.Id">@supplier.Name</option> }</InputSelect></label><label>Referencia del proveedor <span class="optional">Opcional</span><InputText @bind-Value="_purchaseForm.Reference" placeholder="Factura o referencia" /></label><label>Vencimiento de factura <span class="optional">Opcional</span><InputDate @bind-Value="_purchaseForm.DueDate" /></label><label>Producto<InputSelect @bind-Value="_selectedProductId"><option value="">Selecciona producto</option>@foreach (var product in _products) { <option value="@product.Id">@product.Name · @product.Sku</option> }</InputSelect></label><label>Cantidad<InputNumber @bind-Value="_lineQuantity" min="1" /></label><label>Costo unitario<InputNumber @bind-Value="_unitCost" min="0" step="0.01" /></label><div class="form-action"><button type="button" class="button button-secondary" @onclick="AddLine">Agregar línea</button></div></div>
+            @if (_draftLines.Count > 0) { <div class="table-wrap"><table><thead><tr><th>PRODUCTO</th><th>CANTIDAD</th><th class="align-right">COSTO</th><th></th></tr></thead><tbody>@foreach (var line in _draftLines) { <tr><td>@line.ProductName</td><td>@line.Quantity</td><td class="align-right">@Money(line.UnitCost)</td><td><button type="button" class="icon-button" @onclick="() => RemoveLine(line.ProductId)" aria-label="Quitar producto">×</button></td></tr> }</tbody></table></div><div class="purchase-total"><span>Total estimado</span><strong>@Money(_draftLines.Sum(x => x.Quantity * x.UnitCost))</strong></div> }
+            @if (!string.IsNullOrWhiteSpace(_error)) { <div class="inline-error">@_error</div> }<button class="button button-primary" type="submit" disabled="@(_saving || _draftLines.Count == 0 || _purchaseForm.SupplierId == Guid.Empty)">Crear orden</button>
+        </EditForm>
+    </section>
+</div>
+
+<section class="panel list-panel payable-aging-panel"><div class="modal-heading"><div><span class="eyebrow">CONTROL FINANCIERO · AL @(_agingReport.AsOfDate.ToString("dd/MM/yyyy"))</span><h2>Antigüedad de cuentas por pagar</h2><p>@_agingReport.OpenItems saldos abiertos · Total @Money(_agingReport.TotalBalance)</p></div></div>
+    <div class="aging-band-grid">@foreach (var band in _agingReport.Bands) { <article class="aging-band"><span>@AgingLabel(band.Bucket)</span><strong>@Money(band.Balance)</strong><small>@band.Count orden(es)</small></article> }</div>
+    @if (_agingReport.Items.Count > 0) { <div class="table-wrap"><table><thead><tr><th>ORDEN</th><th>PROVEEDOR</th><th>VENCIMIENTO</th><th>ANTIGÜEDAD</th><th class="align-right">SALDO</th></tr></thead><tbody>@foreach (var item in _agingReport.Items) { <tr><td><strong class="mono">@item.Number</strong><br /><small>@(item.Reference ?? "Sin referencia")</small></td><td>@item.SupplierName</td><td>@(item.DueDate?.ToString("dd/MM/yyyy") ?? "Sin fecha")</td><td><span class="status-pill @(item.DaysPastDue > 0 ? "status-warning" : "")"><i></i>@AgingLabel(item.Bucket)</span></td><td class="align-right amount">@Money(item.BalanceDue)</td></tr> }</tbody></table></div> }
+    else { <div class="aging-empty">No hay saldos pendientes de pago en este momento.</div> }
+</section>
+
+<section class="panel list-panel purchase-orders"><div class="modal-heading"><div><span class="eyebrow">REGISTRO Y RECEPCIÓN</span><h2>Órdenes recientes</h2><p>Las recepciones actualizan el stock y quedan registradas como movimientos de inventario.</p></div></div>
+    @if (_orders.Count == 0) { <EmptyState Icon="↗" Title="Aún no hay órdenes de compra" Description="Crea una orden para iniciar el abastecimiento de tu negocio." /> }
+    else { <div class="table-wrap"><table><thead><tr><th>ORDEN</th><th>PROVEEDOR</th><th>ESTADO</th><th class="align-right">TOTAL</th><th>PAGADO / SALDO</th><th>PRODUCTOS / RECEPCIÓN</th></tr></thead><tbody>@foreach (var order in _orders) { <tr><td><strong class="mono">@order.Number</strong><br /><small>@order.CreatedAtUtc.ToLocalTime().ToString("dd MMM yyyy") · Vence @(order.DueDate?.ToString("dd/MM/yyyy") ?? "Sin fecha")</small>@if (order.Status == PurchaseStatus.Draft && order.Payments.Count == 0) { <button class="button button-secondary button-small cancel-order-button" @onclick="() => _cancelOrder = order">Cancelar orden</button> }</td><td>@order.SupplierName<br /><small>@(order.Reference ?? "Sin referencia")</small></td><td><span class="status-pill @(order.Status == PurchaseStatus.Received ? "" : "status-warning")"><i></i>@StatusLabel(order.Status)</span></td><td class="align-right amount">@Money(order.Total)</td><td class="payable-cell"><strong>Saldo: @Money(order.BalanceDue)</strong><small>Abonado: @Money(order.AmountPaid)</small>@if (order.Payments.Count > 0) { <details><summary>@order.Payments.Count pago(s)</summary>@foreach (var payment in order.Payments) { <span>@Money(payment.Amount) · @PaymentMethodLabel(payment.Method) · @payment.CreatedAtUtc.ToLocalTime().ToString("dd/MM/yy HH:mm")</span> }</details> }<AuthorizeView Roles="Administrator,Manager"><Authorized><button class="button button-secondary button-small" @onclick="() => OpenPayment(order)" disabled="@(order.BalanceDue <= 0 || _saving)">Registrar abono</button></Authorized></AuthorizeView></td><td><div class="purchase-lines">@foreach (var line in order.Lines) { <div class="purchase-line"><span>@line.ProductName <small>(@line.ReceivedQuantity/@line.Quantity)</small></span>@if (order.Status is PurchaseStatus.Draft or PurchaseStatus.PartiallyReceived) { <div><InputNumber class="receive-quantity" @bind-Value="_receiveQuantities[line.Id]" min="1" max="@(line.Quantity - line.ReceivedQuantity)" /><button class="button button-secondary" @onclick="() => ReceiveAsync(order.Id, line.Id)" disabled="@(_saving || line.ReceivedQuantity >= line.Quantity)">Recibir</button></div> }</div> }</div></td></tr> }</tbody></table></div> }
+</section>
+@if (!string.IsNullOrWhiteSpace(_notice)) { <div class="toast">✓ @_notice</div> }
+
+@if (_pendingSupplierDeactivation is not null) { <div class="modal-backdrop" @onclick="() => _pendingSupplierDeactivation = null"><section class="modal-card confirm-card" @onclick:stopPropagation="true"><div class="modal-heading"><div><span class="eyebrow">DIRECTORIO DE PROVEEDORES</span><h2>Desactivar proveedor</h2><p>@_pendingSupplierDeactivation.Name dejará de estar disponible para nuevas órdenes. Sus compras y pagos históricos se conservarán.</p></div><button class="icon-button" @onclick="() => _pendingSupplierDeactivation = null">×</button></div>@if (_error is not null) { <div class="inline-error">@_error</div> }<div class="modal-actions"><button class="button button-secondary" @onclick="() => _pendingSupplierDeactivation = null">Cancelar</button><button class="button button-primary" @onclick="DeactivateSupplierAsync" disabled="@_saving">Desactivar proveedor</button></div></section></div> }
+@if (_cancelOrder is not null) { <div class="modal-backdrop" @onclick="() => _cancelOrder = null"><section class="modal-card confirm-card" @onclick:stopPropagation="true"><div class="modal-heading"><div><span class="eyebrow">ORDEN DE COMPRA</span><h2>Cancelar orden</h2><p>Se cancelará @_cancelOrder.Number. No se ha recibido ni pagado, por lo que no se modificará inventario ni caja.</p></div><button class="icon-button" @onclick="() => _cancelOrder = null">×</button></div>@if (_error is not null) { <div class="inline-error">@_error</div> }<div class="modal-actions"><button class="button button-secondary" @onclick="() => _cancelOrder = null">Volver</button><button class="button button-primary" @onclick="CancelPurchaseAsync" disabled="@_saving">Confirmar cancelación</button></div></section></div> }
+
+@if (_paymentOrder is not null) { <div class="modal-backdrop" @onclick="ClosePayment"><section class="modal-card" @onclick:stopPropagation="true"><div class="modal-heading"><div><span class="eyebrow">CUENTAS POR PAGAR</span><h2>Abonar a proveedor</h2><p>@_paymentOrder.SupplierName · Orden @_paymentOrder.Number · Saldo @Money(_paymentOrder.BalanceDue)</p></div><button class="icon-button" @onclick="ClosePayment">×</button></div><EditForm Model="_paymentForm" OnValidSubmit="SavePaymentAsync"><DataAnnotationsValidator /><div class="form-grid"><label>Importe<InputNumber @bind-Value="_paymentForm.Amount" min="0.01" step="0.01" max="@_paymentOrder.BalanceDue" /></label><label>Método<select @bind="_paymentForm.Method">@foreach (var method in Enum.GetValues<SupplierPaymentMethod>()) { <option value="@method">@PaymentMethodLabel(method)</option> }</select></label><label class="full-span">Referencia <span class="optional">Opcional</span><InputText @bind-Value="_paymentForm.Reference" maxlength="100" placeholder="Transferencia, cheque o comprobante" /></label></div><ValidationSummary />@if (_error is not null) { <div class="inline-error">@_error</div> }<div class="modal-actions"><button type="button" class="button button-secondary" @onclick="ClosePayment">Cancelar</button><button class="button button-primary" disabled="@_saving">@(_saving ? "Registrando…" : "Registrar pago")</button></div></EditForm></section></div> }
+
+@code {
+    private List<SupplierDto> _suppliers = [];
+    private List<ProductDto> _products = [];
+    private List<PurchaseOrderDto> _orders = [];
+    private PayablesAgingReport _agingReport = new(DateOnly.FromDateTime(DateTime.Today), 0, 0, [], []);
+    private readonly List<PurchaseDraftLine> _draftLines = [];
+    private readonly Dictionary<Guid, int> _receiveQuantities = [];
+    private SupplierForm _supplierForm = new();
+    private PurchaseForm _purchaseForm = new();
+    private Guid _selectedProductId;
+    private int _lineQuantity = 1;
+    private decimal _unitCost;
+    private bool _saving;
+    private PurchaseOrderDto? _paymentOrder;
+    private SupplierPaymentForm _paymentForm = new();
+    private Guid? _editingSupplierId;
+    private long _supplierExpectedRevision;
+    private SupplierDto? _pendingSupplierDeactivation;
+    private PurchaseOrderDto? _cancelOrder;
+    private string? _error, _notice;
+
+    protected override Task OnInitializedAsync() => LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        _suppliers = (await Store.SearchSuppliersAsync(null)).ToList();
+        _products = (await Store.SearchProductsAsync(null)).ToList();
+        _orders = (await Store.GetPurchaseOrdersAsync()).ToList();
+        _agingReport = await Store.GetPayablesAgingAsync();
+        _receiveQuantities.Clear();
+        foreach (var line in _orders.SelectMany(x => x.Lines)) _receiveQuantities[line.Id] = Math.Max(1, line.Quantity - line.ReceivedQuantity);
+    }
+
+    private async Task SaveSupplierAsync()
+    {
+        var wasEditing = _editingSupplierId is not null;
+        _saving = true; _error = null;
+        try
+        {
+            if (_editingSupplierId is { } id)
+                await Store.UpdateSupplierAsync(id, new UpdateSupplierRequest(_supplierForm.Name, _supplierForm.TaxIdentifier, _supplierForm.Email, _supplierForm.Phone, _supplierForm.Notes, _supplierExpectedRevision));
+            else
+                await Store.CreateSupplierAsync(new CreateSupplierRequest(_supplierForm.Name, _supplierForm.TaxIdentifier, _supplierForm.Email, _supplierForm.Phone, _supplierForm.Notes));
+            ResetSupplierForm(); _notice = wasEditing ? "Proveedor actualizado." : "Proveedor agregado."; await LoadAsync();
+        }
+        catch (ConcurrencyConflictException ex) { _error = ex.Message; ResetSupplierForm(); await LoadAsync(); }
+        catch (DomainException ex) { _error = ex.Message; }
+        catch (Exception ex) { Logger.LogError(ex, "No se pudo crear el proveedor."); _error = "No se pudo guardar el proveedor."; }
+        finally { _saving = false; }
+    }
+
+    private void EditSupplier(SupplierDto supplier)
+    {
+        _editingSupplierId = supplier.Id;
+        _supplierExpectedRevision = supplier.Revision;
+        _supplierForm = new SupplierForm { Name = supplier.Name, TaxIdentifier = supplier.TaxIdentifier, Email = supplier.Email, Phone = supplier.Phone, Notes = supplier.Notes };
+        _error = null;
+    }
+
+    private void ResetSupplierForm()
+    {
+        _editingSupplierId = null;
+        _supplierExpectedRevision = 0;
+        _supplierForm = new();
+    }
+
+    private async Task DeactivateSupplierAsync()
+    {
+        if (_pendingSupplierDeactivation is not { } supplier) return;
+        _saving = true; _error = null;
+        try
+        {
+            await Store.DeactivateSupplierAsync(supplier.Id, supplier.Revision);
+            _pendingSupplierDeactivation = null; _notice = "Proveedor desactivado; el historial se conservó."; await LoadAsync();
+        }
+        catch (ConcurrencyConflictException ex) { _error = ex.Message; await LoadAsync(); _pendingSupplierDeactivation = _suppliers.SingleOrDefault(x => x.Id == supplier.Id); }
+        catch (Exception ex) { Logger.LogError(ex, "No se pudo desactivar el proveedor."); _error = ex is DomainException domain ? domain.Message : "No se pudo desactivar el proveedor."; }
+        finally { _saving = false; }
+    }
+
+    private async Task CancelPurchaseAsync()
+    {
+        if (_cancelOrder is not { } order) return;
+        _saving = true; _error = null;
+        try { await Store.CancelPurchaseOrderAsync(order.Id); _cancelOrder = null; _notice = "Orden cancelada sin alterar el inventario."; await LoadAsync(); }
+        catch (DomainException ex) { _error = ex.Message; await LoadAsync(); _cancelOrder = _orders.SingleOrDefault(x => x.Id == order.Id); }
+        catch (Exception ex) { Logger.LogError(ex, "No se pudo cancelar la orden de compra."); _error = "No se pudo cancelar la orden."; }
+        finally { _saving = false; }
+    }
+
+    private void OpenPayment(PurchaseOrderDto order) { _paymentOrder = order; _paymentForm = new SupplierPaymentForm { Amount = order.BalanceDue, IdempotencyKey = Guid.NewGuid() }; _error = null; }
+    private void ClosePayment() { if (!_saving) _paymentOrder = null; }
+
+    private async Task SavePaymentAsync()
+    {
+        if (_paymentOrder is not { } order) return;
+        _saving = true; _error = null;
+        try
+        {
+            var auth = await AuthenticationStateProvider.GetAuthenticationStateAsync();
+            var actorId = Guid.Parse(auth.User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)!.Value);
+            await Store.RecordSupplierPaymentAsync(order.Id, actorId, new CreateSupplierPaymentRequest(_paymentForm.IdempotencyKey, _paymentForm.Amount, _paymentForm.Method, _paymentForm.Reference));
+            _paymentOrder = null; _notice = "Pago guardado; el saldo del proveedor fue actualizado."; await LoadAsync();
+        }
+        catch (DomainException ex) { _error = ex.Message; }
+        catch (Exception ex) { Logger.LogError(ex, "No se pudo registrar el pago al proveedor."); _error = "No se pudo registrar el pago. Puedes reintentar sin duplicarlo."; }
+        finally { _saving = false; }
+    }
+
+    private void AddLine()
+    {
+        _error = null;
+        if (_selectedProductId == Guid.Empty || _lineQuantity <= 0 || _unitCost < 0) { _error = "Selecciona un producto, cantidad y costo válidos."; return; }
+        var product = _products.Single(x => x.Id == _selectedProductId);
+        var existing = _draftLines.FindIndex(x => x.ProductId == product.Id);
+        if (existing >= 0)
+        {
+            if (_draftLines[existing].UnitCost != decimal.Round(_unitCost, 2)) { _error = "Consolida el producto con un solo costo unitario."; return; }
+            _draftLines[existing] = _draftLines[existing] with { Quantity = _draftLines[existing].Quantity + _lineQuantity };
+        }
+        else _draftLines.Add(new PurchaseDraftLine(product.Id, product.Name, _lineQuantity, decimal.Round(_unitCost, 2)));
+        _selectedProductId = Guid.Empty; _lineQuantity = 1; _unitCost = 0;
+    }
+
+    private void RemoveLine(Guid productId) => _draftLines.RemoveAll(x => x.ProductId == productId);
+
+    private async Task CreatePurchaseAsync()
+    {
+        _saving = true; _error = null;
+        try
+        {
+            var lines = _draftLines.Select(x => new CreatePurchaseLineRequest(x.ProductId, x.Quantity, x.UnitCost)).ToArray();
+            await Store.CreatePurchaseOrderAsync(new CreatePurchaseOrderRequest(_purchaseForm.SupplierId, _purchaseForm.Reference, lines, _purchaseForm.DueDate));
+            _draftLines.Clear(); _purchaseForm = new(); _notice = "Orden de compra creada; el inventario aún no se ha modificado."; await LoadAsync();
+        }
+        catch (DomainException ex) { _error = ex.Message; }
+        catch (Exception ex) { Logger.LogError(ex, "No se pudo crear la orden de compra."); _error = "No se pudo crear la orden de compra."; }
+        finally { _saving = false; }
+    }
+
+    private async Task ReceiveAsync(Guid orderId, Guid lineId)
+    {
+        _saving = true; _error = null;
+        try
+        {
+            await Store.ReceivePurchaseOrderAsync(orderId, [new ReceivePurchaseLineRequest(lineId, _receiveQuantities[lineId])]);
+            _notice = "Recepción guardada y existencias actualizadas."; await LoadAsync();
+        }
+        catch (DomainException ex) { _error = ex.Message; }
+        catch (Exception ex) { Logger.LogError(ex, "No se pudo registrar la recepción."); _error = "No se pudo registrar la recepción."; }
+        finally { _saving = false; }
+    }
+
+    private static string StatusLabel(PurchaseStatus status) => status switch { PurchaseStatus.Draft => "Pendiente", PurchaseStatus.PartiallyReceived => "Parcial", PurchaseStatus.Received => "Recibida", _ => "Cancelada" };
+    private static string PaymentMethodLabel(SupplierPaymentMethod method) => method switch { SupplierPaymentMethod.Cash => "Efectivo", SupplierPaymentMethod.BankTransfer => "Transferencia", SupplierPaymentMethod.Card => "Tarjeta", SupplierPaymentMethod.Check => "Cheque", _ => "Otro" };
+    private static string AgingLabel(PayableAgingBucket bucket) => bucket switch { PayableAgingBucket.NoDueDate => "Sin vencimiento", PayableAgingBucket.Current => "Vigente", PayableAgingBucket.Days1To30 => "1–30 días", PayableAgingBucket.Days31To60 => "31–60 días", PayableAgingBucket.Days61To90 => "61–90 días", _ => "Más de 90 días" };
+    private static string Money(decimal value) => DisplayFormat.Money(value);
+
+    private sealed record PurchaseDraftLine(Guid ProductId, string ProductName, int Quantity, decimal UnitCost);
+    private sealed class SupplierForm { [System.ComponentModel.DataAnnotations.Required(ErrorMessage = "El nombre es obligatorio.")] public string Name { get; set; } = ""; public string? TaxIdentifier { get; set; } [System.ComponentModel.DataAnnotations.EmailAddress(ErrorMessage = "El correo no es válido.")] public string Email { get; set; } = ""; public string Phone { get; set; } = ""; [System.ComponentModel.DataAnnotations.StringLength(1000)] public string? Notes { get; set; } }
+    private sealed class PurchaseForm { public Guid SupplierId { get; set; } [System.ComponentModel.DataAnnotations.StringLength(100)] public string? Reference { get; set; } public DateOnly? DueDate { get; set; } }
+    private sealed class SupplierPaymentForm { public Guid IdempotencyKey { get; set; } [System.ComponentModel.DataAnnotations.Range(typeof(decimal), "0.01", "999999999999.99", ErrorMessage = "El importe debe ser mayor que cero.")] public decimal Amount { get; set; } public SupplierPaymentMethod Method { get; set; } = SupplierPaymentMethod.BankTransfer; [System.ComponentModel.DataAnnotations.StringLength(100)] public string? Reference { get; set; } }
+}

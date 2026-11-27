@@ -1,0 +1,86 @@
+@page "/app/reports"
+@attribute [Authorize(Roles = "Administrator,Manager")]
+@inject StoreService Store
+@inject OJunnySyS.Application.Abstractions.IBusinessClock Clock
+
+<PageTitle>Reportes · OjunnySyS</PageTitle>
+<PageHeader Eyebrow="ANÁLISIS / VENTAS" Title="Reportes" Description="Entiende el rendimiento de las ventas en el período que elijas." />
+<section class="panel report-filter">
+    <label>Desde<InputDate @bind-Value="_from" /></label>
+    <label>Hasta<InputDate @bind-Value="_to" /></label>
+    <button class="button button-primary" @onclick="LoadAsync" disabled="@_loading">@(_loading ? "Generando…" : "Generar reporte")</button>
+    <span class="timezone-note">Fechas en la zona horaria del negocio</span>
+</section>
+@if (!string.IsNullOrWhiteSpace(_error)) { <div class="inline-error">@_error</div> }
+@if (_report is not null)
+{
+    <div class="report-period">PERÍODO <strong>@_report.From.ToString("dd MMM yyyy") — @_report.To.ToString("dd MMM yyyy")</strong></div>
+    <div class="stats-grid report-stats">
+        <MetricCard Label="VENTAS NETAS" Value="@DisplayFormat.Money(_report.Subtotal)" Icon="↗" Tone="green"><span class="muted-foot">@_report.SalesCount transacciones</span></MetricCard>
+        <MetricCard Label="IMPUESTOS" Value="@DisplayFormat.Money(_report.TaxAmount)" Icon="◈" Tone="lilac"><span class="muted-foot">Impuestos calculados</span></MetricCard>
+        <MetricCard Label="TOTAL COBRADO" Value="@DisplayFormat.Money(_report.Total)" Icon="▤" Tone="blue"><span class="muted-foot">Monto del período</span></MetricCard>
+        <MetricCard Label="PROMEDIO POR VENTA" Value="@DisplayFormat.Money(Average)" Icon="◷" Tone="amber"><span class="muted-foot">Por transacción completada</span></MetricCard>
+    </div>
+    @if (_report.SalesCount == 0)
+    {
+        <section class="panel"><EmptyState Icon="▤" Title="Sin ventas en este período" Description="Prueba con otras fechas o registra una venta desde el punto de venta." /></section>
+    }
+    else
+    {
+        <div class="report-grid">
+            <section class="panel report-panel">
+                <div class="panel-heading"><div><h2>Ventas por día</h2><p>Importe cobrado · DOP</p></div></div>
+                @if (_report.DailySales.Count == 0) { <div class="empty-state"><p>No hay movimientos para graficar.</p></div> }
+                else
+                {
+                    var maxDaily = _report.DailySales.Max(x => x.Total);
+                    <div class="daily-chart">@foreach (var day in _report.DailySales)
+                    {
+                        var height = maxDaily == 0 ? 0 : Math.Max(4, (int)Math.Round(day.Total / maxDaily * 100));
+                        <div class="daily-column" title="@($"{day.Date:dd MMM}: {Money(day.Total)}")"><div class="daily-bar-wrap"><i style="height:@(height)%"></i></div><span>@day.Date.ToString("dd")</span></div>
+                    }</div>
+                }
+            </section>
+            <section class="panel report-panel">
+                <div class="panel-heading"><div><h2>Métodos de pago</h2><p>Distribución de transacciones</p></div></div>
+                @foreach (var payment in _report.Payments)
+                {
+                    <div class="report-row"><div><strong>@PaymentLabel(payment.Method)</strong><small>@payment.Sales ventas</small></div><strong>@Money(payment.Total)</strong></div>
+                }
+            </section>
+            <section class="panel report-panel top-products-panel">
+                <div class="panel-heading"><div><h2>Productos más vendidos</h2><p>Ordenados por ingresos</p></div></div>
+                <div class="table-wrap"><table><thead><tr><th>PRODUCTO</th><th class="align-right">UNIDADES</th><th class="align-right">INGRESOS</th></tr></thead><tbody>@foreach (var product in _report.TopProducts) { <tr><td><strong>@product.ProductName</strong></td><td class="align-right">@product.Quantity</td><td class="align-right amount">@Money(product.Revenue)</td></tr> }</tbody></table></div>
+            </section>
+        </div>
+    }
+}
+
+@code {
+    private DateOnly _from, _to;
+    private SalesReport? _report;
+    private string? _error;
+    private bool _loading;
+    private decimal Average => _report is null || _report.SalesCount == 0 ? 0 : decimal.Round(_report.Total / _report.SalesCount, 2);
+
+    protected override async Task OnInitializedAsync()
+    {
+        _to = DateOnly.FromDateTime(Clock.ToBusinessTime(Clock.UtcNow).DateTime);
+        _from = _to.AddDays(-29);
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        _loading = true;
+        _error = null;
+        try { _report = await Store.GetSalesReportAsync(_from, _to); }
+        catch (DomainException ex) { _report = null; _error = ex.Message; }
+        finally { _loading = false; }
+    }
+
+    private static string Money(decimal value) => DisplayFormat.Money(value);
+    private static string PaymentLabel(PaymentMethod value) => DisplayFormat.PaymentLabel(value);
+}
+
+

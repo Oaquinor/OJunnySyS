@@ -1,0 +1,10 @@
+:root{--ink:#132b27;--muted:#70857c;--line:#e0e9e3;--green:#19815e;--soft-green:#e4f5e9;--surface:#fff}
+body{font-size:15px;color:var(--ink);background:#f3f6f2}
+.sidebar{background:linear-gradient(180deg,#12322e 0%,#0d2927 100%);border-right:0;color:#e7f2eb}
+.brand{padding-bottom:27px}.brand-mark{background:#dbff8b;color:#102b29}.brand-mark span{color:#19815e}.brand>div:nth-child(2)>strong{color:#f2f7f3}.brand>div:nth-child(2)>strong span{color:#b9f2d2}.brand small{color:#9fb8ad}
+.nav-caption{color:#91aea1;font-size:10px}.section-caption{margin-top:23px}.nav-link{min-height:43px;border-radius:10px;color:#c0d1c8;font-size:13px;font-weight:550}.nav-link:hover{background:#ffffff11;color:white}.nav-link.active{background:#dbff8b;color:#13362d;font-weight:750}.nav-icon{color:#a3b9ad}.nav-link.active .nav-icon{color:#226846}.nav-count{color:#b6edc8;background:#184f40;font-size:10px}.nav-link.active .nav-count{background:#c1e9a0;color:#214f37}.nav-live{color:#83e3a8}
+.sidebar-bottom{padding-bottom:4px}.profile-row{border-color:#ffffff25}.profile-row strong{color:#f1f7f3;font-size:12px}.profile-row small{color:#9fb8ad;font-size:11px}.profile-avatar{background:#dbff8b;color:#153c31}.logout-button{border-color:#ffffff36;background:#ffffff0c;color:#d9e8df;font-size:11px}.logout-button:hover{border-color:#dbff8b;background:#dbff8b;color:#153c31}
+.topbar{height:72px;background:#fff;border-color:#e3ebe5}.topbar strong{font-size:15px;color:#1a332c}.top-actions{font-size:13px}.eyebrow{font-size:10px}.content-area{padding-top:38px}
+.page-heading h1{color:#142c26;letter-spacing:-.045em}.page-heading p{font-size:14px;color:#71857c}.button-primary{background:#19815e;border-color:#19815e}.button-primary:hover{background:#126b4d}.panel{border-color:#e1e9e3;box-shadow:0 8px 26px #153f2b08}.stat-card{border-color:#e1e9e3;box-shadow:0 8px 26px #153f2b07}.nav-link:focus-visible,.button:focus-visible,a:focus-visible,button:focus-visible{outline:3px solid #82d8a0;outline-offset:2px}
+.empty-state p,.panel-heading p{color:#70857c}
+@media(max-width:760px){.sidebar{background:#102b29}.content-area{padding-top:24px}}

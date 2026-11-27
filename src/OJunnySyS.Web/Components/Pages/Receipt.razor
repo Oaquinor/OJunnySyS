@@ -1,0 +1,36 @@
+@page "/app/receipts/{SaleId:guid}"
+@attribute [Authorize(Roles = "Administrator,Manager,Cashier")]
+@inject StoreService Store
+@inject OJunnySyS.Application.Abstractions.IBusinessClock Clock
+@inject IJSRuntime JS
+
+<PageTitle>Recibo · OJunnySyS</PageTitle>
+<PageHeader Eyebrow="VENTAS / RECIBO" Title="Comprobante de venta" Description="Consulta o imprime el detalle de esta transacción.">
+    <Actions><a class="button button-secondary" href="/app/sales">Volver a ventas</a>@if (_receipt is not null) { <button class="button button-primary" @onclick="PrintAsync">Imprimir recibo</button> }</Actions>
+</PageHeader>
+
+@if (_loading) { <div class="panel receipt-loading">Cargando recibo…</div> }
+else if (_receipt is null) { <EmptyState Icon="▤" Title="No encontramos este recibo" Description="La venta no existe o no pertenece a tu empresa." /> }
+else
+{
+    <article class="receipt-paper">
+        <header class="receipt-brand"><span class="brand-mark">O<span>.</span></span><div><strong>OJunnySyS</strong><small>COMPROBANTE DE VENTA</small></div></header>
+        <div class="receipt-rule"></div>
+        <div class="receipt-meta"><div><span>RECIBO</span><strong class="mono">@_receipt.Number</strong></div><div><span>FECHA</span><strong>@Clock.ToBusinessTime(_receipt.CreatedAtUtc).ToString("dd MMM yyyy · HH:mm")</strong></div><div><span>CAJA</span><strong>@(_receipt.RegisterCode ?? "—")</strong></div></div>
+        <div class="receipt-customer"><span>CLIENTE</span><strong>@_receipt.CustomerName</strong></div>
+        <div class="table-wrap"><table><thead><tr><th>ARTÍCULO</th><th class="align-right">CANT.</th><th class="align-right">PRECIO</th><th class="align-right">IMPORTE</th></tr></thead><tbody>@foreach (var line in _receipt.Lines) { <tr><td><strong>@line.ProductName</strong><small class="receipt-sku">@line.Sku</small></td><td class="align-right">@line.Quantity</td><td class="align-right">@Money(line.UnitPrice)</td><td class="align-right">@Money(line.LineTotal)</td></tr> }</tbody></table></div>
+        <div class="receipt-totals"><div><span>Subtotal</span><strong>@Money(_receipt.Subtotal)</strong></div><div><span>Impuesto (@(_receipt.TaxRate * 100m)%)</span><strong>@Money(_receipt.TaxAmount)</strong></div><div class="receipt-grand"><span>Total</span><strong>@Money(_receipt.Total)</strong></div></div>
+        <div class="receipt-payment"><span>FORMA DE PAGO</span><strong>@DisplayFormat.PaymentLabel(_receipt.PaymentMethod)</strong></div>
+        @if (_receipt.Status == SaleStatus.Voided) { <div class="receipt-void">VENTA ANULADA</div> }
+        <footer>Gracias por su compra.<br /><small>Comprobante generado por OJunnySyS</small></footer>
+    </article>
+}
+
+@code {
+    [Parameter] public Guid SaleId { get; set; }
+    private SaleReceiptDto? _receipt;
+    private bool _loading = true;
+    protected override async Task OnParametersSetAsync() { _loading = true; _receipt = await Store.GetSaleReceiptAsync(SaleId); _loading = false; }
+    private Task PrintAsync() => JS.InvokeVoidAsync("window.print").AsTask();
+    private static string Money(decimal value) => DisplayFormat.Money(value, showCents: true);
+}

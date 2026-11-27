@@ -1,0 +1,29 @@
+namespace OJunnySyS.Domain.Features.__FEATURE_NAME__;
+
+public sealed class __FEATURE_NAME__Entity : OJunnySyS.Domain.Common.Entity
+{
+    private __FEATURE_NAME__Entity() { }
+
+    public __FEATURE_NAME__Entity(string name)
+    {
+        Rename(name);
+        IsActive = true;
+    }
+
+    public string Name { get; private set; } = "";
+    public bool IsActive { get; private set; }
+
+    public void Rename(string name)
+    {
+        if (string.IsNullOrWhiteSpace(name))
+            throw new OJunnySyS.Domain.Common.DomainException("__FEATURE_LABEL__ name is required.");
+        Name = name.Trim();
+        MarkUpdated();
+    }
+
+    public void Deactivate()
+    {
+        IsActive = false;
+        MarkUpdated();
+    }
+}

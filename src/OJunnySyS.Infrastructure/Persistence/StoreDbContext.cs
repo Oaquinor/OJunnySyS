@@ -1,0 +1,299 @@
+using Microsoft.EntityFrameworkCore;
+using Microsoft.AspNetCore.Identity;
+using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
+using OJunnySyS.Domain.Catalog;
+using OJunnySyS.Domain.Customers;
+using OJunnySyS.Domain.Sales;
+using OJunnySyS.Domain.Common;
+using OJunnySyS.Domain.Tenancy;
+using OJunnySyS.Domain.Purchasing;
+using OJunnySyS.Domain.Cash;
+using OJunnySyS.Domain.Crm;
+using OJunnySyS.Infrastructure.Identity;
+
+namespace OJunnySyS.Infrastructure.Persistence;
+
+public sealed class StoreDbContext(DbContextOptions<StoreDbContext> options)
+    : IdentityDbContext<ApplicationUser, IdentityRole<Guid>, Guid>(options)
+{
+    public DbSet<Product> Products => Set<Product>();
+    public DbSet<Customer> Customers => Set<Customer>();
+    public DbSet<CustomerTag> CustomerTags => Set<CustomerTag>();
+    public DbSet<CustomerTagAssignment> CustomerTagAssignments => Set<CustomerTagAssignment>();
+    public DbSet<CustomerSegment> CustomerSegments => Set<CustomerSegment>();
+    public DbSet<Sale> Sales => Set<Sale>();
+    public DbSet<Tenant> Tenants => Set<Tenant>();
+    public DbSet<Supplier> Suppliers => Set<Supplier>();
+    public DbSet<PurchaseOrder> PurchaseOrders => Set<PurchaseOrder>();
+    public DbSet<PurchaseOrderLine> PurchaseOrderLines => Set<PurchaseOrderLine>();
+    public DbSet<InventoryMovement> InventoryMovements => Set<InventoryMovement>();
+    public DbSet<CashSession> CashSessions => Set<CashSession>();
+    public DbSet<CashMovement> CashMovements => Set<CashMovement>();
+    public DbSet<Opportunity> Opportunities => Set<Opportunity>();
+    public DbSet<CrmActivity> CrmActivities => Set<CrmActivity>();
+    public DbSet<SupplierPayment> SupplierPayments => Set<SupplierPayment>();
+    public Guid? CurrentTenantId { get; set; }
+
+    public override int SaveChanges()
+    {
+        EnforceTenantBoundary();
+        return base.SaveChanges();
+    }
+
+    public override Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
+    {
+        EnforceTenantBoundary();
+        return base.SaveChangesAsync(cancellationToken);
+    }
+
+    private void EnforceTenantBoundary()
+    {
+        foreach (var entry in ChangeTracker.Entries<TenantEntity>().Where(x => x.State is EntityState.Added or EntityState.Modified))
+        {
+            if (CurrentTenantId is not { } tenantId || entry.Entity.TenantId != tenantId)
+                throw new InvalidOperationException("La operación intenta escribir datos fuera de la empresa activa.");
+        }
+    }
+
+    protected override void OnModelCreating(ModelBuilder modelBuilder)
+    {
+        base.OnModelCreating(modelBuilder);
+        modelBuilder.Entity<ApplicationUser>().Property(x => x.DisplayName).HasMaxLength(160).IsRequired();
+        modelBuilder.Entity<ApplicationUser>().HasOne<Tenant>().WithMany().HasForeignKey(x => x.TenantId).OnDelete(DeleteBehavior.SetNull);
+
+        modelBuilder.Entity<Tenant>(entity =>
+        {
+            entity.HasKey(x => x.Id);
+            entity.HasIndex(x => x.Slug).IsUnique();
+            entity.HasIndex(x => x.OwnerEmail);
+            entity.Property(x => x.Name).HasMaxLength(160).IsRequired();
+            entity.Property(x => x.Slug).HasMaxLength(80).IsRequired();
+            entity.Property(x => x.OwnerEmail).HasMaxLength(254).IsRequired();
+            entity.Property(x => x.TimeZoneId).HasMaxLength(100).IsRequired();
+            entity.Property(x => x.CurrencyCode).HasMaxLength(3).IsRequired();
+            entity.Property(x => x.DefaultTaxRate).HasPrecision(5, 4).HasDefaultValue(0.18m);
+            entity.Property(x => x.PlanCode).HasMaxLength(40).IsRequired();
+        });
+
+        modelBuilder.Entity<Product>(entity =>
+        {
+            entity.HasKey(x => x.Id);
+            entity.Property(x => x.Barcode).HasMaxLength(64);
+            entity.HasIndex(x => new { x.TenantId, x.Sku }).IsUnique();
+            entity.HasIndex(x => new { x.TenantId, x.Barcode }).IsUnique();
+            entity.HasIndex(x => new { x.TenantId, x.IsActive, x.Name });
+            entity.HasOne<Tenant>().WithMany().HasForeignKey(x => x.TenantId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasQueryFilter(x => CurrentTenantId != null && x.TenantId == CurrentTenantId);
+            entity.Property(x => x.Sku).HasMaxLength(40).IsRequired();
+            entity.Property(x => x.Name).HasMaxLength(160).IsRequired();
+            entity.Property(x => x.Category).HasMaxLength(80);
+            entity.Property(x => x.UnitPrice).HasPrecision(12, 2);
+            entity.Property(x => x.Revision).IsConcurrencyToken();
+            entity.Property(x => x.Revision).HasDefaultValue(0L);
+        });
+
+        modelBuilder.Entity<Customer>(entity =>
+        {
+            entity.HasKey(x => x.Id);
+            entity.HasIndex(x => new { x.TenantId, x.Email }).IsUnique();
+            entity.HasIndex(x => new { x.TenantId, x.IsActive, x.FirstName, x.LastName });
+            entity.HasOne<Tenant>().WithMany().HasForeignKey(x => x.TenantId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasQueryFilter(x => CurrentTenantId != null && x.TenantId == CurrentTenantId);
+            entity.Property(x => x.FirstName).HasMaxLength(100).IsRequired();
+            entity.Property(x => x.LastName).HasMaxLength(100);
+            entity.Property(x => x.Email).HasMaxLength(254).IsRequired();
+            entity.Property(x => x.Phone).HasMaxLength(40);
+            entity.Property(x => x.Company).HasMaxLength(160);
+            entity.Property(x => x.LifetimeValue).HasPrecision(14, 2);
+            entity.Property(x => x.Revision).IsConcurrencyToken();
+        });
+
+        modelBuilder.Entity<CustomerTag>(entity =>
+        {
+            entity.HasKey(x => x.Id);
+            entity.HasIndex(x => new { x.TenantId, x.NormalizedName }).IsUnique();
+            entity.HasOne<Tenant>().WithMany().HasForeignKey(x => x.TenantId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasQueryFilter(x => CurrentTenantId != null && x.TenantId == CurrentTenantId);
+            entity.Property(x => x.Name).HasMaxLength(40).IsRequired();
+            entity.Property(x => x.NormalizedName).HasMaxLength(40).IsRequired();
+            entity.Property(x => x.Color).HasConversion<int>();
+        });
+
+        modelBuilder.Entity<CustomerTagAssignment>(entity =>
+        {
+            entity.HasKey(x => x.Id);
+            entity.HasIndex(x => new { x.TenantId, x.CustomerId, x.CustomerTagId }).IsUnique();
+            entity.HasIndex(x => new { x.TenantId, x.CustomerTagId, x.CustomerId });
+            entity.HasOne<Tenant>().WithMany().HasForeignKey(x => x.TenantId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne<Customer>().WithMany().HasForeignKey(x => x.CustomerId).OnDelete(DeleteBehavior.Cascade);
+            entity.HasOne<CustomerTag>().WithMany().HasForeignKey(x => x.CustomerTagId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne<ApplicationUser>().WithMany().HasForeignKey(x => x.AssignedByUserId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasQueryFilter(x => CurrentTenantId != null && x.TenantId == CurrentTenantId);
+        });
+
+        modelBuilder.Entity<CustomerSegment>(entity =>
+        {
+            entity.HasKey(x => x.Id);
+            entity.HasIndex(x => new { x.TenantId, x.NormalizedName }).IsUnique();
+            entity.HasIndex(x => new { x.TenantId, x.RequiredTagId });
+            entity.HasOne<Tenant>().WithMany().HasForeignKey(x => x.TenantId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne<CustomerTag>().WithMany().HasForeignKey(x => x.RequiredTagId).OnDelete(DeleteBehavior.SetNull);
+            entity.HasQueryFilter(x => CurrentTenantId != null && x.TenantId == CurrentTenantId);
+            entity.Property(x => x.Name).HasMaxLength(100).IsRequired();
+            entity.Property(x => x.NormalizedName).HasMaxLength(100).IsRequired();
+            entity.Property(x => x.MinimumLifetimeValue).HasPrecision(14, 2);
+            entity.Property(x => x.MaximumLifetimeValue).HasPrecision(14, 2);
+            entity.Property(x => x.Revision).IsConcurrencyToken();
+        });
+
+        modelBuilder.Entity<Sale>(entity =>
+        {
+            entity.HasKey(x => x.Id);
+            entity.HasIndex(x => new { x.TenantId, x.Number }).IsUnique();
+            entity.HasIndex(x => new { x.TenantId, x.CreatedAtUtc });
+            entity.HasIndex(x => new { x.TenantId, x.CustomerId, x.CreatedAtUtc });
+            entity.HasIndex(x => new { x.TenantId, x.IdempotencyKey }).IsUnique();
+            entity.HasOne<Tenant>().WithMany().HasForeignKey(x => x.TenantId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasQueryFilter(x => CurrentTenantId != null && x.TenantId == CurrentTenantId);
+            entity.Property(x => x.Number).HasMaxLength(64).IsRequired();
+            entity.Property(x => x.IdempotencyKey).IsRequired(false);
+            entity.Property(x => x.CustomerName).HasMaxLength(220).IsRequired();
+            entity.Property(x => x.Subtotal).HasPrecision(14, 2);
+            entity.Property(x => x.TaxAmount).HasPrecision(14, 2);
+            entity.Property(x => x.Total).HasPrecision(14, 2);
+            entity.Property(x => x.TaxRate).HasPrecision(5, 4);
+            entity.HasOne<Customer>().WithMany().HasForeignKey(x => x.CustomerId).OnDelete(DeleteBehavior.SetNull);
+            entity.HasOne<CashSession>().WithMany().HasForeignKey(x => x.CashSessionId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasMany<SaleLine>(nameof(Sale.Lines)).WithOne().HasForeignKey(line => line.SaleId).OnDelete(DeleteBehavior.Cascade);
+            entity.Navigation(nameof(Sale.Lines)).UsePropertyAccessMode(PropertyAccessMode.Field);
+        });
+
+        modelBuilder.Entity<SaleLine>(entity =>
+        {
+            entity.HasKey(x => x.Id);
+            entity.Property(x => x.Sku).HasMaxLength(40).IsRequired();
+            entity.Property(x => x.ProductName).HasMaxLength(160).IsRequired();
+            entity.Property(x => x.UnitPrice).HasPrecision(12, 2);
+            entity.Property(x => x.LineTotal).HasPrecision(14, 2);
+        });
+
+        modelBuilder.Entity<Supplier>(entity =>
+        {
+            entity.HasKey(x => x.Id);
+            entity.HasIndex(x => new { x.TenantId, x.Name });
+            entity.HasOne<Tenant>().WithMany().HasForeignKey(x => x.TenantId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasQueryFilter(x => CurrentTenantId != null && x.TenantId == CurrentTenantId);
+            entity.Property(x => x.Name).HasMaxLength(160).IsRequired();
+            entity.Property(x => x.TaxIdentifier).HasMaxLength(40);
+            entity.Property(x => x.Email).HasMaxLength(254).IsRequired();
+            entity.Property(x => x.Phone).HasMaxLength(40).IsRequired();
+            entity.Property(x => x.Notes).HasMaxLength(1000);
+            entity.Property(x => x.Revision).IsConcurrencyToken();
+        });
+
+        modelBuilder.Entity<PurchaseOrder>(entity =>
+        {
+            entity.HasKey(x => x.Id);
+            entity.HasIndex(x => new { x.TenantId, x.Number }).IsUnique();
+            entity.HasIndex(x => new { x.TenantId, x.CreatedAtUtc });
+            entity.HasOne<Tenant>().WithMany().HasForeignKey(x => x.TenantId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne<Supplier>().WithMany().HasForeignKey(x => x.SupplierId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasQueryFilter(x => CurrentTenantId != null && x.TenantId == CurrentTenantId);
+            entity.Property(x => x.Number).HasMaxLength(64).IsRequired();
+            entity.Property(x => x.SupplierName).HasMaxLength(160).IsRequired();
+            entity.Property(x => x.Reference).HasMaxLength(100);
+            entity.Property(x => x.Total).HasPrecision(14, 2);
+            entity.HasMany<PurchaseOrderLine>(nameof(PurchaseOrder.Lines)).WithOne().HasForeignKey(line => line.PurchaseOrderId).OnDelete(DeleteBehavior.Cascade);
+            entity.Navigation(nameof(PurchaseOrder.Lines)).UsePropertyAccessMode(PropertyAccessMode.Field);
+        });
+
+        modelBuilder.Entity<PurchaseOrderLine>(entity =>
+        {
+            entity.HasKey(x => x.Id);
+            entity.HasOne<Product>().WithMany().HasForeignKey(x => x.ProductId).OnDelete(DeleteBehavior.Restrict);
+            entity.Property(x => x.Sku).HasMaxLength(40).IsRequired();
+            entity.Property(x => x.ProductName).HasMaxLength(160).IsRequired();
+            entity.Property(x => x.UnitCost).HasPrecision(12, 2);
+            entity.Property(x => x.LineTotal).HasPrecision(14, 2);
+        });
+
+        modelBuilder.Entity<InventoryMovement>(entity =>
+        {
+            entity.HasKey(x => x.Id);
+            entity.HasIndex(x => new { x.TenantId, x.ProductId, x.CreatedAtUtc });
+            entity.HasOne<Tenant>().WithMany().HasForeignKey(x => x.TenantId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne<Product>().WithMany().HasForeignKey(x => x.ProductId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasQueryFilter(x => CurrentTenantId != null && x.TenantId == CurrentTenantId);
+            entity.Property(x => x.Reference).HasMaxLength(100).IsRequired();
+        });
+
+        modelBuilder.Entity<CashSession>(entity =>
+        {
+            entity.HasKey(x => x.Id);
+            entity.HasIndex(x => new { x.TenantId, x.RegisterCode, x.Status });
+            entity.HasOne<Tenant>().WithMany().HasForeignKey(x => x.TenantId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasQueryFilter(x => CurrentTenantId != null && x.TenantId == CurrentTenantId);
+            entity.Property(x => x.RegisterCode).HasMaxLength(40).IsRequired();
+            entity.Property(x => x.OpeningFloat).HasPrecision(14, 2);
+            entity.Property(x => x.ExpectedCash).HasPrecision(14, 2);
+            entity.Property(x => x.CountedCash).HasPrecision(14, 2);
+        });
+
+        modelBuilder.Entity<CashMovement>(entity =>
+        {
+            entity.HasKey(x => x.Id);
+            entity.HasIndex(x => new { x.TenantId, x.SessionId, x.CreatedAtUtc });
+            entity.HasOne<Tenant>().WithMany().HasForeignKey(x => x.TenantId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne<CashSession>().WithMany().HasForeignKey(x => x.SessionId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasQueryFilter(x => CurrentTenantId != null && x.TenantId == CurrentTenantId);
+            entity.Property(x => x.Amount).HasPrecision(14, 2);
+            entity.Property(x => x.Description).HasMaxLength(200).IsRequired();
+        });
+
+        modelBuilder.Entity<Opportunity>(entity =>
+        {
+            entity.HasKey(x => x.Id);
+            entity.HasIndex(x => new { x.TenantId, x.Stage, x.ExpectedCloseDate });
+            entity.HasIndex(x => new { x.TenantId, x.AssignedToUserId });
+            entity.HasOne<Tenant>().WithMany().HasForeignKey(x => x.TenantId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne<Customer>().WithMany().HasForeignKey(x => x.CustomerId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne<ApplicationUser>().WithMany().HasForeignKey(x => x.AssignedToUserId).OnDelete(DeleteBehavior.SetNull);
+            entity.HasQueryFilter(x => CurrentTenantId != null && x.TenantId == CurrentTenantId);
+            entity.Property(x => x.Title).HasMaxLength(160).IsRequired();
+            entity.Property(x => x.Description).HasMaxLength(2000);
+            entity.Property(x => x.ExpectedValue).HasPrecision(14, 2);
+            entity.Property(x => x.Stage).HasConversion<int>();
+        });
+
+        modelBuilder.Entity<CrmActivity>(entity =>
+        {
+            entity.HasKey(x => x.Id);
+            entity.HasIndex(x => new { x.TenantId, x.CustomerId, x.OccurredAtUtc });
+            entity.HasIndex(x => new { x.TenantId, x.Kind, x.DueAtUtc, x.CompletedAtUtc });
+            entity.HasIndex(x => new { x.TenantId, x.AssignedToUserId, x.Kind, x.DueAtUtc, x.CompletedAtUtc });
+            entity.HasOne<Tenant>().WithMany().HasForeignKey(x => x.TenantId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne<Customer>().WithMany().HasForeignKey(x => x.CustomerId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne<Opportunity>().WithMany().HasForeignKey(x => x.OpportunityId).OnDelete(DeleteBehavior.SetNull);
+            entity.HasOne<ApplicationUser>().WithMany().HasForeignKey(x => x.AssignedToUserId).OnDelete(DeleteBehavior.SetNull);
+            entity.HasQueryFilter(x => CurrentTenantId != null && x.TenantId == CurrentTenantId);
+            entity.Property(x => x.Kind).HasConversion<int>();
+            entity.Property(x => x.Subject).HasMaxLength(160).IsRequired();
+            entity.Property(x => x.Details).HasMaxLength(2000);
+        });
+
+        modelBuilder.Entity<SupplierPayment>(entity =>
+        {
+            entity.HasKey(x => x.Id);
+            entity.HasIndex(x => new { x.TenantId, x.IdempotencyKey }).IsUnique();
+            entity.HasIndex(x => new { x.TenantId, x.PurchaseOrderId, x.CreatedAtUtc });
+            entity.HasOne<Tenant>().WithMany().HasForeignKey(x => x.TenantId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne<PurchaseOrder>().WithMany(nameof(PurchaseOrder.Payments)).HasForeignKey(x => x.PurchaseOrderId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne<ApplicationUser>().WithMany().HasForeignKey(x => x.PaidByUserId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne<CashSession>().WithMany().HasForeignKey(x => x.CashSessionId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasQueryFilter(x => CurrentTenantId != null && x.TenantId == CurrentTenantId);
+            entity.Property(x => x.Amount).HasPrecision(14, 2);
+            entity.Property(x => x.Method).HasConversion<int>();
+            entity.Property(x => x.Reference).HasMaxLength(100);
+        });
+    }
+}

@@ -1,0 +1,6 @@
+namespace OJunnySyS.Application.Features.__FEATURE_NAME__;
+
+public interface I__FEATURE_NAME__Service
+{
+    Task<IReadOnlyList<__FEATURE_NAME__Dto>> SearchAsync(string? search, CancellationToken cancellationToken = default);
+}

@@ -1,0 +1,13 @@
+<article class="stat-card">
+    <div class="stat-top"><span>@Label</span><span class="stat-icon @(Tone + "-icon")">@Icon</span></div>
+    <strong class="stat-value">@Value</strong>
+    <div class="stat-foot">@ChildContent</div>
+</article>
+
+@code {
+    [Parameter, EditorRequired] public string Label { get; set; } = "";
+    [Parameter, EditorRequired] public string Value { get; set; } = "";
+    [Parameter] public string Icon { get; set; } = "•";
+    [Parameter] public string Tone { get; set; } = "green";
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+}

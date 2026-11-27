@@ -1,0 +1,90 @@
+@page "/app/users"
+@attribute [Authorize(Policy = "TenantUserManagement")]
+@inject TenantUserService UserManagement
+@inject ILogger<Users> Logger
+@inject AuthenticationStateProvider Authentication
+@inject IJSRuntime JS
+
+<PageTitle>Usuarios y accesos · OjunnySyS</PageTitle>
+<PageHeader Eyebrow="EMPRESA / SEGURIDAD" Title="Usuarios y accesos" Description="Invita a tu equipo y asigna permisos individuales para cada área.">
+    <Actions><button class="button button-primary" @onclick="OpenForm">＋ Agregar usuario</button></Actions>
+</PageHeader>
+
+<div class="users-summary">
+    <div><span>CUENTAS DE LA EMPRESA</span><strong>@_users.Count</strong></div>
+    <div><span>CUENTAS ACTIVAS</span><strong>@_users.Count(x => x.IsActive)</strong></div>
+    <div><span>CAMBIO DE CONTRASEÑA PENDIENTE</span><strong>@_users.Count(x => x.MustChangePassword)</strong></div>
+</div>
+<div class="panel list-panel">
+    <div class="panel-heading"><div><h2>Equipo de trabajo</h2><p>Las cuentas pertenecen exclusivamente a la empresa que inició sesión.</p></div></div>
+    @if (_loading) { <div class="loading-panel">Cargando cuentas…</div> }
+    else if (_users.Count == 0) { <div class="empty-state"><strong>Aún no hay cuentas adicionales</strong><p>Agrega miembros para habilitar accesos individuales al sistema.</p></div> }
+    else { <div class="table-wrap"><table><thead><tr><th>PERSONA</th><th>ROL</th><th>ESTADO</th><th>ACCESO</th><th></th></tr></thead><tbody>
+        @foreach (var user in _users)
+        {
+            <tr>
+                <td><div class="user-cell"><span class="mini-avatar">@Initials(user.DisplayName)</span><span><strong>@user.DisplayName</strong><small>@user.Email</small></span></div></td>
+                <td><span class="category-pill">@RoleLabel(user.Role)</span></td>
+                <td><span class="status-pill @(user.IsActive ? "" : "status-warning")"><i></i>@(user.IsActive ? "Activo" : "Desactivado")</span></td>
+                <td>@(user.MustChangePassword ? "Contraseña temporal" : "Configurado")</td>
+                <td class="align-right"><button class="button button-secondary button-small" disabled="@_saving" @onclick="() => SetActiveAsync(user)">@(user.IsActive ? "Desactivar" : "Reactivar")</button></td>
+            </tr>
+        }
+    </tbody></table></div> }
+</div>
+
+@if (_showForm) { <div class="modal-backdrop" @onclick="CloseForm"><section class="modal-card" @onclick:stopPropagation="true"><div class="modal-heading"><div><span class="eyebrow">EMPRESA · NUEVA CUENTA</span><h2>Agregar usuario</h2><p>Se generará una contraseña temporal de un solo uso.</p></div><button class="icon-button" @onclick="CloseForm">×</button></div>
+    <EditForm Model="_form" OnValidSubmit="CreateAsync"><DataAnnotationsValidator /><div class="form-grid">
+        <label>Nombre completo<InputText @bind-Value="_form.DisplayName" maxlength="160" autocomplete="name" /></label>
+        <label>Correo electrónico<InputText @bind-Value="_form.Email" type="email" maxlength="254" autocomplete="email" /></label>
+        <label class="full-span">Rol de acceso<InputSelect @bind-Value="_form.Role"><option value="Manager">Gerente</option><option value="Cashier">Cajero</option><option value="PurchasingAgent">Compras</option><option value="Administrator">Administrador</option></InputSelect></label>
+    </div><ValidationSummary />@if (!string.IsNullOrWhiteSpace(_error)) { <div class="inline-error">@_error</div> }
+    <div class="modal-actions"><button type="button" class="button button-secondary" @onclick="CloseForm">Cancelar</button><button type="submit" class="button button-primary" disabled="@_saving">@(_saving ? "Creando…" : "Crear acceso")</button></div></EditForm>
+</section></div> }
+
+@if (_provisioned is not null) { <div class="modal-backdrop"><section class="modal-card"><div class="modal-heading"><div><span class="eyebrow">CUENTA CREADA</span><h2>Comparte el acceso de forma segura</h2><p>Esta contraseña solo se muestra ahora. El usuario deberá cambiarla al iniciar sesión.</p></div></div><div class="temporary-password"><span>@_provisioned.TemporaryPassword</span><button class="button button-secondary button-small" @onclick="CopyPasswordAsync">Copiar</button></div><p class="password-user">@_provisioned.User.DisplayName · @_provisioned.User.Email</p>@if (!string.IsNullOrEmpty(_copyNotice)) { <div class="copy-notice">@_copyNotice</div> }<div class="modal-actions"><button class="button button-primary" @onclick="DismissPassword">Entendido</button></div></section></div> }
+@if (!string.IsNullOrWhiteSpace(_notice)) { <div class="toast">✓ @_notice</div> }
+
+@code {
+    private List<TenantUserDto> _users = [];
+    private bool _loading = true, _showForm, _saving;
+    private string? _error, _notice, _copyNotice;
+    private TenantUserForm _form = new();
+    private ProvisionedTenantUserDto? _provisioned;
+
+    protected override Task OnInitializedAsync() => LoadAsync();
+    private async Task LoadAsync() { _loading = true; try { _users = (await UserManagement.GetUsersAsync()).ToList(); } finally { _loading = false; } }
+    private void OpenForm() { _form = new(); _error = null; _showForm = true; }
+    private void CloseForm() => _showForm = false;
+    private async Task CreateAsync()
+    {
+        _saving = true; _error = null;
+        try { _provisioned = await UserManagement.CreateAsync(new CreateTenantUserRequest(_form.DisplayName, _form.Email, _form.Role)); _showForm = false; await LoadAsync(); }
+        catch (ArgumentException ex) { _error = ex.Message; }
+        catch (InvalidOperationException ex) { _error = ex.Message; }
+        catch (Exception ex) { Logger.LogError(ex, "No se pudo crear el acceso de empresa."); _error = "No se pudo crear la cuenta. Verifica los datos e inténtalo de nuevo."; }
+        finally { _saving = false; }
+    }
+    private async Task SetActiveAsync(TenantUserDto user)
+    {
+        _saving = true; _error = null;
+        try
+        {
+            var state = await Authentication.GetAuthenticationStateAsync();
+            var actorId = Guid.TryParse(state.User.FindFirstValue(ClaimTypes.NameIdentifier), out var parsed) ? parsed : Guid.Empty;
+            await UserManagement.SetActiveAsync(user.Id, actorId, !user.IsActive); _notice = user.IsActive ? "Acceso desactivado" : "Acceso reactivado"; await LoadAsync();
+        }
+        catch (InvalidOperationException ex) { _error = ex.Message; _notice = ex.Message; }
+        catch (Exception ex) { Logger.LogError(ex, "No se pudo cambiar el estado de la cuenta {UserId}.", user.Id); _notice = "No se pudo actualizar el acceso."; }
+        finally { _saving = false; }
+    }
+    private async Task CopyPasswordAsync()
+    {
+        try { await JS.InvokeVoidAsync("navigator.clipboard.writeText", _provisioned!.TemporaryPassword); _copyNotice = "Contraseña copiada."; }
+        catch { _copyNotice = "No se pudo copiar. Selecciona y copia la contraseña manualmente."; }
+    }
+    private void DismissPassword() { _provisioned = null; _copyNotice = null; }
+    private static string Initials(string name) => string.Concat(name.Split(' ', StringSplitOptions.RemoveEmptyEntries).Take(2).Select(x => char.ToUpperInvariant(x[0])));
+    private static string RoleLabel(string role) => role switch { "Administrator" => "Administrador", "Manager" => "Gerente", "Cashier" => "Cajero", "PurchasingAgent" => "Compras", _ => role };
+    private sealed class TenantUserForm { [Required, StringLength(160, MinimumLength = 2)] public string DisplayName { get; set; } = ""; [Required, EmailAddress, StringLength(254)] public string Email { get; set; } = ""; [Required] public string Role { get; set; } = "Manager"; }
+}

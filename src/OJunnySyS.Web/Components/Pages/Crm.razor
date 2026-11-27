@@ -1,0 +1,138 @@
+@page "/app/crm"
+@attribute [Authorize(Roles = "Administrator,Manager,Salesperson")]
+@inject CrmService CrmManager
+@inject TenantUserService TenantUsers
+@inject StoreService Store
+@inject IBusinessClock Clock
+@inject AuthenticationStateProvider AuthenticationStateProvider
+@inject ILogger<Crm> Logger
+
+<PageTitle>CRM · OjunnySyS</PageTitle>
+<PageHeader Eyebrow="RELACIONES COMERCIALES" Title="CRM" Description="Gestiona oportunidades, agenda seguimientos y conserva el contexto de cada cliente.">
+    <Actions><button class="button button-primary" @onclick="() => _showOpportunity = true">＋ Nueva oportunidad</button></Actions>
+</PageHeader>
+
+<section class="crm-summary-grid">
+    <article class="metric-card"><span>OPORTUNIDADES ABIERTAS</span><strong>@OpenOpportunities.Count()</strong><small>En el embudo comercial</small></article>
+    <article class="metric-card"><span>VALOR DEL EMBUDO</span><strong>@DisplayFormat.Money(OpenOpportunities.Sum(x => x.ExpectedValue))</strong><small>Sin incluir oportunidades cerradas</small></article>
+    <article class="metric-card"><span>TAREAS PENDIENTES</span><strong>@_activities.Count(x => x.Kind == CrmActivityKind.Task && !x.IsCompleted)</strong><small>Seguimientos por completar</small></article>
+</section>
+
+<div class="crm-columns">
+    <section class="panel crm-panel">
+        <div class="panel-heading"><div><span class="eyebrow">VENTAS</span><h2>Oportunidades</h2></div><span class="result-count">@_opportunities.Count</span></div>
+        @if (_opportunities.Count == 0) { <EmptyState Icon="↗" Title="Tu embudo empieza aquí" Description="Crea una oportunidad y registra su avance con el cliente." /> }
+        else {
+            <div class="crm-opportunity-list">
+                @foreach (var item in _opportunities) {
+                    <article class="crm-opportunity-card">
+                        <div class="crm-opportunity-top"><div><strong>@item.Title</strong><a href="/app/customers/@item.CustomerId">@item.CustomerName</a></div><b>@DisplayFormat.Money(item.ExpectedValue)</b></div>
+                        @if (!string.IsNullOrWhiteSpace(item.Description)) { <p>@item.Description</p> }
+                        <div class="crm-assignee">Responsable: <strong>@(item.AssignedToName ?? "Sin asignar")</strong></div>
+                        <div class="crm-opportunity-bottom"><span>@(item.ExpectedCloseDate is null ? "Sin fecha estimada" : $"Cierre: {item.ExpectedCloseDate:dd/MM/yyyy}")</span>
+                            <select aria-label="Etapa de oportunidad" value="@item.Stage" @onchange="e => ChangeStageAsync(item.Id, e.Value?.ToString())" disabled="@(item.Stage is OpportunityStage.Won or OpportunityStage.Lost)">
+                                @foreach (var stage in Enum.GetValues<OpportunityStage>()) { <option value="@stage">@StageLabel(stage)</option> }
+                            </select>
+                        </div>
+                    </article>
+                }
+            </div>
+        }
+    </section>
+
+    <section class="panel crm-panel">
+        <div class="panel-heading"><div><span class="eyebrow">ACTIVIDAD</span><h2>Seguimiento</h2></div><button class="button button-secondary button-small" @onclick="OpenActivity">＋ Registrar</button></div>
+        <div class="crm-activity-tools"><label class="check-filter">Cliente<select value="@_activityCustomerId" @onchange="FilterActivitiesAsync"><option value="">Todos</option>@foreach (var customer in _customers) { <option value="@customer.Id">@customer.Name</option> }</select></label><label class="check-filter"><input type="checkbox" @bind="_openTasksOnly" @bind:after="LoadAsync" /> Solo tareas pendientes</label></div>
+        @if (_activities.Count == 0) { <EmptyState Icon="✓" Title="Sin seguimientos pendientes" Description="Registra una llamada, nota, correo, reunión o tarea para mantener la relación al día." /> }
+        else {
+            <div class="crm-activity-list">
+                @foreach (var activity in _activities) {
+                    <article class="crm-activity-item">
+                        <span class="crm-activity-icon">@ActivityIcon(activity.Kind)</span>
+                        <div class="crm-activity-content"><div class="crm-activity-title"><strong>@activity.Subject</strong><span class="activity-kind">@KindLabel(activity.Kind)</span></div>
+                            <a class="activity-customer" href="/app/customers/@activity.CustomerId">@activity.CustomerName</a>
+                            @if (activity.AssignedToUserId is not null) { <span class="crm-assignee">Asignada a <strong>@activity.AssignedToName</strong></span> }
+                            @if (!string.IsNullOrWhiteSpace(activity.Details)) { <p>@activity.Details</p> }
+                            <small>@(activity.Kind == CrmActivityKind.Task ? (activity.DueAtUtc is null ? "Sin vencimiento" : $"Vence {Clock.ToBusinessTime(activity.DueAtUtc.Value).ToString("dd/MM/yyyy")}") : Clock.ToBusinessTime(activity.OccurredAtUtc).ToString("dd/MM/yyyy HH:mm"))</small>
+                        </div>
+                        @if (activity.Kind == CrmActivityKind.Task && !activity.IsCompleted) { <button class="button button-secondary button-small" @onclick="() => CompleteTaskAsync(activity.Id)">Completar</button> }
+                        else if (activity.IsCompleted) { <span class="completed-mark">✓</span> }
+                    </article>
+                }
+            </div>
+        }
+    </section>
+</div>
+
+@if (_showOpportunity) {
+    <div class="modal-backdrop" @onclick="() => _showOpportunity = false"><section class="modal-card" @onclick:stopPropagation="true">
+        <div class="modal-heading"><div><span class="eyebrow">CRM · VENTAS</span><h2>Nueva oportunidad</h2><p>Asocia el negocio con un cliente y una fecha probable.</p></div><button class="icon-button" @onclick="() => _showOpportunity = false">×</button></div>
+        <EditForm Model="_opportunityForm" OnValidSubmit="SaveOpportunityAsync"><DataAnnotationsValidator />
+            <div class="form-grid"><label class="full-span">Cliente<InputSelect @bind-Value="_opportunityForm.CustomerId"><option value="">Selecciona un cliente</option>@foreach (var customer in _customers) { <option value="@customer.Id">@customer.Name · @customer.Email</option> }</InputSelect></label>
+                <label class="full-span">Nombre del negocio<InputText @bind-Value="_opportunityForm.Title" placeholder="Ej. Renovación de servicio" /></label>
+                <label class="full-span">Responsable<InputSelect @bind-Value="_opportunityForm.AssignedToUserId"><option value="">Sin asignar</option>@foreach (var member in _team) { <option value="@member.Id">@member.DisplayName</option> }</InputSelect></label>
+                <label>Valor estimado<InputNumber @bind-Value="_opportunityForm.ExpectedValue" min="0" step="0.01" /></label>
+                <label>Fecha probable<InputDate @bind-Value="_opportunityForm.ExpectedCloseDate" /></label>
+                <label class="full-span">Descripción <span class="optional">Opcional</span><InputTextArea @bind-Value="_opportunityForm.Description" rows="3" maxlength="2000" /></label></div>
+            <ValidationSummary />@if (_error is not null) { <div class="inline-error">@_error</div>}
+            <div class="modal-actions"><button type="button" class="button button-secondary" @onclick="() => _showOpportunity = false">Cancelar</button><button class="button button-primary" disabled="@_saving">Guardar oportunidad</button></div>
+        </EditForm>
+    </section></div>
+}
+
+@if (_showActivity) {
+    <div class="modal-backdrop" @onclick="() => _showActivity = false"><section class="modal-card" @onclick:stopPropagation="true">
+        <div class="modal-heading"><div><span class="eyebrow">CRM · SEGUIMIENTO</span><h2>Registrar actividad</h2><p>Guarda el siguiente paso o el contexto de la conversación.</p></div><button class="icon-button" @onclick="() => _showActivity = false">×</button></div>
+        <EditForm Model="_activityForm" OnValidSubmit="SaveActivityAsync"><DataAnnotationsValidator />
+            <div class="form-grid"><label>Tipo<select @bind="_activityForm.Kind">@foreach (var kind in Enum.GetValues<CrmActivityKind>()) { <option value="@kind">@KindLabel(kind)</option> }</select></label>
+                <label>Cliente<InputSelect @bind-Value="_activityForm.CustomerId" @bind-Value:after="CustomerChanged"><option value="">Selecciona un cliente</option>@foreach (var customer in _customers) { <option value="@customer.Id">@customer.Name</option> }</InputSelect></label>
+                @if (_activityForm.CustomerId != Guid.Empty && _opportunities.Any(x => x.CustomerId == _activityForm.CustomerId)) { <label class="full-span">Oportunidad relacionada<InputSelect @bind-Value="_activityForm.OpportunityId"><option value="">Sin asociar</option>@foreach (var opportunity in _opportunities.Where(x => x.CustomerId == _activityForm.CustomerId)) { <option value="@opportunity.Id">@opportunity.Title · @StageLabel(opportunity.Stage)</option> }</InputSelect></label> }
+                <label class="full-span">Asunto<InputText @bind-Value="_activityForm.Subject" placeholder="Ej. Llamar para presentar propuesta" /></label>
+                <label class="full-span">Asignar a<InputSelect @bind-Value="_activityForm.AssignedToUserId"><option value="">Sin asignar</option>@foreach (var member in _team) { <option value="@member.Id">@member.DisplayName</option> }</InputSelect></label>
+                @if (_activityForm.Kind == CrmActivityKind.Task) { <label>Fecha de vencimiento<InputDate @bind-Value="_activityForm.DueAt" /></label> }
+                <label class="full-span">Detalles <span class="optional">Opcional</span><InputTextArea @bind-Value="_activityForm.Details" rows="3" maxlength="2000" /></label></div>
+            <ValidationSummary />@if (_error is not null) { <div class="inline-error">@_error</div>}
+            <div class="modal-actions"><button type="button" class="button button-secondary" @onclick="() => _showActivity = false">Cancelar</button><button class="button button-primary" disabled="@_saving">Guardar actividad</button></div>
+        </EditForm>
+    </section></div>
+}
+@if (_notice is not null) { <div class="toast">✓ @_notice</div> }
+
+@code {
+    private List<OpportunityDto> _opportunities = [];
+    private List<CrmActivityDto> _activities = [];
+    private List<CustomerDto> _customers = [];
+    private List<TenantMemberDto> _team = [];
+    private OpportunityForm _opportunityForm = new();
+    private ActivityForm _activityForm = new();
+    private bool _showOpportunity, _showActivity, _openTasksOnly, _saving;
+    private Guid? _activityCustomerId;
+    [Parameter, SupplyParameterFromQuery(Name = "customerId")] public Guid? CustomerId { get; set; }
+    private string? _error, _notice;
+    private IEnumerable<OpportunityDto> OpenOpportunities => _opportunities.Where(x => x.Stage is not (OpportunityStage.Won or OpportunityStage.Lost));
+
+    protected override Task OnParametersSetAsync() { _activityCustomerId = CustomerId; return LoadAsync(); }
+    private async Task LoadAsync() {
+        var opportunitiesTask = CrmManager.GetOpportunitiesAsync();
+        var activitiesTask = CrmManager.GetActivitiesAsync(_activityCustomerId, _openTasksOnly);
+        var customersTask = Store.SearchCustomersAsync(null);
+        var teamTask = TenantUsers.GetActiveMembersAsync();
+        await Task.WhenAll(opportunitiesTask, activitiesTask, customersTask, teamTask);
+        _opportunities = (await opportunitiesTask).ToList();
+        _activities = (await activitiesTask).ToList();
+        _customers = (await customersTask).ToList();
+        _team = (await teamTask).ToList();
+    }
+    private void OpenActivity() { _activityForm = new(); _error = null; _showActivity = true; }
+    private void CustomerChanged() => _activityForm.OpportunityId = null;
+    private async Task FilterActivitiesAsync(ChangeEventArgs args) { _activityCustomerId = Guid.TryParse(args.Value?.ToString(), out var id) ? id : null; await LoadAsync(); }
+    private async Task SaveOpportunityAsync() { _saving = true; _error = null; try { if (_opportunityForm.CustomerId == Guid.Empty) throw new DomainException("Selecciona un cliente."); await CrmManager.CreateOpportunityAsync(new(_opportunityForm.CustomerId, _opportunityForm.Title, _opportunityForm.ExpectedValue, _opportunityForm.ExpectedCloseDate, _opportunityForm.Description, _opportunityForm.AssignedToUserId)); _showOpportunity = false; _notice = "Oportunidad creada"; await LoadAsync(); } catch (DomainException ex) { _error = ex.Message; } catch (Exception ex) { Logger.LogError(ex, "No se pudo crear la oportunidad."); _error = "No se pudo guardar la oportunidad."; } finally { _saving = false; } }
+    private async Task SaveActivityAsync() { _saving = true; _error = null; try { if (_activityForm.CustomerId == Guid.Empty) throw new DomainException("Selecciona un cliente."); var auth = await AuthenticationStateProvider.GetAuthenticationStateAsync(); var actorId = Guid.Parse(auth.User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)!.Value); DateTimeOffset? dueAt = null; if (_activityForm.Kind == CrmActivityKind.Task && _activityForm.DueAt is { } d) { var range = Clock.GetUtcRange(d, d); dueAt = range.EndUtc.AddTicks(-1); } await CrmManager.CreateActivityAsync(new(_activityForm.CustomerId, _activityForm.OpportunityId, _activityForm.Kind, _activityForm.Subject, _activityForm.Details, dueAt, _activityForm.AssignedToUserId), actorId); _showActivity = false; _notice = "Actividad registrada"; await LoadAsync(); } catch (DomainException ex) { _error = ex.Message; } catch (Exception ex) { Logger.LogError(ex, "No se pudo registrar la actividad CRM."); _error = "No se pudo guardar la actividad."; } finally { _saving = false; } }
+    private async Task CompleteTaskAsync(Guid id) { try { await CrmManager.CompleteTaskAsync(id); _notice = "Tarea completada"; await LoadAsync(); } catch (Exception ex) { Logger.LogError(ex, "No se pudo completar la tarea CRM."); _error = "No se pudo completar la tarea."; } }
+    private async Task ChangeStageAsync(Guid id, string? raw) { if (!Enum.TryParse<OpportunityStage>(raw, out var stage)) return; try { await CrmManager.MoveOpportunityAsync(id, stage); await LoadAsync(); } catch (Exception ex) { Logger.LogError(ex, "No se pudo actualizar la oportunidad."); _error = ex is DomainException domain ? domain.Message : "No se pudo actualizar la etapa."; } }
+    private static string StageLabel(OpportunityStage stage) => stage switch { OpportunityStage.Qualification => "Calificación", OpportunityStage.Proposal => "Propuesta", OpportunityStage.Negotiation => "Negociación", OpportunityStage.Won => "Ganada", OpportunityStage.Lost => "Perdida", _ => stage.ToString() };
+    private static string KindLabel(CrmActivityKind kind) => kind switch { CrmActivityKind.Note => "Nota", CrmActivityKind.Call => "Llamada", CrmActivityKind.Email => "Correo", CrmActivityKind.Meeting => "Reunión", CrmActivityKind.Task => "Tarea", _ => kind.ToString() };
+    private static string ActivityIcon(CrmActivityKind kind) => kind switch { CrmActivityKind.Note => "✎", CrmActivityKind.Call => "☎", CrmActivityKind.Email => "✉", CrmActivityKind.Meeting => "◷", _ => "✓" };
+    private sealed class OpportunityForm { [Required(ErrorMessage="El cliente es obligatorio.")] public Guid CustomerId { get; set; } [Required(ErrorMessage="El nombre es obligatorio.")] public string Title { get; set; } = ""; [Range(0, 999999999)] public decimal ExpectedValue { get; set; } public DateOnly? ExpectedCloseDate { get; set; } public string? Description { get; set; } public Guid? AssignedToUserId { get; set; } }
+    private sealed class ActivityForm { [Required] public Guid CustomerId { get; set; } public Guid? OpportunityId { get; set; } public Guid? AssignedToUserId { get; set; } [Required(ErrorMessage="El asunto es obligatorio.")] public string Subject { get; set; } = ""; public CrmActivityKind Kind { get; set; } = CrmActivityKind.Task; public string? Details { get; set; } public DateOnly? DueAt { get; set; } }
+}

@@ -1,0 +1,8 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/OJunnySyS.Application/OJunnySyS.Application.csproj" />
+    <Project Path="src/OJunnySyS.Domain/OJunnySyS.Domain.csproj" />
+    <Project Path="src/OJunnySyS.Infrastructure/OJunnySyS.Infrastructure.csproj" />
+    <Project Path="src/OJunnySyS.Web/OJunnySyS.Web.csproj" />
+  </Folder>
+</Solution>
