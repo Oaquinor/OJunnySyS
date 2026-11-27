@@ -22,7 +22,7 @@ OJunnySyS se desarrolla en C#, ASP.NET Core .NET 10, Blazor Server interactivo, 
 - [x] Configuración por empresa de zona horaria, moneda y tasa general de impuesto, aplicada en servidor y guardada como snapshot en la venta.
 - [x] API versionada para los flujos que requieren integración externa.
 - [x] Scaffold inicial para funcionalidades y componentes reutilizables.
-- [ ] Generador de clases desde el esquema MySQL con preview y salida por capas sin sobrescribir archivos.
+- [x] Generador de clases C# desde el esquema MySQL con preview y salida por capas sin sobrescribir archivos.
 - [ ] Recorrido guiado de primera empresa y control más visible del espacio, plan y usuario activo.
 - [ ] Invitaciones y correo transaccional real con recuperación de acceso verificada en el entorno local.
 - [ ] Pasarela de suscripciones con checkout y webhooks firmados e idempotentes.
