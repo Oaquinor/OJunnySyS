@@ -1,0 +1,296 @@
+@page "/app/banking"
+@attribute [Authorize(Roles = "Administrator,Manager")]
+@inject BankingService BankingApp
+@inject AccountingService Accounting
+@inject TenantSettingsService TenantSettings
+@inject NavigationManager Navigation
+@inject IBusinessClock Clock
+
+<PageTitle>Bancos y conciliaciones · OJunnySyS</PageTitle>
+<PageHeader Eyebrow="TESORERÍA / CONTROL FINANCIERO" Title="Bancos y conciliaciones" Description="Organiza tus cuentas bancarias y contrasta los movimientos del estado con el libro contable de tu empresa." />
+
+<div class="banking-shortcuts" aria-label="Secciones de bancos">
+    <a class="button button-secondary" href="#cuentas-bancarias">Cuentas bancarias</a>
+    <a class="button button-secondary" href="#nueva-conciliacion">Nueva conciliación</a>
+    <a class="button button-secondary" href="#historial-conciliaciones">Historial</a>
+</div>
+
+@if (_error is not null) { <div class="inline-error" role="alert">@_error</div> }
+@if (_notice is not null) { <div class="success-banner" role="status">@_notice</div> }
+
+<section class="stats-grid bank-stats">
+    <MetricCard Label="CUENTAS BANCARIAS" Value="@_accounts.Count(x => x.IsActive).ToString()" Icon="⌂" Tone="blue" />
+    <MetricCard Label="ESTADOS REGISTRADOS" Value="@_statements.Count.ToString()" Icon="▤" Tone="green" />
+    <MetricCard Label="POR CONCILIAR" Value="@_statements.Count(x => x.Status == BankReconciliationStatus.Open).ToString()" Icon="◷" Tone="amber" />
+</section>
+
+<section class="panel banking-section" id="cuentas-bancarias">
+    <div class="panel-heading"><div><span class="eyebrow">CUENTAS Y LIBRO MAYOR</span><h2>Cuentas bancarias</h2><p>Vincula cada cuenta con una cuenta contable exclusiva para conservar conciliaciones independientes.</p></div><span class="result-count">@_accounts.Count cuentas</span></div>
+    <EditForm Model="_accountForm" OnValidSubmit="CreateBankAccountAsync" class="bank-account-form">
+        <DataAnnotationsValidator />
+        <label>Nombre de la cuenta<InputText @bind-Value="_accountForm.Name" maxlength="80" placeholder="Cuenta corriente principal" /></label>
+        <label>Banco o institución<InputText @bind-Value="_accountForm.Institution" maxlength="100" placeholder="Nombre del banco" /></label>
+        <label>Últimos cuatro dígitos <span class="optional">No guardamos el número completo</span><InputText @bind-Value="_accountForm.AccountSuffix" maxlength="4" inputmode="numeric" placeholder="1234" /></label>
+        <label>Cuenta contable<InputSelect @bind-Value="_accountForm.LedgerAccountId"><option value="@Guid.Empty">Selecciona una cuenta activa</option>@foreach (var account in _ledgerAccounts.Where(x => x.IsActive)) { <option value="@account.Id">@account.Code · @account.Name</option> }</InputSelect></label>
+        <button type="submit" class="button button-primary" disabled="@_saving">@(_saving ? "Guardando…" : "Agregar cuenta")</button>
+        <div class="bank-account-form-note">Moneda contable de esta empresa: <strong>@_currencyCode</strong>. Cada cuenta se mantiene en la moneda base hasta habilitar contabilidad multimoneda.</div>
+        <ValidationSummary />
+    </EditForm>
+    @if (_accounts.Count == 0)
+    {
+        <EmptyState Icon="⌂" Title="Configura tu primera cuenta" Description="Crea una cuenta contable del grupo de efectivo y bancos, y luego vincúlala aquí para conciliarla." />
+    }
+    else
+    {
+        <div class="table-wrap"><table><thead><tr><th>CUENTA / BANCO</th><th>CUENTA CONTABLE</th><th>MONEDA</th><th>ESTADO</th><th class="align-right">SALDO EN LIBROS</th><th></th></tr></thead><tbody>
+            @foreach (var account in _accounts)
+            {
+                <tr><td><strong>@account.Name</strong><small class="bank-subline">@account.Institution · @(account.AccountSuffix is null ? "sin sufijo" : "•••• " + account.AccountSuffix)</small></td><td><span class="mono">@account.LedgerAccountCode</span> · @account.LedgerAccountName</td><td>@account.CurrencyCode</td><td><span class="status-pill @(account.IsActive ? "" : "status-inactive")"><i></i>@(account.IsActive ? "Activa" : "Inactiva")</span></td><td class="align-right amount">@Money(account.BookBalance, account.CurrencyCode)</td><td><button class="button button-small @(account.IsActive ? "button-secondary" : "button-primary")" @onclick="() => ToggleAccountAsync(account)">@(account.IsActive ? "Desactivar" : "Activar")</button></td></tr>
+            }
+        </tbody></table></div>
+    }
+</section>
+
+<section class="panel banking-section" id="nueva-conciliacion">
+    <div class="panel-heading"><div><span class="eyebrow">ESTADO BANCARIO</span><h2>Registrar conciliación</h2><p>Ingresa el saldo del estado y sus movimientos; después relaciona cada línea con el asiento correspondiente.</p></div></div>
+    @if (!_accounts.Any(x => x.IsActive))
+    {
+        <EmptyState Icon="＋" Title="Primero agrega una cuenta bancaria" Description="La cuenta bancaria define el mayor y la moneda que se usarán en la conciliación." />
+    }
+    else
+    {
+        <EditForm Model="_statementForm" OnValidSubmit="CreateStatementAsync" class="bank-statement-form">
+            <DataAnnotationsValidator />
+            <div class="bank-csv-import">
+                <div><strong>Importar movimientos desde CSV</strong><p>El archivo se procesa para leer movimientos y no se conserva. Se aceptan hasta 5,000 filas y 2 MB.</p></div>
+                <InputFile OnChange="ReadCsvAsync" accept=".csv,text/csv" />
+                @if (_csvTable is not null)
+                {
+                    <div class="bank-csv-mapping">
+                        <label>Columna de fecha<InputSelect @bind-Value="_csvMapping.DateColumn">@for (var i = 0; i < _csvTable.Headers.Count; i++) { <option value="@i">@_csvTable.Headers[i]</option> }</InputSelect></label>
+                        <label>Columna de descripción<InputSelect @bind-Value="_csvMapping.DescriptionColumn">@for (var i = 0; i < _csvTable.Headers.Count; i++) { <option value="@i">@_csvTable.Headers[i]</option> }</InputSelect></label>
+                        <label>Columna de importe firmado<InputSelect @bind-Value="_csvMapping.AmountColumn">@for (var i = 0; i < _csvTable.Headers.Count; i++) { <option value="@i">@_csvTable.Headers[i]</option> }</InputSelect></label>
+                        <label>Referencia <span class="optional">Opcional</span><InputSelect @bind-Value="_csvMapping.ReferenceColumn"><option value="">Sin referencia</option>@for (var i = 0; i < _csvTable.Headers.Count; i++) { <option value="@i">@_csvTable.Headers[i]</option> }</InputSelect></label>
+                        <label>Formato de fecha<InputSelect @bind-Value="_csvMapping.DateFormat"><option value="@BankCsvDateFormat.DayMonthYear">DD/MM/AAAA</option><option value="@BankCsvDateFormat.YearMonthDay">AAAA-MM-DD</option><option value="@BankCsvDateFormat.MonthDayYear">MM/DD/AAAA</option></InputSelect></label>
+                        <label>Formato decimal<InputSelect @bind-Value="_csvMapping.NumberFormat"><option value="@BankCsvNumberFormat.DecimalPoint">Punto decimal · 1,234.56</option><option value="@BankCsvNumberFormat.DecimalComma">Coma decimal · 1.234,56</option></InputSelect></label>
+                        <button type="button" class="button button-secondary" @onclick="ApplyCsv">Validar e importar @(_csvTable.Rows.Count) filas</button>
+                    </div>
+                    @if (_csvErrors.Count > 0) { <div class="inline-error" role="alert"><strong>Corrige el formato antes de guardar el estado.</strong><ul>@foreach (var error in _csvErrors.Take(8)) { <li>@error</li> }</ul>@if (_csvErrors.Count > 8) { <small>Y otros @(_csvErrors.Count - 8) errores.</small> }</div> }
+                    else if (_csvImportApplied) { <div class="success-banner">@_statementForm.Lines.Count movimientos CSV validados y cargados en el formulario.</div> }
+                }
+            </div>
+            <div class="bank-statement-head">
+                <label>Cuenta bancaria<InputSelect @bind-Value="_statementForm.BankAccountId"><option value="@Guid.Empty">Selecciona una cuenta</option>@foreach (var account in _accounts.Where(x => x.IsActive)) { <option value="@account.Id">@account.Name · @account.LedgerAccountCode</option> }</InputSelect></label>
+                <label>Referencia del estado<InputText @bind-Value="_statementForm.StatementNumber" maxlength="80" placeholder="Estado octubre 2026" /></label>
+                <label>Desde<InputDate @bind-Value="_statementForm.PeriodStart" /></label>
+                <label>Hasta<InputDate @bind-Value="_statementForm.PeriodEnd" /></label>
+                <label>Balance inicial<NumericInput @bind-Value="_statementForm.OpeningBalance" min="-999999999" step="0.01" /></label>
+                <label>Balance final<NumericInput @bind-Value="_statementForm.ClosingBalance" min="-999999999" step="0.01" /></label>
+            </div>
+            <div class="bank-lines-heading"><div><h3>Movimientos del estado</h3><p>Depósito con importe positivo; retiro/cargo con importe negativo.</p></div><button class="button button-secondary" type="button" @onclick="AddStatementLine" disabled="@(_statementForm.Lines.Count >= 5000)">＋ Agregar movimiento</button></div>
+            <div class="table-wrap bank-lines-wrap"><table><thead><tr><th>FECHA</th><th>DESCRIPCIÓN</th><th>REFERENCIA</th><th class="align-right">IMPORTE (+/−)</th><th></th></tr></thead><tbody>
+                @foreach (var line in _statementForm.Lines)
+                {
+                    <tr><td><InputDate @bind-Value="line.TransactionDate" /></td><td><InputText @bind-Value="line.Description" maxlength="180" placeholder="Depósito, comisión, pago…" /></td><td><InputText @bind-Value="line.Reference" maxlength="120" placeholder="Opcional" /></td><td><NumericInput @bind-Value="line.Amount" step="0.01" /></td><td><button type="button" class="icon-button" aria-label="Quitar movimiento" disabled="@(_statementForm.Lines.Count <= 1)" @onclick="() => RemoveStatementLine(line)">×</button></td></tr>
+                }
+            </tbody></table></div>
+            <div class="bank-statement-total"><span>Balance esperado por líneas</span><strong>@Money(_statementForm.OpeningBalance + _statementForm.Lines.Sum(x => x.Amount), _currencyCode)</strong><small>Debe coincidir con el balance final del estado: @Money(_statementForm.ClosingBalance, _currencyCode)</small></div>
+            <div class="bank-submit-row"><p>La conciliación se podrá cerrar cuando todas las líneas bancarias estén vinculadas y el saldo ajustado coincida con el libro.</p><button type="submit" class="button button-primary" disabled="@(_saving || (_csvTable is not null && (!_csvImportApplied || _csvErrors.Count > 0)))">@(_saving ? "Registrando…" : "Guardar estado bancario")</button></div>
+            <ValidationSummary />
+        </EditForm>
+    }
+</section>
+
+<section class="panel banking-section" id="historial-conciliaciones">
+    <div class="panel-heading"><div><span class="eyebrow">TRAZABILIDAD</span><h2>Historial de estados</h2><p>Consulta saldos, movimientos y conciliaciones abiertas o cerradas.</p></div><span class="result-count">@_statements.Count estados</span></div>
+    @if (_statements.Count == 0) { <EmptyState Icon="▤" Title="Sin estados bancarios" Description="Los estados y resultados de conciliación aparecerán aquí." /> }
+    else
+    {
+        <div class="table-wrap"><table><thead><tr><th>PERÍODO</th><th>CUENTA</th><th>REFERENCIA</th><th>ESTADO</th><th>MOVIMIENTOS</th><th class="align-right">BALANCE FINAL</th><th></th></tr></thead><tbody>
+            @foreach (var statement in _statements)
+            {
+                <tr><td>@statement.PeriodStart.ToString("dd/MM/yyyy") — @statement.PeriodEnd.ToString("dd/MM/yyyy")</td><td>@statement.BankAccountName</td><td>@statement.StatementNumber</td><td><span class="status-pill @(statement.Status == BankReconciliationStatus.Reconciled ? "status-bank-reconciled" : "status-bank-open")"><i></i>@(statement.Status == BankReconciliationStatus.Reconciled ? "Conciliado" : "Abierto")</span></td><td>@statement.MatchedLineCount / @statement.LineCount conciliados</td><td class="align-right amount">@Money(statement.ClosingBalance, _accounts.FirstOrDefault(x => x.Id == statement.BankAccountId)?.CurrencyCode ?? _currencyCode)</td><td><a class="button button-small button-secondary" href="/app/banking/reconciliations/@statement.Id">@(statement.Status == BankReconciliationStatus.Reconciled ? "Ver detalle" : "Conciliar")</a></td></tr>
+            }
+        </tbody></table></div>
+    }
+</section>
+
+@code {
+    private IReadOnlyList<BankAccountDto> _accounts = [];
+    private IReadOnlyList<ChartAccountDto> _ledgerAccounts = [];
+    private IReadOnlyList<BankReconciliationListItemDto> _statements = [];
+    private string _currencyCode = "DOP";
+    private string? _error;
+    private string? _notice;
+    private bool _saving;
+    private BankCsvTable? _csvTable;
+    private CsvMappingForm _csvMapping = new();
+    private List<string> _csvErrors = [];
+    private bool _csvImportApplied;
+    private BankAccountForm _accountForm = new();
+    private BankStatementForm _statementForm = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        _currencyCode = (await TenantSettings.GetAsync()).CurrencyCode;
+        _ledgerAccounts = await Accounting.GetChartOfAccountsAsync();
+        var today = DateOnly.FromDateTime(Clock.ToBusinessTime(Clock.UtcNow).DateTime);
+        _statementForm.PeriodStart = new DateOnly(today.Year, today.Month, 1);
+        _statementForm.PeriodEnd = today;
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        _accounts = await BankingApp.GetBankAccountsAsync();
+        _statements = await BankingApp.GetReconciliationsAsync();
+    }
+
+    private async Task CreateBankAccountAsync()
+    {
+        _saving = true; _error = null; _notice = null;
+        try
+        {
+            await BankingApp.CreateBankAccountAsync(new CreateBankAccountRequest(_accountForm.Name, _accountForm.Institution,
+                _accountForm.AccountSuffix, _currencyCode, _accountForm.LedgerAccountId));
+            _accountForm = new();
+            _notice = "La cuenta bancaria quedó vinculada al mayor contable.";
+            await LoadAsync();
+            _ledgerAccounts = await Accounting.GetChartOfAccountsAsync();
+        }
+        catch (DomainException ex) { _error = ex.Message; }
+        finally { _saving = false; }
+    }
+
+    private async Task ToggleAccountAsync(BankAccountDto account)
+    {
+        _error = null; _notice = null;
+        try
+        {
+            await BankingApp.SetBankAccountActiveAsync(account.Id, new SetBankAccountActiveRequest(!account.IsActive, account.Revision));
+            _notice = account.IsActive ? "La cuenta bancaria se desactivó." : "La cuenta bancaria se activó.";
+            await LoadAsync();
+        }
+        catch (DomainException ex) { _error = ex.Message; }
+    }
+
+    private void AddStatementLine() => _statementForm.Lines.Add(new() { TransactionDate = _statementForm.PeriodEnd });
+    private void RemoveStatementLine(StatementLineForm line) => _statementForm.Lines.Remove(line);
+
+    private async Task ReadCsvAsync(InputFileChangeEventArgs args)
+    {
+        _error = null; _csvTable = null; _csvErrors = []; _csvImportApplied = false;
+        try
+        {
+            var file = args.File;
+            await using var stream = file.OpenReadStream(BankStatementCsvParser.MaximumCharacters);
+            using var reader = new StreamReader(stream);
+            var content = await reader.ReadToEndAsync();
+            _csvTable = BankStatementCsvParser.ReadTable(content);
+            _csvMapping = new CsvMappingForm
+            {
+                DateColumn = GuessColumn(_csvTable.Headers, "fecha", "date", "posting date", "transaction date"),
+                DescriptionColumn = GuessColumn(_csvTable.Headers, "descripción", "descripcion", "description", "detail", "concepto"),
+                AmountColumn = GuessColumn(_csvTable.Headers, "importe", "amount", "monto", "valor", "total"),
+                ReferenceColumn = GuessOptionalColumn(_csvTable.Headers, "referencia", "reference", "ref", "documento"),
+                DateFormat = BankCsvDateFormat.DayMonthYear,
+                NumberFormat = BankCsvNumberFormat.DecimalPoint
+            };
+        }
+        catch (DomainException ex) { _error = ex.Message; }
+        catch (IOException) { _error = "No se pudo leer el archivo. Verifica el formato CSV e inténtalo de nuevo."; }
+    }
+
+    private void ApplyCsv()
+    {
+        if (_csvTable is null) return;
+        _csvErrors = [];
+        try
+        {
+            var mapped = BankStatementCsvParser.MapLines(_csvTable, new BankCsvMapping(_csvMapping.DateColumn,
+                _csvMapping.DescriptionColumn, _csvMapping.AmountColumn, _csvMapping.ReferenceColumn,
+                _csvMapping.DateFormat, _csvMapping.NumberFormat));
+            _csvErrors = mapped.Errors.ToList();
+            if (_csvErrors.Count > 0) { _csvImportApplied = false; return; }
+            _statementForm.Lines = mapped.Lines.Select(x => new StatementLineForm
+            {
+                TransactionDate = x.TransactionDate, Description = x.Description, Reference = x.Reference, Amount = x.Amount
+            }).ToList();
+            _statementForm.PeriodStart = mapped.Lines.Min(x => x.TransactionDate);
+            _statementForm.PeriodEnd = mapped.Lines.Max(x => x.TransactionDate);
+            _csvImportApplied = true;
+        }
+        catch (DomainException ex) { _error = ex.Message; }
+    }
+
+    private static int GuessColumn(IReadOnlyList<string> headers, params string[] names)
+    {
+        for (var i = 0; i < headers.Count; i++)
+            if (names.Any(name => string.Equals(NormalizeHeader(headers[i]), NormalizeHeader(name), StringComparison.Ordinal))) return i;
+        return 0;
+    }
+
+    private static int? GuessOptionalColumn(IReadOnlyList<string> headers, params string[] names)
+    {
+        for (var i = 0; i < headers.Count; i++)
+            if (names.Any(name => string.Equals(NormalizeHeader(headers[i]), NormalizeHeader(name), StringComparison.Ordinal))) return i;
+        return null;
+    }
+
+    private static string NormalizeHeader(string value) => new(value.ToLowerInvariant().Where(char.IsLetterOrDigit).ToArray());
+
+    private async Task CreateStatementAsync()
+    {
+        _saving = true; _error = null; _notice = null;
+        try
+        {
+            var request = new CreateBankReconciliationRequest(_statementForm.BankAccountId, _statementForm.StatementNumber,
+                _statementForm.PeriodStart, _statementForm.PeriodEnd, _statementForm.OpeningBalance, _statementForm.ClosingBalance,
+                _statementForm.Lines.Select(x => new BankStatementLineRequest(x.TransactionDate, x.Description, x.Amount, x.Reference)).ToArray());
+            var result = await BankingApp.CreateReconciliationAsync(request);
+            Navigation.NavigateTo($"/app/banking/reconciliations/{result.Id}");
+        }
+        catch (DomainException ex) { _error = ex.Message; }
+        finally { _saving = false; }
+    }
+
+    private string Money(decimal amount, string currencyCode) => DisplayFormat.Money(amount, currencyCode);
+
+    private sealed class BankAccountForm
+    {
+        [System.ComponentModel.DataAnnotations.Required, System.ComponentModel.DataAnnotations.StringLength(80, MinimumLength = 2)] public string Name { get; set; } = string.Empty;
+        [System.ComponentModel.DataAnnotations.Required, System.ComponentModel.DataAnnotations.StringLength(100, MinimumLength = 2)] public string Institution { get; set; } = string.Empty;
+        public string? AccountSuffix { get; set; }
+        public Guid LedgerAccountId { get; set; }
+    }
+
+    private sealed class BankStatementForm
+    {
+        [System.ComponentModel.DataAnnotations.Required] public Guid BankAccountId { get; set; }
+        [System.ComponentModel.DataAnnotations.Required, System.ComponentModel.DataAnnotations.StringLength(80, MinimumLength = 1)] public string StatementNumber { get; set; } = string.Empty;
+        public DateOnly PeriodStart { get; set; }
+        public DateOnly PeriodEnd { get; set; }
+        public decimal OpeningBalance { get; set; }
+        public decimal ClosingBalance { get; set; }
+        public List<StatementLineForm> Lines { get; set; } = [];
+    }
+
+    private sealed class StatementLineForm
+    {
+        public DateOnly TransactionDate { get; set; } = DateOnly.FromDateTime(DateTime.Today);
+        [System.ComponentModel.DataAnnotations.Required, System.ComponentModel.DataAnnotations.StringLength(180, MinimumLength = 2)] public string Description { get; set; } = string.Empty;
+        [System.ComponentModel.DataAnnotations.StringLength(120)] public string? Reference { get; set; }
+        public decimal Amount { get; set; }
+    }
+
+    private sealed class CsvMappingForm
+    {
+        public int DateColumn { get; set; }
+        public int DescriptionColumn { get; set; }
+        public int AmountColumn { get; set; }
+        public int? ReferenceColumn { get; set; }
+        public BankCsvDateFormat DateFormat { get; set; }
+        public BankCsvNumberFormat NumberFormat { get; set; }
+    }
+}
+

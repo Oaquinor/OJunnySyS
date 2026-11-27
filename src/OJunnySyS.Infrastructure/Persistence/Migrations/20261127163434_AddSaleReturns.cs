@@ -11,6 +11,11 @@ namespace OJunnySyS.Infrastructure.Persistence.Migrations
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
         {
+            migrationBuilder.AddUniqueConstraint(
+                name: "AK_Products_TenantId_Id",
+                table: "Products",
+                columns: new[] { "TenantId", "Id" });
+
             migrationBuilder.CreateTable(
                 name: "SaleReturns",
                 columns: table => new
@@ -177,6 +182,10 @@ namespace OJunnySyS.Infrastructure.Persistence.Migrations
 
             migrationBuilder.DropTable(
                 name: "SaleReturns");
+
+            migrationBuilder.DropUniqueConstraint(
+                name: "AK_Products_TenantId_Id",
+                table: "Products");
         }
     }
 }

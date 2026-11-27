@@ -30,7 +30,7 @@ OJunnySyS se desarrolla en C#, ASP.NET Core .NET 10, Blazor Server interactivo, 
 - [ ] Invitaciones y correo transaccional real con recuperación de acceso verificada en el entorno local.
 - [ ] Pasarela de suscripciones con checkout y webhooks firmados e idempotentes.
 - [ ] Integración y autorización de comprobantes electrónicos DGII/e-CF.
-- [ ] Conciliación de pagos de tarjetas y transferencias.
+- [x] Configuración de cuentas bancarias y conciliación de estados por CSV contra asientos publicados; control de diferencias, partidas pendientes, aislamiento por empresa e historial cerrado. Falta automatizar conciliación de pagos de tarjetas/transferencias y validar formatos de extracto de bancos locales.
 - [ ] Impresión térmica integrada y manejo de conectividad intermitente.
 - [ ] Offline de POS con cola local cifrada, idempotencia y resolución de conflictos. Hasta entonces solo se mantiene accesible la shell pública sin almacenar operaciones.
 

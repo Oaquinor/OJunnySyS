@@ -23,6 +23,7 @@ public static class DependencyInjection
         services.AddScoped<IWarehouseRepository, EfWarehouseRepository>();
         services.AddScoped<IPosPaymentMethodRepository, EfPosPaymentMethodRepository>();
         services.AddScoped<IAccountingRepository, EfAccountingRepository>();
+        services.AddScoped<IBankingRepository, EfBankingRepository>();
         services.AddScoped<ITenantOnboardingService, TenantOnboardingService>();
         services.AddScoped<IRegistrationEmailSender, SmtpRegistrationEmailSender>();
         services.AddScoped<ITenantAccessGuard, TenantAccessGuard>();

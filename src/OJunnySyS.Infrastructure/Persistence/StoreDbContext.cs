@@ -13,6 +13,7 @@ using OJunnySyS.Domain.Crm;
 using OJunnySyS.Domain.Pos;
 using OJunnySyS.Domain.Inventory;
 using OJunnySyS.Domain.Accounting;
+using OJunnySyS.Domain.Banking;
 using OJunnySyS.Infrastructure.Identity;
 
 namespace OJunnySyS.Infrastructure.Persistence;
@@ -47,6 +48,9 @@ public sealed class StoreDbContext(DbContextOptions<StoreDbContext> options)
     public DbSet<ChartAccount> ChartAccounts => Set<ChartAccount>();
     public DbSet<JournalEntry> JournalEntries => Set<JournalEntry>();
     public DbSet<JournalEntryLine> JournalEntryLines => Set<JournalEntryLine>();
+    public DbSet<BankAccount> BankAccounts => Set<BankAccount>();
+    public DbSet<BankReconciliation> BankReconciliations => Set<BankReconciliation>();
+    public DbSet<BankStatementLine> BankStatementLines => Set<BankStatementLine>();
     public Guid? CurrentTenantId { get; set; }
 
     public override int SaveChanges()
@@ -438,6 +442,23 @@ public sealed class StoreDbContext(DbContextOptions<StoreDbContext> options)
             entity.Property(x => x.Revision).IsConcurrencyToken().HasDefaultValue(0L);
         });
 
+        modelBuilder.Entity<BankAccount>(entity =>
+        {
+            entity.HasKey(x => x.Id);
+            entity.HasAlternateKey(x => new { x.TenantId, x.Id });
+            entity.HasIndex(x => new { x.TenantId, x.Name }).IsUnique();
+            entity.HasIndex(x => new { x.TenantId, x.LedgerAccountId }).IsUnique();
+            entity.HasOne<Tenant>().WithMany().HasForeignKey(x => x.TenantId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne<ChartAccount>().WithMany().HasForeignKey(x => new { x.TenantId, x.LedgerAccountId })
+                .HasPrincipalKey(x => new { x.TenantId, x.Id }).OnDelete(DeleteBehavior.Restrict);
+            entity.HasQueryFilter(x => CurrentTenantId != null && x.TenantId == CurrentTenantId);
+            entity.Property(x => x.Name).HasMaxLength(80).IsRequired();
+            entity.Property(x => x.Institution).HasMaxLength(100).IsRequired();
+            entity.Property(x => x.AccountSuffix).HasMaxLength(4);
+            entity.Property(x => x.CurrencyCode).HasMaxLength(3).IsRequired();
+            entity.Property(x => x.Revision).IsConcurrencyToken().HasDefaultValue(0L);
+        });
+
         modelBuilder.Entity<JournalEntry>(entity =>
         {
             entity.HasKey(x => x.Id);
@@ -461,6 +482,7 @@ public sealed class StoreDbContext(DbContextOptions<StoreDbContext> options)
         modelBuilder.Entity<JournalEntryLine>(entity =>
         {
             entity.HasKey(x => x.Id);
+            entity.HasAlternateKey(x => new { x.TenantId, x.Id });
             entity.HasOne<ChartAccount>().WithMany().HasForeignKey(x => new { x.TenantId, x.AccountId }).HasPrincipalKey(x => new { x.TenantId, x.Id }).OnDelete(DeleteBehavior.Restrict);
             entity.HasOne<Tenant>().WithMany().HasForeignKey(x => x.TenantId).OnDelete(DeleteBehavior.Restrict);
             entity.HasQueryFilter(x => CurrentTenantId != null && x.TenantId == CurrentTenantId);
@@ -469,6 +491,44 @@ public sealed class StoreDbContext(DbContextOptions<StoreDbContext> options)
             entity.Property(x => x.Debit).HasPrecision(14, 2);
             entity.Property(x => x.Credit).HasPrecision(14, 2);
             entity.Property(x => x.Memo).HasMaxLength(160);
+        });
+
+        modelBuilder.Entity<BankReconciliation>(entity =>
+        {
+            entity.HasKey(x => x.Id);
+            entity.HasAlternateKey(x => new { x.TenantId, x.Id });
+            entity.HasIndex(x => new { x.TenantId, x.BankAccountId, x.StatementNumber }).IsUnique();
+            entity.HasIndex(x => new { x.TenantId, x.BankAccountId, x.PeriodEnd });
+            entity.HasOne<Tenant>().WithMany().HasForeignKey(x => x.TenantId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne<BankAccount>().WithMany().HasForeignKey(x => new { x.TenantId, x.BankAccountId })
+                .HasPrincipalKey(x => new { x.TenantId, x.Id }).OnDelete(DeleteBehavior.Restrict);
+            entity.HasMany<BankStatementLine>(nameof(BankReconciliation.Lines)).WithOne()
+                .HasForeignKey(x => new { x.TenantId, x.BankReconciliationId }).HasPrincipalKey(x => new { x.TenantId, x.Id })
+                .OnDelete(DeleteBehavior.Restrict);
+            entity.Navigation(nameof(BankReconciliation.Lines)).UsePropertyAccessMode(PropertyAccessMode.Field);
+            entity.HasQueryFilter(x => CurrentTenantId != null && x.TenantId == CurrentTenantId);
+            entity.Property(x => x.StatementNumber).HasMaxLength(80).IsRequired();
+            entity.Property(x => x.Status).HasConversion<int>();
+            entity.Property(x => x.OpeningBalance).HasPrecision(14, 2);
+            entity.Property(x => x.ClosingBalance).HasPrecision(14, 2);
+            entity.Property(x => x.Revision).IsConcurrencyToken().HasDefaultValue(0L);
+        });
+
+        modelBuilder.Entity<BankStatementLine>(entity =>
+        {
+            entity.HasKey(x => x.Id);
+            entity.HasIndex(x => new { x.TenantId, x.BankReconciliationId, x.TransactionDate });
+            entity.HasIndex(x => new { x.TenantId, x.JournalEntryLineId }).IsUnique();
+            entity.HasOne<Tenant>().WithMany().HasForeignKey(x => x.TenantId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne<BankReconciliation>().WithMany(nameof(BankReconciliation.Lines))
+                .HasForeignKey(x => new { x.TenantId, x.BankReconciliationId }).HasPrincipalKey(x => new { x.TenantId, x.Id })
+                .OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne<JournalEntryLine>().WithMany().HasForeignKey(x => new { x.TenantId, x.JournalEntryLineId })
+                .HasPrincipalKey(x => new { x.TenantId, x.Id }).OnDelete(DeleteBehavior.Restrict);
+            entity.HasQueryFilter(x => CurrentTenantId != null && x.TenantId == CurrentTenantId);
+            entity.Property(x => x.Description).HasMaxLength(180).IsRequired();
+            entity.Property(x => x.Amount).HasPrecision(14, 2);
+            entity.Property(x => x.Reference).HasMaxLength(120);
         });
 
         modelBuilder.Entity<CashMovement>(entity =>

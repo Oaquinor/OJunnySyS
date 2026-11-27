@@ -1,0 +1,154 @@
+@page "/app/banking/reconciliations/{Id:guid}"
+@attribute [Authorize(Roles = "Administrator,Manager")]
+@inject BankingService Banking
+@inject NavigationManager Navigation
+
+<PageTitle>Conciliación bancaria · OJunnySyS</PageTitle>
+<PageHeader Eyebrow="TESORERÍA / CONCILIACIÓN" Title="Conciliación bancaria" Description="Vincula cada movimiento del estado con su asiento contable y comprueba el saldo ajustado." />
+
+<div class="banking-shortcuts"><a class="button button-secondary" href="/app/banking">← Volver a bancos</a><a class="button button-secondary" href="/app/accounting">Libro contable</a></div>
+@if (_error is not null) { <div class="inline-error" role="alert">@_error</div> }
+@if (_notice is not null) { <div class="success-banner" role="status">@_notice</div> }
+@if (_statement is null)
+{
+    <section class="panel banking-section"><EmptyState Icon="◷" Title="Cargando conciliación" Description="Buscando el estado bancario de esta empresa…" /></section>
+}
+else
+{
+    <section class="panel banking-section bank-detail-header">
+        <div class="bank-detail-title"><div><span class="eyebrow">@_statement.BankAccountName · @_statement.BankAccountCurrency</span><h2>@_statement.StatementNumber</h2><p>@_statement.PeriodStart.ToString("dd/MM/yyyy") — @_statement.PeriodEnd.ToString("dd/MM/yyyy") · Cuenta contable @_statement.LedgerAccountCode</p></div><span class="status-pill @(_statement.Status == BankReconciliationStatus.Reconciled ? "status-bank-reconciled" : "status-bank-open")"><i></i>@(_statement.Status == BankReconciliationStatus.Reconciled ? "Conciliado" : "Abierto")</span></div>
+        <div class="stats-grid bank-reconciliation-stats">
+            <MetricCard Label="BALANCE DEL ESTADO" Value="@Money(_statement.ClosingBalance)" Icon="▤" Tone="blue" />
+            <MetricCard Label="BALANCE AJUSTADO" Value="@Money(_statement.AdjustedStatementBalance)" Icon="↔" Tone="green" />
+            <MetricCard Label="SALDO EN LIBROS" Value="@Money(_statement.BookBalance)" Icon="▥" Tone="blue" />
+            <MetricCard Label="DIFERENCIA" Value="@Money(_statement.Difference)" Icon="◈" Tone="@(_statement.IsBalanced ? "green" : "amber")" />
+        </div>
+        <div class="bank-reconciliation-status @(_statement.IsBalanced ? "is-balanced" : "is-unbalanced")">
+            <strong>@(_statement.IsBalanced ? "Los saldos ajustados coinciden." : "La conciliación aún presenta diferencia.")</strong>
+            <span>@_statement.MatchedLineCount de @_statement.Lines.Count movimientos bancarios conciliados · @_statement.UnmatchedBookMovements.Count movimientos contables pendientes en el período.</span>
+        </div>
+        @if (_statement.Status == BankReconciliationStatus.Open)
+        {
+            <div class="bank-submit-row"><p>Los movimientos de libros no conciliados se consideran depósitos en tránsito o cheques pendientes. Registra cargos bancarios en Contabilidad y relaciónalos antes del cierre.</p><button class="button button-primary" @onclick="CompleteAsync" disabled="@(!_statement.IsBalanced || _statement.Lines.Any(x => !x.JournalEntryLineId.HasValue) || _saving)">@(_saving ? "Cerrando…" : "Cerrar conciliación")</button></div>
+        }
+        else if (_statement.ReconciledAtUtc is { } reconciledAt)
+        {
+            <div class="success-banner">Conciliación cerrada el @reconciledAt.ToLocalTime().ToString("dd/MM/yyyy HH:mm") UTC.</div>
+        }
+    </section>
+
+    <section class="panel banking-section">
+        <div class="panel-heading"><div><span class="eyebrow">LÍNEAS DEL ESTADO</span><h2>Movimientos bancarios</h2><p>El signo debe coincidir con el movimiento del mayor; no se permite conciliar la misma línea más de una vez.</p></div><span class="result-count">@_statement.Lines.Count movimientos</span></div>
+        @if (_statement.Lines.Count == 0) { <EmptyState Icon="▤" Title="Estado sin movimientos" Description="Este período no contiene transacciones bancarias." /> }
+        else
+        {
+            <div class="table-wrap"><table><thead><tr><th>FECHA</th><th>DESCRIPCIÓN / REFERENCIA</th><th class="align-right">IMPORTE</th><th>ASIENTO CONTABLE</th><th>ESTADO</th><th></th></tr></thead><tbody>
+                @foreach (var row in _lineRows)
+                {
+                    var candidates = Candidates(row.Line.Amount);
+                    <tr><td>@row.Line.TransactionDate.ToString("dd/MM/yyyy")</td><td><strong>@row.Line.Description</strong><small class="bank-subline">@(row.Line.Reference ?? "Sin referencia bancaria")</small></td><td class="align-right amount">@Money(row.Line.Amount)</td><td class="bank-match-select">
+                        @if (row.Line.JournalEntryLineId is { } matchedId)
+                        {
+                            var matched = _statement.MatchedBookMovements.FirstOrDefault(x => x.JournalEntryLineId == matchedId);
+                            <span class="mono">@(matched is null ? "Asiento conciliado" : matched.EntryNumber + " · " + matched.Description)</span>
+                        }
+                        else if (_statement.Status == BankReconciliationStatus.Open && candidates.Count > 0)
+                        {
+                            <InputSelect @bind-Value="row.SelectedJournalEntryLineId"><option value="@Guid.Empty">Selecciona coincidencia</option>@foreach (var candidate in candidates) { <option value="@candidate.JournalEntryLineId">@candidate.TransactionDate.ToString("dd/MM") · @candidate.EntryNumber · @(candidate.Memo ?? candidate.Description)</option> }</InputSelect>
+                        }
+                        else if (_statement.Status == BankReconciliationStatus.Open) { <span class="bank-no-match">Sin asiento de importe exacto</span> }
+                    </td><td><span class="status-pill @(row.Line.JournalEntryLineId.HasValue ? "status-bank-reconciled" : "status-bank-open")"><i></i>@(row.Line.JournalEntryLineId.HasValue ? "Conciliado" : "Pendiente")</span></td><td class="bank-row-actions">
+                        @if (_statement.Status == BankReconciliationStatus.Open && row.Line.JournalEntryLineId.HasValue) { <button class="button button-small button-secondary" @onclick="() => UnmatchAsync(row.Line.Id)">Deshacer</button> }
+                        else if (_statement.Status == BankReconciliationStatus.Open && candidates.Count > 0) { <button class="button button-small button-primary" disabled="@(row.SelectedJournalEntryLineId == Guid.Empty || _saving)" @onclick="() => MatchAsync(row)">Conciliar</button> }
+                    </td></tr>
+                }
+            </tbody></table></div>
+        }
+    </section>
+
+    <section class="panel banking-section">
+        <div class="panel-heading"><div><span class="eyebrow">MOVIMIENTOS EN EL LIBRO</span><h2>Depósitos en tránsito y cheques pendientes</h2><p>Importes contabilizados en esta cuenta que aún no aparecen conciliados con un estado bancario.</p></div><span class="result-count">@_statement.UnmatchedBookMovements.Count pendientes</span></div>
+        @if (_statement.UnmatchedBookMovements.Count == 0) { <EmptyState Icon="✓" Title="Sin movimientos contables pendientes" Description="No hay depósitos en tránsito ni cheques pendientes hasta la fecha de corte." /> }
+        else
+        {
+            <div class="table-wrap"><table><thead><tr><th>FECHA</th><th>ASIENTO</th><th>DESCRIPCIÓN</th><th>DETALLE</th><th class="align-right">IMPORTE</th></tr></thead><tbody>
+                @foreach (var movement in _statement.UnmatchedBookMovements)
+                {
+                    <tr><td>@movement.TransactionDate.ToString("dd/MM/yyyy")</td><td class="mono">@movement.EntryNumber</td><td>@movement.Description</td><td>@(movement.Memo ?? "—")</td><td class="align-right amount">@Money(movement.Amount)</td></tr>
+                }
+            </tbody><tfoot><tr><th colspan="4">SALDO PENDIENTE EN LIBROS</th><th class="align-right">@Money(_statement.OutstandingBookBalance)</th></tr></tfoot></table></div>
+        }
+    </section>
+}
+
+@code {
+    [Parameter] public Guid Id { get; set; }
+    private BankReconciliationDto? _statement;
+    private List<StatementLineRow> _lineRows = [];
+    private string? _error;
+    private string? _notice;
+    private bool _saving;
+
+    protected override async Task OnParametersSetAsync() => await LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        try
+        {
+            _statement = await Banking.GetReconciliationAsync(Id);
+            _lineRows = _statement.Lines.Select(x => new StatementLineRow(x)).ToList();
+            _error = null;
+        }
+        catch (DomainException ex) { _statement = null; _error = ex.Message; }
+    }
+
+    private IReadOnlyList<BookMovementDto> Candidates(decimal amount) => _statement?.UnmatchedBookMovements.Where(x => x.Amount == amount).ToArray() ?? [];
+
+    private async Task MatchAsync(StatementLineRow row)
+    {
+        if (row.SelectedJournalEntryLineId == Guid.Empty) return;
+        _saving = true; _error = null; _notice = null;
+        try
+        {
+            _statement = await Banking.MatchStatementLineAsync(Id, row.Line.Id, row.SelectedJournalEntryLineId);
+            _notice = "El movimiento bancario quedó vinculado al asiento contable.";
+            _lineRows = _statement.Lines.Select(x => new StatementLineRow(x)).ToList();
+        }
+        catch (DomainException ex) { _error = ex.Message; }
+        finally { _saving = false; }
+    }
+
+    private async Task UnmatchAsync(Guid lineId)
+    {
+        _saving = true; _error = null; _notice = null;
+        try
+        {
+            _statement = await Banking.UnmatchStatementLineAsync(Id, lineId);
+            _notice = "Se deshizo la conciliación de ese movimiento.";
+            _lineRows = _statement.Lines.Select(x => new StatementLineRow(x)).ToList();
+        }
+        catch (DomainException ex) { _error = ex.Message; }
+        finally { _saving = false; }
+    }
+
+    private async Task CompleteAsync()
+    {
+        _saving = true; _error = null; _notice = null;
+        try
+        {
+            _statement = await Banking.CompleteReconciliationAsync(Id);
+            _lineRows = _statement.Lines.Select(x => new StatementLineRow(x)).ToList();
+            _notice = "La conciliación se cerró y quedó guardada en el historial.";
+        }
+        catch (DomainException ex) { _error = ex.Message; }
+        finally { _saving = false; }
+    }
+
+    private string Money(decimal amount) => DisplayFormat.Money(amount, _statement?.BankAccountCurrency ?? "DOP");
+
+    private sealed class StatementLineRow(BankStatementLineDto line)
+    {
+        public BankStatementLineDto Line { get; } = line;
+        public Guid SelectedJournalEntryLineId { get; set; }
+    }
+}

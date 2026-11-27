@@ -118,6 +118,7 @@ builder.Services.AddScoped<PosRegisterService>();
 builder.Services.AddScoped<WarehouseService>();
 builder.Services.AddScoped<PosPaymentMethodService>();
 builder.Services.AddScoped<AccountingService>();
+builder.Services.AddScoped<BankingService>();
 
 var app = builder.Build();
 

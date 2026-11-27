@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using Microsoft.EntityFrameworkCore.Migrations;
 
 #nullable disable
@@ -38,11 +38,6 @@ namespace OJunnySyS.Infrastructure.Persistence.Migrations
                 type: "char(36)",
                 nullable: false,
                 defaultValue: new Guid("00000000-0000-0000-0000-000000000000"));
-
-            migrationBuilder.AddUniqueConstraint(
-                name: "AK_Products_TenantId_Id",
-                table: "Products",
-                columns: new[] { "TenantId", "Id" });
 
             migrationBuilder.CreateTable(
                 name: "Warehouses",
@@ -215,10 +210,6 @@ namespace OJunnySyS.Infrastructure.Persistence.Migrations
             migrationBuilder.DropIndex(
                 name: "IX_PurchaseOrders_TenantId_WarehouseId",
                 table: "PurchaseOrders");
-
-            migrationBuilder.DropUniqueConstraint(
-                name: "AK_Products_TenantId_Id",
-                table: "Products");
 
             migrationBuilder.DropIndex(
                 name: "IX_PosRegisters_TenantId_WarehouseId",
