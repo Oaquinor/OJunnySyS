@@ -959,12 +959,17 @@ public sealed class EfStoreRepository(IDbContextFactory<StoreDbContext> contextF
         return order;
     }
 
-    public async Task<PurchaseOrder> ReceivePurchaseOrderAsync(Guid purchaseOrderId, Guid receivedByUserId, IReadOnlyCollection<ReceivePurchaseLineRequest> lines, CancellationToken cancellationToken = default)
+    public async Task<PurchaseOrder> ReceivePurchaseOrderAsync(Guid purchaseOrderId, Guid receivedByUserId, ReceivePurchaseOrderRequest request, CancellationToken cancellationToken = default)
     {
+        if (request is null || request.Lines is null) throw new DomainException("Indica las líneas de la recepción y su clave de idempotencia.");
         if (receivedByUserId == Guid.Empty) throw new DomainException("No se pudo identificar al usuario que registra la recepción.");
-        if (lines.Count == 0) throw new DomainException("Indica al menos una línea recibida.");
-        if (lines.Count > 200 || lines.Any(x => x.LineId == Guid.Empty || x.Quantity <= 0))
+        if (request.IdempotencyKey == Guid.Empty) throw new DomainException("La clave de idempotencia de la recepción es obligatoria.");
+        if (request.Lines.Count == 0) throw new DomainException("Indica al menos una línea recibida.");
+        if (request.Lines.Count > 200 || request.Lines.Any(x => x.LineId == Guid.Empty || x.Quantity <= 0))
             throw new DomainException("La recepción debe incluir hasta 200 líneas con cantidades válidas.");
+        var receiptLines = request.Lines.GroupBy(x => x.LineId).Select(x => new ReceivePurchaseLineRequest(x.Key, SumQuantities(x.Select(y => y.Quantity))))
+            .OrderBy(x => x.LineId).ToArray();
+        var requestFingerprint = string.Join("|", receiptLines.Select(x => $"{x.LineId:N}:{x.Quantity}"));
         var tenantId = tenantContext.GetRequiredTenantId();
         await using var db = await CreateDbContextAsync(cancellationToken);
         await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
@@ -974,8 +979,15 @@ public sealed class EfStoreRepository(IDbContextFactory<StoreDbContext> contextF
             .Include(x => x.Lines)
             .Include(x => x.Payments)
             .SingleOrDefaultAsync(cancellationToken) ?? throw new DomainException("La orden de compra no existe.");
+        var existingBatch = await db.PurchaseReceiptBatches.SingleOrDefaultAsync(x => x.IdempotencyKey == request.IdempotencyKey, cancellationToken);
+        if (existingBatch is not null)
+        {
+            if (existingBatch.PurchaseOrderId != order.Id || !string.Equals(existingBatch.RequestFingerprint, requestFingerprint, StringComparison.Ordinal))
+                throw new DomainException("La clave de idempotencia ya se usó para otra recepción.");
+            return order;
+        }
         var receivedLines = new List<(PurchaseOrderLine Line, int Quantity, decimal Tax)>();
-        foreach (var receipt in lines.GroupBy(x => x.LineId).Select(x => new ReceivePurchaseLineRequest(x.Key, SumQuantities(x.Select(y => y.Quantity)))))
+        foreach (var receipt in receiptLines)
         {
             var line = order.Lines.SingleOrDefault(x => x.Id == receipt.LineId) ?? throw new DomainException("La línea no pertenece a esta compra.");
             var previouslyReceived = line.ReceivedQuantity;
@@ -992,13 +1004,15 @@ public sealed class EfStoreRepository(IDbContextFactory<StoreDbContext> contextF
             product.AdjustStock(receipt.Quantity);
             db.InventoryMovements.Add(new InventoryMovement(tenantId, product.Id, InventoryMovementType.PurchaseReceipt, receipt.Quantity, warehouseStock.Quantity, order.Number, order.WarehouseId));
         }
-        await PostPurchaseReceiptJournalEntryAsync(db, tenantId, order, receivedLines, receivedByUserId, cancellationToken);
+        var batch = new PurchaseReceiptBatch(tenantId, order.Id, request.IdempotencyKey, requestFingerprint);
+        db.PurchaseReceiptBatches.Add(batch);
+        await PostPurchaseReceiptJournalEntryAsync(db, tenantId, order, batch.Id, receivedLines, receivedByUserId, cancellationToken);
         await db.SaveChangesAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);
         return order;
     }
 
-    private static async Task PostPurchaseReceiptJournalEntryAsync(StoreDbContext db, Guid tenantId, PurchaseOrder order,
+    private static async Task PostPurchaseReceiptJournalEntryAsync(StoreDbContext db, Guid tenantId, PurchaseOrder order, Guid batchId,
         IReadOnlyCollection<(PurchaseOrderLine Line, int Quantity, decimal Tax)> receivedLines, Guid actorId, CancellationToken ct)
     {
         var subtotal = receivedLines.Sum(x => decimal.Round(x.Line.UnitCost * x.Quantity, 2, MidpointRounding.AwayFromZero));
@@ -1015,7 +1029,6 @@ public sealed class EfStoreRepository(IDbContextFactory<StoreDbContext> contextF
         };
         if (tax > 0) lines.Add(new JournalEntryLine(tenantId, accounts["1300"].Id, accounts["1300"].Code, accounts["1300"].Name, tax, 0, $"Impuesto acreditable · {order.Number}"));
         lines.Add(new JournalEntryLine(tenantId, accounts["2000"].Id, accounts["2000"].Code, accounts["2000"].Name, 0, total, $"Cuenta por pagar · {order.SupplierName}"));
-        var batchId = Guid.NewGuid();
         var entry = new JournalEntry(tenantId, $"REC-{DateTimeOffset.UtcNow:yyyyMMddHHmmss}-{Guid.NewGuid():N}"[..40],
             DateOnly.FromDateTime(DateTime.UtcNow), $"Recepción de compra {order.Number}", actorId, lines, "PURCHASERECEIPT", batchId);
         db.JournalEntries.Add(entry);

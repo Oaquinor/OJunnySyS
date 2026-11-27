@@ -67,10 +67,22 @@ public sealed class PurchaseAccountingIntegrationTests
         Assert.AreEqual(590m, order.Total);
         Assert.AreEqual(590m, order.BalanceDue);
 
-        order = await repository.ReceivePurchaseOrderAsync(order.Id, user.Id, [new ReceivePurchaseLineRequest(order.Lines.Single().Id, 4)]);
+        var firstReceipt = new ReceivePurchaseOrderRequest(Guid.NewGuid(), [new ReceivePurchaseLineRequest(order.Lines.Single().Id, 4)]);
+        order = await repository.ReceivePurchaseOrderAsync(order.Id, user.Id, firstReceipt);
         Assert.AreEqual(PurchaseStatus.PartiallyReceived, order.Status);
         Assert.AreEqual(4, order.Lines.Single().ReceivedQuantity);
-        order = await repository.ReceivePurchaseOrderAsync(order.Id, user.Id, [new ReceivePurchaseLineRequest(order.Lines.Single().Id, 6)]);
+        order = await repository.ReceivePurchaseOrderAsync(order.Id, user.Id, firstReceipt);
+        Assert.AreEqual(4, order.Lines.Single().ReceivedQuantity, "El reintento de la misma recepción no repite el inventario.");
+        var rejectedChangedReplay = false;
+        try
+        {
+            await repository.ReceivePurchaseOrderAsync(order.Id, user.Id,
+                new ReceivePurchaseOrderRequest(firstReceipt.IdempotencyKey, [new ReceivePurchaseLineRequest(order.Lines.Single().Id, 5)]));
+        }
+        catch (DomainException) { rejectedChangedReplay = true; }
+        Assert.IsTrue(rejectedChangedReplay, "La misma clave no puede representar cantidades diferentes.");
+        order = await repository.ReceivePurchaseOrderAsync(order.Id, user.Id,
+            new ReceivePurchaseOrderRequest(Guid.NewGuid(), [new ReceivePurchaseLineRequest(order.Lines.Single().Id, 6)]));
         Assert.AreEqual(PurchaseStatus.Received, order.Status);
         Assert.AreEqual(590m, order.BalanceDue, "La recepción genera la cuenta por pagar; el saldo solo baja con pagos.");
 
@@ -92,6 +104,8 @@ public sealed class PurchaseAccountingIntegrationTests
         Assert.AreEqual(10, (await verify.WarehouseStocks.SingleAsync(x => x.WarehouseId == warehouse.Id && x.ProductId == product.Id)).Quantity);
         var receipts = await verify.JournalEntries.Include(x => x.Lines).Where(x => x.SourceType == "PURCHASERECEIPT").ToListAsync();
         Assert.AreEqual(2, receipts.Count, "Cada recepción parcial tiene su asiento.");
+        Assert.AreEqual(2, await verify.PurchaseReceiptBatches.CountAsync(x => x.PurchaseOrderId == order.Id));
+        Assert.AreEqual(2, await verify.InventoryMovements.CountAsync(x => x.Reference == order.Number));
         Assert.AreEqual(590m, receipts.Sum(x => x.Lines.Sum(line => line.Debit)));
         Assert.AreEqual(590m, receipts.Sum(x => x.Lines.Sum(line => line.Credit)));
         Assert.IsTrue(receipts.All(x => x.Lines.Sum(line => line.Debit) == x.Lines.Sum(line => line.Credit)));

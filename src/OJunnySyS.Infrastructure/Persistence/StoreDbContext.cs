@@ -36,6 +36,7 @@ public sealed class StoreDbContext(DbContextOptions<StoreDbContext> options)
     public DbSet<Supplier> Suppliers => Set<Supplier>();
     public DbSet<PurchaseOrder> PurchaseOrders => Set<PurchaseOrder>();
     public DbSet<PurchaseOrderLine> PurchaseOrderLines => Set<PurchaseOrderLine>();
+    public DbSet<PurchaseReceiptBatch> PurchaseReceiptBatches => Set<PurchaseReceiptBatch>();
     public DbSet<InventoryMovement> InventoryMovements => Set<InventoryMovement>();
     public DbSet<CashSession> CashSessions => Set<CashSession>();
     public DbSet<CashMovement> CashMovements => Set<CashMovement>();
@@ -242,6 +243,7 @@ public sealed class StoreDbContext(DbContextOptions<StoreDbContext> options)
         modelBuilder.Entity<SaleReturn>(entity =>
         {
             entity.HasKey(x => x.Id);
+            entity.HasAlternateKey(x => new { x.TenantId, x.Id });
             entity.HasIndex(x => new { x.TenantId, x.Number }).IsUnique();
             entity.HasIndex(x => new { x.TenantId, x.IdempotencyKey }).IsUnique();
             entity.HasIndex(x => new { x.TenantId, x.SaleId, x.CreatedAtUtc });
@@ -340,6 +342,7 @@ public sealed class StoreDbContext(DbContextOptions<StoreDbContext> options)
         modelBuilder.Entity<PurchaseOrder>(entity =>
         {
             entity.HasKey(x => x.Id);
+            entity.HasAlternateKey(x => new { x.TenantId, x.Id });
             entity.HasIndex(x => new { x.TenantId, x.Number }).IsUnique();
             entity.HasIndex(x => new { x.TenantId, x.CreatedAtUtc });
             entity.HasOne<Tenant>().WithMany().HasForeignKey(x => x.TenantId).OnDelete(DeleteBehavior.Restrict);
@@ -365,6 +368,18 @@ public sealed class StoreDbContext(DbContextOptions<StoreDbContext> options)
             entity.Property(x => x.UnitCost).HasPrecision(12, 2);
             entity.Property(x => x.LineTotal).HasPrecision(14, 2);
             entity.Property(x => x.TaxRate).HasPrecision(5, 4);
+        });
+
+        modelBuilder.Entity<PurchaseReceiptBatch>(entity =>
+        {
+            entity.HasKey(x => x.Id);
+            entity.HasIndex(x => new { x.TenantId, x.IdempotencyKey }).IsUnique();
+            entity.HasIndex(x => new { x.TenantId, x.PurchaseOrderId, x.CreatedAtUtc });
+            entity.HasOne<Tenant>().WithMany().HasForeignKey(x => x.TenantId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne<PurchaseOrder>().WithMany().HasForeignKey(x => new { x.TenantId, x.PurchaseOrderId })
+                .HasPrincipalKey(x => new { x.TenantId, x.Id }).OnDelete(DeleteBehavior.Restrict);
+            entity.HasQueryFilter(x => CurrentTenantId != null && x.TenantId == CurrentTenantId);
+            entity.Property(x => x.RequestFingerprint).HasMaxLength(12000).IsRequired();
         });
 
         modelBuilder.Entity<InventoryMovement>(entity =>

@@ -1272,6 +1272,42 @@ namespace OJunnySyS.Infrastructure.Persistence.Migrations
                     b.ToTable("PurchaseOrderLines");
                 });
 
+            modelBuilder.Entity("OJunnySyS.Domain.Purchasing.PurchaseReceiptBatch", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("char(36)");
+
+                    b.Property<DateTimeOffset>("CreatedAtUtc")
+                        .HasColumnType("datetime");
+
+                    b.Property<Guid>("IdempotencyKey")
+                        .HasColumnType("char(36)");
+
+                    b.Property<Guid>("PurchaseOrderId")
+                        .HasColumnType("char(36)");
+
+                    b.Property<string>("RequestFingerprint")
+                        .IsRequired()
+                        .HasMaxLength(12000)
+                        .HasColumnType("varchar(12000)");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("char(36)");
+
+                    b.Property<DateTimeOffset?>("UpdatedAtUtc")
+                        .HasColumnType("datetime");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TenantId", "IdempotencyKey")
+                        .IsUnique();
+
+                    b.HasIndex("TenantId", "PurchaseOrderId", "CreatedAtUtc");
+
+                    b.ToTable("PurchaseReceiptBatches");
+                });
+
             modelBuilder.Entity("OJunnySyS.Domain.Purchasing.Supplier", b =>
                 {
                     b.Property<Guid>("Id")
@@ -2547,6 +2583,22 @@ namespace OJunnySyS.Infrastructure.Persistence.Migrations
                         .WithMany("Lines")
                         .HasForeignKey("PurchaseOrderId")
                         .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("OJunnySyS.Domain.Purchasing.PurchaseReceiptBatch", b =>
+                {
+                    b.HasOne("OJunnySyS.Domain.Tenancy.Tenant", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("OJunnySyS.Domain.Purchasing.PurchaseOrder", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "PurchaseOrderId")
+                        .HasPrincipalKey("TenantId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
                 });
 

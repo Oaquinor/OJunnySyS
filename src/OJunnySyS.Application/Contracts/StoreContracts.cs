@@ -45,6 +45,7 @@ public sealed record CreatePurchaseOrderRequest(Guid SupplierId, string? Referen
 public sealed record InventoryTransferRequest(Guid ProductId, Guid SourceWarehouseId, Guid DestinationWarehouseId, int Quantity, string? Reference = null);
 public sealed record InventoryTransferResult(string Reference, int Quantity, Guid ProductId, Guid SourceWarehouseId, int SourceBalance, Guid DestinationWarehouseId, int DestinationBalance);
 public sealed record ReceivePurchaseLineRequest(Guid LineId, int Quantity);
+public sealed record ReceivePurchaseOrderRequest(Guid IdempotencyKey, IReadOnlyCollection<ReceivePurchaseLineRequest> Lines);
 public sealed record SupplierPaymentDto(Guid Id, Guid IdempotencyKey, decimal Amount, SupplierPaymentMethod Method, string? Reference, Guid PaidByUserId, DateTimeOffset CreatedAtUtc);
 public sealed record CreateSupplierPaymentRequest(Guid IdempotencyKey, decimal Amount, SupplierPaymentMethod Method, string? Reference, string RegisterCode = "MAIN");
 public sealed record DeactivateSupplierRequest(long ExpectedRevision);

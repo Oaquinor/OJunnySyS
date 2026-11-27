@@ -56,6 +56,7 @@
     private PayablesAgingReport _agingReport = new(DateOnly.FromDateTime(DateTime.Today), 0, 0, [], []);
     private readonly List<PurchaseDraftLine> _draftLines = [];
     private readonly Dictionary<Guid, int> _receiveQuantities = [];
+    private readonly Dictionary<Guid, Guid> _receiveKeys = [];
     private SupplierForm _supplierForm = new();
     private PurchaseForm _purchaseForm = new();
     private Guid _selectedProductId;
@@ -92,7 +93,11 @@
         _orders = (await Store.GetPurchaseOrdersAsync()).ToList();
         _agingReport = await Store.GetPayablesAgingAsync();
         _receiveQuantities.Clear();
-        foreach (var line in _orders.SelectMany(x => x.Lines)) _receiveQuantities[line.Id] = Math.Max(1, line.Quantity - line.ReceivedQuantity);
+        foreach (var line in _orders.SelectMany(x => x.Lines))
+        {
+            _receiveQuantities[line.Id] = Math.Max(1, line.Quantity - line.ReceivedQuantity);
+            _receiveKeys.TryAdd(line.Id, Guid.NewGuid());
+        }
     }
 
     private async Task SaveSupplierAsync()
@@ -212,8 +217,9 @@
         {
             var auth = await AuthenticationStateProvider.GetAuthenticationStateAsync();
             var actorId = Guid.Parse(auth.User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)!.Value);
-            await Store.ReceivePurchaseOrderAsync(orderId, actorId, [new ReceivePurchaseLineRequest(lineId, _receiveQuantities[lineId])]);
+            await Store.ReceivePurchaseOrderAsync(orderId, actorId, new ReceivePurchaseOrderRequest(_receiveKeys[lineId], [new ReceivePurchaseLineRequest(lineId, _receiveQuantities[lineId])]));
             _notice = "Recepción guardada y existencias actualizadas."; await LoadAsync();
+            _receiveKeys[lineId] = Guid.NewGuid();
         }
         catch (DomainException ex) { _error = ex.Message; }
         catch (Exception ex) { Logger.LogError(ex, "No se pudo registrar la recepción."); _error = "No se pudo registrar la recepción."; }
