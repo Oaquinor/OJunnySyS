@@ -127,13 +127,18 @@ public sealed class EfStoreRepository(IDbContextFactory<StoreDbContext> contextF
         return await db.Sales.AsNoTracking().Include(x => x.Payments).Include(x => x.Receipts).Include(x => x.Returns).OrderByDescending(x => x.CreatedAtUtc).Take(Math.Clamp(count, 1, 100)).ToListAsync(cancellationToken);
     }
 
-    public async Task<IReadOnlyList<Sale>> GetSalesInPeriodAsync(DateTimeOffset from, DateTimeOffset to, Guid? warehouseId = null, Guid? sellerUserId = null, CancellationToken cancellationToken = default)
+    public async Task<IReadOnlyList<Sale>> GetSalesInPeriodAsync(DateTimeOffset from, DateTimeOffset to, Guid? warehouseId = null, Guid? sellerUserId = null, string? documentNumber = null, CancellationToken cancellationToken = default)
     {
         await using var db = await CreateDbContextAsync(cancellationToken);
         var query = db.Sales.AsNoTracking().AsSplitQuery().Include(x => x.Lines).Include(x => x.Payments).Include(x => x.Receipts).Include(x => x.Returns).ThenInclude(x => x.Lines)
             .Where(x => (x.CreatedAtUtc >= from && x.CreatedAtUtc < to) || x.Returns.Any(credit => credit.CreatedAtUtc >= from && credit.CreatedAtUtc < to));
         if (warehouseId is { } warehouse) query = query.Where(x => x.WarehouseId == warehouse);
         if (sellerUserId is { } seller) query = query.Where(x => x.SellerUserId == seller);
+        if (!string.IsNullOrWhiteSpace(documentNumber))
+        {
+            var term = documentNumber.Trim();
+            query = query.Where(x => x.Number.Contains(term) || x.Returns.Any(credit => credit.Number.Contains(term)));
+        }
         return await query.ToListAsync(cancellationToken);
     }
 

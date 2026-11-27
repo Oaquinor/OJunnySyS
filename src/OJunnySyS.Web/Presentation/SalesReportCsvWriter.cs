@@ -17,6 +17,20 @@ public static class SalesReportCsvWriter
         foreach (var item in report.Payments) Row(csv, "Métodos de pago", "", item.Method, "", item.Sales, item.Total);
         foreach (var item in report.TopProducts) Row(csv, "Productos destacados", "", item.ProductName, item.Quantity, "", item.Revenue, item.Cost, item.GrossProfit, item.UncostedUnits);
         foreach (var item in report.Sellers ?? []) Row(csv, "Vendedores", "", item.SellerName, "", item.Sales, item.Revenue);
+        if (report.Documents is { Count: > 0 })
+        {
+            csv.AppendLine();
+            csv.AppendLine("Número,Documento relacionado,Tipo,Fecha,Cliente,Vendedor,Forma de pago,Subtotal,Impuestos,Total,Cobrado,Saldo actual");
+            foreach (var item in report.Documents)
+                csv.Append(Csv(item.Number)).Append(',').Append(Csv(item.RelatedSaleNumber ?? "")).Append(',').Append(Csv(item.Type)).Append(',')
+                    .Append(Csv(item.Date.ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture))).Append(',').Append(Csv(item.CustomerName)).Append(',')
+                    .Append(Csv(item.SellerName ?? "")).Append(',').Append(Csv(item.PaymentMethod)).Append(',')
+                    .Append(item.Subtotal.ToString("0.00", CultureInfo.InvariantCulture)).Append(',')
+                    .Append(item.TaxAmount.ToString("0.00", CultureInfo.InvariantCulture)).Append(',')
+                    .Append(item.Total.ToString("0.00", CultureInfo.InvariantCulture)).Append(',')
+                    .Append(item.Collected.ToString("0.00", CultureInfo.InvariantCulture)).Append(',')
+                    .Append(item.Balance.ToString("0.00", CultureInfo.InvariantCulture)).AppendLine();
+        }
 
         var content = Encoding.UTF8.GetBytes(csv.ToString());
         return [.. Encoding.UTF8.GetPreamble(), .. content];

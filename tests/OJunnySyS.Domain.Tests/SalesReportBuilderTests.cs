@@ -43,6 +43,12 @@ public sealed class SalesReportBuilderTests
         Assert.AreEqual(59m, report.Customers!.Single().Total);
         Assert.AreEqual(59m, report.Warehouses!.Single().Total);
         Assert.AreEqual(59m, report.DailySales.Single().Total);
+        Assert.AreEqual(2, report.Documents!.Count);
+        Assert.AreEqual("V-REPORT", report.Documents[0].Number);
+        Assert.AreEqual(118m, report.Documents[0].Total);
+        Assert.AreEqual("NC-REPORT", report.Documents[1].Number);
+        Assert.AreEqual(-59m, report.Documents[1].Total);
+        Assert.AreEqual("V-REPORT", report.Documents[1].RelatedSaleNumber);
     }
 
     private sealed class UtcBusinessClock : IBusinessClock

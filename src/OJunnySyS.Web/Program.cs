@@ -296,16 +296,16 @@ api.MapPost("/crm/activities/{id:guid}/complete", async (Guid id, CrmService crm
 }).RequireAuthorization("CrmWrite");
 api.MapGet("/sales", async (int? limit, StoreService store, CancellationToken ct) => Results.Ok(await store.GetRecentSalesAsync(limit ?? 50, ct))).RequireAuthorization("SalesRead");
 api.MapGet("/dashboard", async (StoreService store, CancellationToken ct) => Results.Ok(await store.GetDashboardAsync(ct)));
-api.MapGet("/reports/sales", async (DateOnly from, DateOnly to, Guid? warehouseId, Guid? sellerUserId, StoreService store, CancellationToken ct) =>
+api.MapGet("/reports/sales", async (DateOnly from, DateOnly to, Guid? warehouseId, Guid? sellerUserId, string? documentNumber, StoreService store, CancellationToken ct) =>
 {
-    try { return Results.Ok(await store.GetSalesReportAsync(from, to, warehouseId, sellerUserId, ct)); }
+    try { return Results.Ok(await store.GetSalesReportAsync(from, to, warehouseId, sellerUserId, documentNumber, ct)); }
     catch (DomainException ex) { return Results.ValidationProblem(new Dictionary<string, string[]> { ["period"] = [ex.Message] }); }
 }).RequireAuthorization("ReportsRead");
-api.MapGet("/reports/sales.csv", async (DateOnly from, DateOnly to, Guid? warehouseId, Guid? sellerUserId, StoreService store, CancellationToken ct) =>
+api.MapGet("/reports/sales.csv", async (DateOnly from, DateOnly to, Guid? warehouseId, Guid? sellerUserId, string? documentNumber, StoreService store, CancellationToken ct) =>
 {
     try
     {
-        var report = await store.GetSalesReportAsync(from, to, warehouseId, sellerUserId, ct);
+        var report = await store.GetSalesReportAsync(from, to, warehouseId, sellerUserId, documentNumber, ct);
         var fileName = $"ojunny-ventas-{from:yyyyMMdd}-{to:yyyyMMdd}.csv";
         return Results.File(SalesReportCsvWriter.Write(report), "text/csv; charset=utf-8", fileName);
     }

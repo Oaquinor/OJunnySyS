@@ -76,9 +76,18 @@ public static class SalesReportBuilder
                     groupIssued.Sum(x => x.Total) - groupReturns.Sum(x => x.Credit.Total));
             }).OrderByDescending(x => x.Total).ToArray();
 
+        var documents = issued.Select(sale => new SalesDocumentSummary(sale.Number, null, "Venta", sale.CreatedAtUtc,
+                sale.CustomerName, sale.SellerName, sale.Subtotal, sale.TaxAmount, sale.Total, sale.AmountPaid,
+                sale.BalanceDue, sale.Payments.Count == 0 ? "Crédito" : string.Join(" + ", sale.Payments.Select(x => x.MethodName).Distinct())))
+            .Concat(returns.Select(x => new SalesDocumentSummary(x.Credit.Number, x.Sale.Number, "Nota de crédito",
+                x.Credit.CreatedAtUtc, x.Sale.CustomerName, x.Sale.SellerName, -x.Credit.Subtotal, -x.Credit.TaxAmount,
+                -x.Credit.Total, -x.Credit.RefundAmount, 0m,
+                x.Credit.PaymentMethodName is { Length: > 0 } method ? $"Reembolso · {method}" : "Aplicada a cuenta")))
+            .OrderBy(x => x.Date).ThenBy(x => x.Number, StringComparer.Ordinal).ToArray();
+
         return new SalesReport(from, to, issued.Length,
             issued.Sum(x => x.Subtotal) - returns.Sum(x => x.Credit.Subtotal),
             issued.Sum(x => x.TaxAmount) - returns.Sum(x => x.Credit.TaxAmount),
-            issued.Sum(x => x.Total) - returns.Sum(x => x.Credit.Total), paymentBreakdown, productRows, dailySales, sellers, customers, warehouses);
+            issued.Sum(x => x.Total) - returns.Sum(x => x.Credit.Total), paymentBreakdown, productRows, dailySales, sellers, customers, warehouses, documents);
     }
 }

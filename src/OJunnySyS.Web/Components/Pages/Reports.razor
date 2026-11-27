@@ -22,8 +22,9 @@
     <label>Hasta<InputDate @bind-Value="_to" /></label>
     <label>Almacén<InputSelect @bind-Value="_warehouseId"><option value="">Todos los almacenes</option>@foreach (var warehouse in _warehouses) { <option value="@warehouse.Id">@warehouse.Name</option> }</InputSelect></label>
     <label>Vendedor<InputSelect @bind-Value="_sellerUserId"><option value="">Todos los vendedores</option>@foreach (var seller in _sellers) { <option value="@seller.Id">@seller.DisplayName</option> }</InputSelect></label>
+    <label>Número de venta o nota<InputText @bind-Value="_documentNumber" maxlength="64" placeholder="Ej. V-2026… o NC-…" /></label>
     <button class="button button-primary" @onclick="LoadAsync" disabled="@_loading">@(_loading ? "Generando…" : "Generar reporte")</button>
-    <small class="report-filter-note">Fechas en la zona horaria del negocio. Almacén y vendedor filtran las ventas; caja usa solo el período.</small>
+    <small class="report-filter-note">Fechas en la zona horaria del negocio. El número busca ventas y notas de crédito; el filtro de documento no altera el informe de caja.</small>
 </section>
 <div class="report-period">REPORTES OPERATIVOS <strong>Ventas · Caja y arqueos</strong></div>
 @if (!string.IsNullOrWhiteSpace(_error)) { <div class="inline-error">@_error</div> }
@@ -36,7 +37,19 @@
         <MetricCard Label="TOTAL COBRADO" Value="@DisplayFormat.Money(_report.Total)" Icon="▤" Tone="blue"><span class="muted-foot">Monto del período</span></MetricCard>
         <MetricCard Label="PROMEDIO POR VENTA" Value="@DisplayFormat.Money(Average)" Icon="◷" Tone="amber"><span class="muted-foot">Por transacción completada</span></MetricCard>
     </div>
-    @if (_report.SalesCount == 0)
+    @if (_report.Documents is { Count: > 0 })
+    {
+        <section class="panel report-document-panel">
+            <div class="panel-heading"><div><span class="eyebrow">DOCUMENTOS DEL PERÍODO</span><h2>Ventas y notas de crédito</h2><p>Importes netos de impuestos, cobros registrados y saldo actual por venta.</p></div><span class="result-count">@_report.Documents.Count documentos</span></div>
+            <div class="table-wrap"><table><thead><tr><th>NÚMERO</th><th>TIPO</th><th>FECHA</th><th>CLIENTE</th><th>VENDEDOR</th><th>FORMA DE PAGO</th><th class="align-right">SUBTOTAL</th><th class="align-right">IMPUESTO</th><th class="align-right">TOTAL</th><th class="align-right">COBRADO</th><th class="align-right">SALDO ACTUAL</th></tr></thead><tbody>
+            @foreach (var document in _report.Documents)
+            {
+                <tr><td class="mono"><strong>@document.Number</strong>@if (document.RelatedSaleNumber is not null) { <small class="bank-subline">Venta @document.RelatedSaleNumber</small> }</td><td>@document.Type</td><td>@Clock.ToBusinessTime(document.Date).ToString("dd/MM/yyyy HH:mm")</td><td>@document.CustomerName</td><td>@(document.SellerName ?? "—")</td><td>@document.PaymentMethod</td><td class="align-right">@Money(document.Subtotal)</td><td class="align-right">@Money(document.TaxAmount)</td><td class="align-right amount">@Money(document.Total)</td><td class="align-right">@Money(document.Collected)</td><td class="align-right">@Money(document.Balance)</td></tr>
+            }
+            </tbody></table></div>
+        </section>
+    }
+    @if (_report.Documents is null || _report.Documents.Count == 0)
     {
         <section class="panel"><EmptyState Icon="▤" Title="Sin ventas en este período" Description="Prueba con otras fechas o registra una venta desde el punto de venta." /></section>
     }
@@ -109,13 +122,15 @@
     private IReadOnlyList<WarehouseDto> _warehouses = [];
     private IReadOnlyList<TenantMemberDto> _sellers = [];
     private Guid? _warehouseId, _sellerUserId;
+    private string? _documentNumber;
     private string _currencyCode = "DOP";
     private string? _error;
     private bool _loading;
     private DateOnly Today => DateOnly.FromDateTime(Clock.ToBusinessTime(Clock.UtcNow).DateTime);
     private decimal Average => _report is null || _report.SalesCount == 0 ? 0 : decimal.Round(_report.Total / _report.SalesCount, 2);
     private string ExportUrl => $"/api/v1/reports/sales.csv?from={_from:yyyy-MM-dd}&to={_to:yyyy-MM-dd}" +
-        (_warehouseId is { } warehouse ? $"&warehouseId={warehouse}" : "") + (_sellerUserId is { } seller ? $"&sellerUserId={seller}" : "");
+        (_warehouseId is { } warehouse ? $"&warehouseId={warehouse}" : "") + (_sellerUserId is { } seller ? $"&sellerUserId={seller}" : "") +
+        (!string.IsNullOrWhiteSpace(_documentNumber) ? $"&documentNumber={Uri.EscapeDataString(_documentNumber.Trim())}" : "");
 
     protected override async Task OnInitializedAsync()
     {
@@ -131,7 +146,7 @@
     {
         _loading = true;
         _error = null;
-        try { _report = await Store.GetSalesReportAsync(_from, _to, _warehouseId, _sellerUserId); _cashReport = await Store.GetCashSessionReportAsync(_from, _to); }
+        try { _report = await Store.GetSalesReportAsync(_from, _to, _warehouseId, _sellerUserId, _documentNumber); _cashReport = await Store.GetCashSessionReportAsync(_from, _to); }
         catch (DomainException ex) { _report = null; _cashReport = null; _error = ex.Message; }
         finally { _loading = false; }
     }
