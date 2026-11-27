@@ -34,3 +34,9 @@
     background-color: #f4f6f3;
     color: #8c9890;
 }
+
+.app-shell .page-heading h1:focus {
+    border-radius: 6px;
+    outline: 2px solid #91c99d;
+    outline-offset: 4px;
+}

@@ -822,6 +822,10 @@ namespace OJunnySyS.Infrastructure.Persistence.Migrations
                     b.Property<int>("Status")
                         .HasColumnType("int");
 
+                    b.Property<decimal>("Subtotal")
+                        .HasPrecision(14, 2)
+                        .HasColumnType("decimal(14,2)");
+
                     b.Property<Guid>("SupplierId")
                         .HasColumnType("char(36)");
 
@@ -829,6 +833,10 @@ namespace OJunnySyS.Infrastructure.Persistence.Migrations
                         .IsRequired()
                         .HasMaxLength(160)
                         .HasColumnType("varchar(160)");
+
+                    b.Property<decimal>("TaxAmount")
+                        .HasPrecision(14, 2)
+                        .HasColumnType("decimal(14,2)");
 
                     b.Property<Guid>("TenantId")
                         .HasColumnType("char(36)");
@@ -888,6 +896,10 @@ namespace OJunnySyS.Infrastructure.Persistence.Migrations
                         .IsRequired()
                         .HasMaxLength(40)
                         .HasColumnType("varchar(40)");
+
+                    b.Property<decimal>("TaxRate")
+                        .HasPrecision(5, 4)
+                        .HasColumnType("decimal(5,4)");
 
                     b.Property<decimal>("UnitCost")
                         .HasPrecision(12, 2)

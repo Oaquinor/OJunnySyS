@@ -172,6 +172,6 @@ public sealed class StoreService(IStoreRepository repository, IBusinessClock clo
         sale.Payments.Count == 0 ? null : string.Join(" + ", sale.Payments.Select(x => x.MethodName).Distinct()), sale.SellerName);
     private static SupplierDto Map(Supplier supplier) => new(supplier.Id, supplier.Name, supplier.TaxIdentifier, supplier.Email, supplier.Phone, supplier.Notes, supplier.Revision);
     private static PurchaseOrderDto Map(PurchaseOrder order) => new(order.Id, order.Number, order.SupplierName, order.Reference, order.DueDate, order.Status, order.Total, order.AmountPaid, order.BalanceDue, order.CreatedAtUtc,
-        order.Lines.Select(x => new PurchaseLineDto(x.Id, x.ProductId, x.Sku, x.ProductName, x.Quantity, x.ReceivedQuantity, x.UnitCost, x.LineTotal)).ToArray(),
-        order.Payments.OrderByDescending(x => x.CreatedAtUtc).Select(x => new SupplierPaymentDto(x.Id, x.IdempotencyKey, x.Amount, x.Method, x.Reference, x.PaidByUserId, x.CreatedAtUtc)).ToArray(), order.WarehouseId);
+        order.Lines.Select(x => new PurchaseLineDto(x.Id, x.ProductId, x.Sku, x.ProductName, x.Quantity, x.ReceivedQuantity, x.UnitCost, x.LineTotal, x.TaxRate, x.TaxAmount)).ToArray(),
+        order.Payments.OrderByDescending(x => x.CreatedAtUtc).Select(x => new SupplierPaymentDto(x.Id, x.IdempotencyKey, x.Amount, x.Method, x.Reference, x.PaidByUserId, x.CreatedAtUtc)).ToArray(), order.WarehouseId, order.Subtotal, order.TaxAmount);
 }

@@ -20,13 +20,15 @@ public sealed class PurchaseOrder : TenantEntity
         _lines.AddRange(lines);
         if (_lines.Count == 0) throw new DomainException("La compra debe incluir al menos un producto.");
         if (_lines.Count > 200) throw new DomainException("Una orden no puede incluir más de 200 productos distintos.");
-        if (_lines.Select(x => x.ProductId).Distinct().Count() != _lines.Count) throw new DomainException("Consolida las líneas duplicadas del mismo producto.");
+        if (_lines.Select(x => (x.ProductId, x.TaxRate)).Distinct().Count() != _lines.Count) throw new DomainException("Consolida las líneas duplicadas del mismo producto y tasa de impuesto.");
         Number = number.Trim(); SupplierId = supplier.Id; SupplierName = supplier.Name;
         Reference = string.IsNullOrWhiteSpace(reference) ? null : reference.Trim();
         DueDate = dueDate;
         WarehouseId = warehouseId;
         Status = PurchaseStatus.Draft;
-        Total = decimal.Round(_lines.Sum(x => x.LineTotal), 2);
+        Subtotal = _lines.Sum(x => x.LineTotal);
+        TaxAmount = _lines.Sum(x => x.TaxAmount);
+        Total = Subtotal + TaxAmount;
         if (Total > 999999999999.99m) throw new DomainException("El total de la compra supera el máximo permitido.");
     }
 
@@ -37,6 +39,8 @@ public sealed class PurchaseOrder : TenantEntity
     public DateOnly? DueDate { get; private set; }
     public Guid WarehouseId { get; private set; }
     public PurchaseStatus Status { get; private set; }
+    public decimal Subtotal { get; private set; }
+    public decimal TaxAmount { get; private set; }
     public decimal Total { get; private set; }
     public IReadOnlyCollection<PurchaseOrderLine> Lines => _lines;
     public IReadOnlyCollection<SupplierPayment> Payments => _payments;
@@ -109,14 +113,15 @@ public sealed class SupplierPayment : TenantEntity
 public sealed class PurchaseOrderLine
 {
     private PurchaseOrderLine() { }
-    public PurchaseOrderLine(Guid productId, string sku, string productName, int quantity, decimal unitCost)
+    public PurchaseOrderLine(Guid productId, string sku, string productName, int quantity, decimal unitCost, decimal taxRate = 0m)
     {
         if (productId == Guid.Empty) throw new DomainException("El producto de la compra es obligatorio.");
         if (string.IsNullOrWhiteSpace(sku) || sku.Length > 40 || string.IsNullOrWhiteSpace(productName) || productName.Length > 160) throw new DomainException("Los datos del producto de la compra no son válidos.");
         if (quantity <= 0) throw new DomainException("La cantidad comprada debe ser mayor que cero.");
         if (unitCost is < 0 or > 9999999999.99m) throw new DomainException("El costo unitario debe estar entre 0 y 9,999,999,999.99.");
+        if (taxRate is < 0 or > 1) throw new DomainException("La tasa de impuesto del artículo debe estar entre 0 y 100 por ciento.");
         ProductId = productId; Sku = sku; ProductName = productName;
-        Quantity = quantity; UnitCost = decimal.Round(unitCost, 2);
+        Quantity = quantity; UnitCost = decimal.Round(unitCost, 2); TaxRate = taxRate;
         LineTotal = decimal.Round(UnitCost * quantity, 2);
         if (LineTotal > 999999999999.99m) throw new DomainException("El importe de la línea supera el máximo permitido.");
     }
@@ -130,6 +135,8 @@ public sealed class PurchaseOrderLine
     public int ReceivedQuantity { get; private set; }
     public decimal UnitCost { get; private set; }
     public decimal LineTotal { get; private set; }
+    public decimal TaxRate { get; private set; }
+    public decimal TaxAmount => decimal.Round(LineTotal * TaxRate, 2, MidpointRounding.AwayFromZero);
     public bool IsFullyReceived => ReceivedQuantity == Quantity;
 
     internal void Receive(int quantity)

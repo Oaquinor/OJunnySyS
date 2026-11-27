@@ -271,6 +271,8 @@ public sealed class StoreDbContext(DbContextOptions<StoreDbContext> options)
             entity.Property(x => x.SupplierName).HasMaxLength(160).IsRequired();
             entity.Property(x => x.Reference).HasMaxLength(100);
             entity.HasOne<Warehouse>().WithMany().HasForeignKey(x => new { x.TenantId, x.WarehouseId }).HasPrincipalKey(x => new { x.TenantId, x.Id }).OnDelete(DeleteBehavior.Restrict);
+            entity.Property(x => x.Subtotal).HasPrecision(14, 2);
+            entity.Property(x => x.TaxAmount).HasPrecision(14, 2);
             entity.Property(x => x.Total).HasPrecision(14, 2);
             entity.HasMany<PurchaseOrderLine>(nameof(PurchaseOrder.Lines)).WithOne().HasForeignKey(line => line.PurchaseOrderId).OnDelete(DeleteBehavior.Cascade);
             entity.Navigation(nameof(PurchaseOrder.Lines)).UsePropertyAccessMode(PropertyAccessMode.Field);
@@ -284,6 +286,7 @@ public sealed class StoreDbContext(DbContextOptions<StoreDbContext> options)
             entity.Property(x => x.ProductName).HasMaxLength(160).IsRequired();
             entity.Property(x => x.UnitCost).HasPrecision(12, 2);
             entity.Property(x => x.LineTotal).HasPrecision(14, 2);
+            entity.Property(x => x.TaxRate).HasPrecision(5, 4);
         });
 
         modelBuilder.Entity<InventoryMovement>(entity =>

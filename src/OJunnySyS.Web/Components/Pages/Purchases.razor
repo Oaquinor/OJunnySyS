@@ -5,6 +5,7 @@
 @inject AuthenticationStateProvider AuthenticationStateProvider
 @inject PosRegisterService PosRegisters
 @inject WarehouseService WarehouseService
+@inject TenantSettingsService TenantSettings
 
 <PageTitle>Compras · OJunnySyS</PageTitle>
 <PageHeader Eyebrow="ABASTECIMIENTO" Title="Compras y proveedores" Description="Organiza las órdenes, registra recepciones y mantén el inventario trazable." />
@@ -22,8 +23,8 @@
     <section class="panel list-panel">
         <div class="modal-heading"><div><span class="eyebrow">NUEVA ORDEN</span><h2>Preparar compra</h2><p>La orden no aumenta existencias hasta recibir los artículos.</p></div></div>
         <EditForm Model="_purchaseForm" OnValidSubmit="CreatePurchaseAsync"><DataAnnotationsValidator />
-            <div class="form-grid"><label>Proveedor<InputSelect @bind-Value="_purchaseForm.SupplierId"><option value="">Selecciona proveedor</option>@foreach (var supplier in _suppliers) { <option value="@supplier.Id">@supplier.Name</option> }</InputSelect></label><label>Almacén de recepción<InputSelect @bind-Value="_purchaseForm.WarehouseId"><option value="">Selecciona almacén</option>@foreach (var warehouse in _warehouses) { <option value="@warehouse.Id">@warehouse.Name</option> }</InputSelect></label><label>Referencia del proveedor <span class="optional">Opcional</span><InputText @bind-Value="_purchaseForm.Reference" placeholder="Factura o referencia" /></label><label>Vencimiento de factura <span class="optional">Opcional</span><InputDate @bind-Value="_purchaseForm.DueDate" /></label><label>Producto<InputSelect @bind-Value="_selectedProductId"><option value="">Selecciona producto</option>@foreach (var product in _products) { <option value="@product.Id">@product.Name · @product.Sku</option> }</InputSelect></label><label>Cantidad<InputNumber @bind-Value="_lineQuantity" min="1" /></label><label>Costo unitario<InputNumber @bind-Value="_unitCost" min="0" step="0.01" /></label><div class="form-action"><button type="button" class="button button-secondary" @onclick="AddLine">Agregar línea</button></div></div>
-            @if (_draftLines.Count > 0) { <div class="table-wrap"><table><thead><tr><th>PRODUCTO</th><th>CANTIDAD</th><th class="align-right">COSTO</th><th></th></tr></thead><tbody>@foreach (var line in _draftLines) { <tr><td>@line.ProductName</td><td>@line.Quantity</td><td class="align-right">@Money(line.UnitCost)</td><td><button type="button" class="icon-button" @onclick="() => RemoveLine(line.ProductId)" aria-label="Quitar producto">×</button></td></tr> }</tbody></table></div><div class="purchase-total"><span>Total estimado</span><strong>@Money(_draftLines.Sum(x => x.Quantity * x.UnitCost))</strong></div> }
+            <div class="form-grid"><label>Proveedor<InputSelect disabled="@(_suppliers.Count == 0)" @bind-Value="_purchaseForm.SupplierId"><option value="">@(_suppliers.Count == 0 ? "Primero agrega un proveedor" : "Selecciona proveedor")</option>@foreach (var supplier in _suppliers) { <option value="@supplier.Id">@supplier.Name</option> }</InputSelect></label><label>Almacén de recepción<InputSelect @bind-Value="_purchaseForm.WarehouseId"><option value="">Selecciona almacén</option>@foreach (var warehouse in _warehouses) { <option value="@warehouse.Id">@warehouse.Name</option> }</InputSelect></label><label>Referencia del proveedor <span class="optional">Opcional</span><InputText @bind-Value="_purchaseForm.Reference" placeholder="Factura o referencia" /></label><label>Vencimiento de factura <span class="optional">Opcional</span><InputDate @bind-Value="_purchaseForm.DueDate" /></label><label>Producto<InputSelect @bind-Value="_selectedProductId"><option value="">Selecciona producto</option>@foreach (var product in _products) { <option value="@product.Id">@product.Name · @product.Sku</option> }</InputSelect></label><label>Cantidad<InputNumber @bind-Value="_lineQuantity" min="1" /></label><label>Costo unitario<InputNumber @bind-Value="_unitCost" min="0" step="0.01" /></label><label>Impuesto del comprobante (%)<InputNumber @bind-Value="_taxRatePercent" @bind-Value:format="0.##" min="0" max="100" step="0.01" /></label><div class="form-action"><button type="button" class="button button-secondary" @onclick="AddLine">Agregar línea</button></div></div>
+            @if (_draftLines.Count > 0) { <div class="table-wrap"><table><thead><tr><th>PRODUCTO</th><th>CANTIDAD</th><th>IMPUESTO</th><th class="align-right">IMPORTE</th><th></th></tr></thead><tbody>@foreach (var line in _draftLines) { <tr><td>@line.ProductName<br /><small>@Money(line.UnitCost) por unidad</small></td><td>@line.Quantity</td><td>@($"{line.TaxRate * 100m:0.##}% · {Money(DraftLineTax(line))}")</td><td class="align-right">@Money(line.LineTotal + DraftLineTax(line))</td><td><button type="button" class="icon-button" @onclick="() => RemoveLine(line.ProductId, line.TaxRate)" aria-label="Quitar producto">×</button></td></tr> }</tbody></table></div><div class="purchase-total purchase-total-breakdown"><div><span>Subtotal</span><strong>@Money(DraftSubtotal)</strong></div><div><span>Impuesto</span><strong>@Money(DraftTax)</strong></div><div class="purchase-total-final"><span>Total estimado</span><strong>@Money(DraftTotal)</strong></div></div> }
             @if (!string.IsNullOrWhiteSpace(_error)) { <div class="inline-error">@_error</div> }<button class="button button-primary" type="submit" disabled="@(_saving || _draftLines.Count == 0 || _purchaseForm.SupplierId == Guid.Empty)">Crear orden</button>
         </EditForm>
     </section>
@@ -37,7 +38,7 @@
 
 <section class="panel list-panel purchase-orders"><div class="modal-heading"><div><span class="eyebrow">REGISTRO Y RECEPCIÓN</span><h2>Órdenes recientes</h2><p>Las recepciones actualizan el stock y quedan registradas como movimientos de inventario.</p></div></div>
     @if (_orders.Count == 0) { <EmptyState Icon="↗" Title="Aún no hay órdenes de compra" Description="Crea una orden para iniciar el abastecimiento de tu negocio." /> }
-    else { <div class="table-wrap"><table><thead><tr><th>ORDEN</th><th>PROVEEDOR</th><th>ESTADO</th><th class="align-right">TOTAL</th><th>PAGADO / SALDO</th><th>PRODUCTOS / RECEPCIÓN</th></tr></thead><tbody>@foreach (var order in _orders) { <tr><td><strong class="mono">@order.Number</strong><br /><small>@order.CreatedAtUtc.ToLocalTime().ToString("dd MMM yyyy") · Vence @(order.DueDate?.ToString("dd/MM/yyyy") ?? "Sin fecha")</small>@if (order.Status == PurchaseStatus.Draft && order.Payments.Count == 0) { <button class="button button-secondary button-small cancel-order-button" @onclick="() => _cancelOrder = order">Cancelar orden</button> }</td><td>@order.SupplierName<br /><small>@(order.Reference ?? "Sin referencia") · @WarehouseName(order.WarehouseId)</small></td><td><span class="status-pill @(order.Status == PurchaseStatus.Received ? "" : "status-warning")"><i></i>@StatusLabel(order.Status)</span></td><td class="align-right amount">@Money(order.Total)</td><td class="payable-cell"><strong>Saldo: @Money(order.BalanceDue)</strong><small>Abonado: @Money(order.AmountPaid)</small>@if (order.Payments.Count > 0) { <details><summary>@order.Payments.Count pago(s)</summary>@foreach (var payment in order.Payments) { <span>@Money(payment.Amount) · @PaymentMethodLabel(payment.Method) · @payment.CreatedAtUtc.ToLocalTime().ToString("dd/MM/yy HH:mm")</span> }</details> }<AuthorizeView Roles="Administrator,Manager"><Authorized><button class="button button-secondary button-small" @onclick="() => OpenPayment(order)" disabled="@(order.BalanceDue <= 0 || _saving)">Registrar abono</button></Authorized></AuthorizeView></td><td><div class="purchase-lines">@foreach (var line in order.Lines) { <div class="purchase-line"><span>@line.ProductName <small>(@line.ReceivedQuantity/@line.Quantity)</small></span>@if (order.Status is PurchaseStatus.Draft or PurchaseStatus.PartiallyReceived) { <div><InputNumber class="receive-quantity" @bind-Value="_receiveQuantities[line.Id]" min="1" max="@(line.Quantity - line.ReceivedQuantity)" /><button class="button button-secondary" @onclick="() => ReceiveAsync(order.Id, line.Id)" disabled="@(_saving || line.ReceivedQuantity >= line.Quantity)">Recibir</button></div> }</div> }</div></td></tr> }</tbody></table></div> }
+    else { <div class="table-wrap"><table><thead><tr><th>ORDEN</th><th>PROVEEDOR</th><th>ESTADO</th><th class="align-right">TOTAL CON IMPUESTO</th><th>PAGADO / SALDO</th><th>PRODUCTOS / RECEPCIÓN</th></tr></thead><tbody>@foreach (var order in _orders) { <tr><td><strong class="mono">@order.Number</strong><br /><small>@order.CreatedAtUtc.ToLocalTime().ToString("dd MMM yyyy") · Vence @(order.DueDate?.ToString("dd/MM/yyyy") ?? "Sin fecha")</small>@if (order.Status == PurchaseStatus.Draft && order.Payments.Count == 0) { <button class="button button-secondary button-small cancel-order-button" @onclick="() => _cancelOrder = order">Cancelar orden</button> }</td><td>@order.SupplierName<br /><small>@(order.Reference ?? "Sin referencia") · @WarehouseName(order.WarehouseId)</small></td><td><span class="status-pill @(order.Status == PurchaseStatus.Received ? "" : "status-warning")"><i></i>@StatusLabel(order.Status)</span></td><td class="align-right amount">@Money(order.Total)<small class="purchase-total-note">Subt. @Money(order.Subtotal) · Imp. @Money(order.TaxAmount)</small></td><td class="payable-cell"><strong>Saldo: @Money(order.BalanceDue)</strong><small>Abonado: @Money(order.AmountPaid)</small>@if (order.Payments.Count > 0) { <details><summary>@order.Payments.Count pago(s)</summary>@foreach (var payment in order.Payments) { <span>@Money(payment.Amount) · @PaymentMethodLabel(payment.Method) · @payment.CreatedAtUtc.ToLocalTime().ToString("dd/MM/yy HH:mm")</span> }</details> }<AuthorizeView Roles="Administrator,Manager"><Authorized><button class="button button-secondary button-small" @onclick="() => OpenPayment(order)" disabled="@(order.BalanceDue <= 0 || _saving)">Registrar abono</button></Authorized></AuthorizeView></td><td><div class="purchase-lines">@foreach (var line in order.Lines) { <div class="purchase-line"><span>@line.ProductName <small>(@line.ReceivedQuantity/@line.Quantity) · Impuesto @($"{line.TaxRate * 100m:0.##}%") · @Money(line.TaxAmount)</small></span>@if (order.Status is PurchaseStatus.Draft or PurchaseStatus.PartiallyReceived) { <div><InputNumber class="receive-quantity" @bind-Value="_receiveQuantities[line.Id]" min="1" max="@(line.Quantity - line.ReceivedQuantity)" /><button class="button button-secondary" @onclick="() => ReceiveAsync(order.Id, line.Id)" disabled="@(_saving || line.ReceivedQuantity >= line.Quantity)">Recibir</button></div> }</div> }</div></td></tr> }</tbody></table></div> }
 </section>
 @if (!string.IsNullOrWhiteSpace(_notice)) { <div class="toast">✓ @_notice</div> }
 
@@ -60,6 +61,11 @@
     private Guid _selectedProductId;
     private int _lineQuantity = 1;
     private decimal _unitCost;
+    private decimal _defaultTaxRate = 0.18m;
+    private decimal _taxRatePercent = 18m;
+    private decimal DraftSubtotal => _draftLines.Sum(x => x.LineTotal);
+    private decimal DraftTax => _draftLines.Sum(DraftLineTax);
+    private decimal DraftTotal => DraftSubtotal + DraftTax;
     private bool _saving;
     private PurchaseOrderDto? _paymentOrder;
     private SupplierPaymentForm _paymentForm = new();
@@ -71,6 +77,8 @@
 
     protected override async Task OnInitializedAsync()
     {
+        _defaultTaxRate = (await TenantSettings.GetAsync()).DefaultTaxRate;
+        _taxRatePercent = decimal.Round(_defaultTaxRate * 100m, 2);
         _warehouses = (await WarehouseService.GetAsync(includeInactive: false)).ToList();
         _purchaseForm.WarehouseId = _warehouses.FirstOrDefault(x => x.Code == "MAIN")?.Id ?? _warehouses.FirstOrDefault()?.Id ?? Guid.Empty;
         _registers = (await PosRegisters.GetRegistersAsync(includeInactive: false)).ToList();
@@ -166,29 +174,31 @@
     private void AddLine()
     {
         _error = null;
-        if (_selectedProductId == Guid.Empty || _lineQuantity <= 0 || _unitCost < 0) { _error = "Selecciona un producto, cantidad y costo válidos."; return; }
+        if (_selectedProductId == Guid.Empty || _lineQuantity <= 0 || _unitCost < 0 || _taxRatePercent is < 0 or > 100) { _error = "Selecciona un producto, cantidad, costo e impuesto válidos."; return; }
         var product = _products.Single(x => x.Id == _selectedProductId);
-        var existing = _draftLines.FindIndex(x => x.ProductId == product.Id);
+        var taxRate = _taxRatePercent / 100m;
+        var existing = _draftLines.FindIndex(x => x.ProductId == product.Id && x.TaxRate == taxRate);
         if (existing >= 0)
         {
             if (_draftLines[existing].UnitCost != decimal.Round(_unitCost, 2)) { _error = "Consolida el producto con un solo costo unitario."; return; }
             _draftLines[existing] = _draftLines[existing] with { Quantity = _draftLines[existing].Quantity + _lineQuantity };
         }
-        else _draftLines.Add(new PurchaseDraftLine(product.Id, product.Name, _lineQuantity, decimal.Round(_unitCost, 2)));
-        _selectedProductId = Guid.Empty; _lineQuantity = 1; _unitCost = 0;
+        else _draftLines.Add(new PurchaseDraftLine(product.Id, product.Name, _lineQuantity, decimal.Round(_unitCost, 2), taxRate));
+        _selectedProductId = Guid.Empty; _lineQuantity = 1; _unitCost = 0; _taxRatePercent = decimal.Round(_defaultTaxRate * 100m, 2);
     }
 
-    private void RemoveLine(Guid productId) => _draftLines.RemoveAll(x => x.ProductId == productId);
+    private void RemoveLine(Guid productId, decimal taxRate) => _draftLines.RemoveAll(x => x.ProductId == productId && x.TaxRate == taxRate);
+    private static decimal DraftLineTax(PurchaseDraftLine line) => decimal.Round(line.LineTotal * line.TaxRate, 2, MidpointRounding.AwayFromZero);
 
     private async Task CreatePurchaseAsync()
     {
         _saving = true; _error = null;
         try
         {
-            var lines = _draftLines.Select(x => new CreatePurchaseLineRequest(x.ProductId, x.Quantity, x.UnitCost)).ToArray();
+            var lines = _draftLines.Select(x => new CreatePurchaseLineRequest(x.ProductId, x.Quantity, x.UnitCost, x.TaxRate)).ToArray();
             var warehouseName = WarehouseName(_purchaseForm.WarehouseId);
             await Store.CreatePurchaseOrderAsync(new CreatePurchaseOrderRequest(_purchaseForm.SupplierId, _purchaseForm.Reference, lines, _purchaseForm.DueDate, _purchaseForm.WarehouseId));
-            _draftLines.Clear(); _purchaseForm = new() { WarehouseId = _warehouses.FirstOrDefault(x => x.Code == "MAIN")?.Id ?? Guid.Empty }; _notice = $"Orden creada para {warehouseName}; el inventario cambia al recibir los productos."; await LoadAsync();
+            _draftLines.Clear(); _purchaseForm = new() { WarehouseId = _warehouses.FirstOrDefault(x => x.Code == "MAIN")?.Id ?? Guid.Empty }; _taxRatePercent = decimal.Round(_defaultTaxRate * 100m, 2); _notice = $"Orden creada para {warehouseName}; el inventario cambia al recibir los productos."; await LoadAsync();
         }
         catch (DomainException ex) { _error = ex.Message; }
         catch (Exception ex) { Logger.LogError(ex, "No se pudo crear la orden de compra."); _error = "No se pudo crear la orden de compra."; }
@@ -213,7 +223,7 @@
     private static string AgingLabel(PayableAgingBucket bucket) => bucket switch { PayableAgingBucket.NoDueDate => "Sin vencimiento", PayableAgingBucket.Current => "Vigente", PayableAgingBucket.Days1To30 => "1–30 días", PayableAgingBucket.Days31To60 => "31–60 días", PayableAgingBucket.Days61To90 => "61–90 días", _ => "Más de 90 días" };
     private static string Money(decimal value) => DisplayFormat.Money(value);
 
-    private sealed record PurchaseDraftLine(Guid ProductId, string ProductName, int Quantity, decimal UnitCost);
+    private sealed record PurchaseDraftLine(Guid ProductId, string ProductName, int Quantity, decimal UnitCost, decimal TaxRate) { public decimal LineTotal => decimal.Round(UnitCost * Quantity, 2, MidpointRounding.AwayFromZero); }
     private sealed class SupplierForm { [System.ComponentModel.DataAnnotations.Required(ErrorMessage = "El nombre es obligatorio.")] public string Name { get; set; } = ""; public string? TaxIdentifier { get; set; } [System.ComponentModel.DataAnnotations.EmailAddress(ErrorMessage = "El correo no es válido.")] public string Email { get; set; } = ""; public string Phone { get; set; } = ""; [System.ComponentModel.DataAnnotations.StringLength(1000)] public string? Notes { get; set; } }
     private string WarehouseName(Guid id) => _warehouses.FirstOrDefault(x => x.Id == id)?.Name ?? "almacén seleccionado";
     private sealed class PurchaseForm { public Guid SupplierId { get; set; } public Guid WarehouseId { get; set; } [System.ComponentModel.DataAnnotations.StringLength(100)] public string? Reference { get; set; } public DateOnly? DueDate { get; set; } }

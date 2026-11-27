@@ -543,8 +543,8 @@ public sealed class EfStoreRepository(IDbContextFactory<StoreDbContext> contextF
     public async Task<PurchaseOrder> CreatePurchaseOrderAsync(CreatePurchaseOrderRequest request, CancellationToken cancellationToken = default)
     {
         if (request.Lines.Count == 0) throw new DomainException("Agrega productos antes de guardar la compra.");
-        if (request.Lines.Count > 200 || request.Lines.Any(x => x.ProductId == Guid.Empty || x.Quantity <= 0 || x.UnitCost < 0))
-            throw new DomainException("La compra debe tener hasta 200 líneas con productos, cantidades y costos válidos.");
+        if (request.Lines.Count > 200 || request.Lines.Any(x => x.ProductId == Guid.Empty || x.Quantity <= 0 || x.UnitCost < 0 || x.TaxRate is < 0 or > 1))
+            throw new DomainException("La compra debe tener hasta 200 líneas con productos, cantidades, costos e impuestos válidos.");
         var tenantId = tenantContext.GetRequiredTenantId();
         await using var db = await CreateDbContextAsync(cancellationToken);
         await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
@@ -556,15 +556,15 @@ public sealed class EfStoreRepository(IDbContextFactory<StoreDbContext> contextF
         if (!await db.Warehouses.AnyAsync(x => x.Id == warehouseId && x.IsActive, cancellationToken))
             throw new DomainException("Selecciona un almacén activo para recibir la compra.");
         var lines = new List<PurchaseOrderLine>();
-        foreach (var grouped in request.Lines.GroupBy(x => x.ProductId).OrderBy(x => x.Key))
+        foreach (var grouped in request.Lines.GroupBy(x => new { x.ProductId, x.TaxRate }).OrderBy(x => x.Key.ProductId).ThenBy(x => x.Key.TaxRate))
         {
             var quantity = SumQuantities(grouped.Select(x => x.Quantity));
             if (quantity <= 0) throw new DomainException("La cantidad comprada debe ser mayor que cero.");
             var distinctCosts = grouped.Select(x => decimal.Round(x.UnitCost, 2)).Distinct().ToArray();
             if (distinctCosts.Length != 1) throw new DomainException("Las líneas repetidas del producto deben tener el mismo costo.");
-            var product = await db.Products.FromSqlInterpolated($"SELECT * FROM Products WHERE Id = {grouped.Key} AND TenantId = {tenantId} AND IsActive = 1 FOR UPDATE").SingleOrDefaultAsync(cancellationToken)
+            var product = await db.Products.FromSqlInterpolated($"SELECT * FROM Products WHERE Id = {grouped.Key.ProductId} AND TenantId = {tenantId} AND IsActive = 1 FOR UPDATE").SingleOrDefaultAsync(cancellationToken)
                 ?? throw new DomainException("Uno de los productos ya no está disponible.");
-            lines.Add(new PurchaseOrderLine(product.Id, product.Sku, product.Name, quantity, distinctCosts[0]));
+            lines.Add(new PurchaseOrderLine(product.Id, product.Sku, product.Name, quantity, distinctCosts[0], grouped.Key.TaxRate));
         }
         var number = $"C-{DateTimeOffset.UtcNow:yyyyMMddHHmmss}-{Guid.NewGuid():N}";
         var order = new PurchaseOrder(tenantId, number, supplier, lines, request.Reference, request.DueDate, warehouseId);

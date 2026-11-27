@@ -21,11 +21,11 @@ public sealed record ProductSalesSummary(string ProductName, int Quantity, decim
 public sealed record SellerSalesSummary(string SellerName, int Sales, decimal Revenue);
 public sealed record DailySalesSummary(DateOnly Date, decimal Total);
 public sealed record SupplierDto(Guid Id, string Name, string? TaxIdentifier, string Email, string Phone, string? Notes, long Revision);
-public sealed record PurchaseLineDto(Guid Id, Guid ProductId, string Sku, string ProductName, int Quantity, int ReceivedQuantity, decimal UnitCost, decimal LineTotal);
-public sealed record PurchaseOrderDto(Guid Id, string Number, string SupplierName, string? Reference, DateOnly? DueDate, PurchaseStatus Status, decimal Total, decimal AmountPaid, decimal BalanceDue, DateTimeOffset CreatedAtUtc, IReadOnlyList<PurchaseLineDto> Lines, IReadOnlyList<SupplierPaymentDto> Payments, Guid WarehouseId);
+public sealed record PurchaseLineDto(Guid Id, Guid ProductId, string Sku, string ProductName, int Quantity, int ReceivedQuantity, decimal UnitCost, decimal LineTotal, decimal TaxRate = 0m, decimal TaxAmount = 0m);
+public sealed record PurchaseOrderDto(Guid Id, string Number, string SupplierName, string? Reference, DateOnly? DueDate, PurchaseStatus Status, decimal Total, decimal AmountPaid, decimal BalanceDue, DateTimeOffset CreatedAtUtc, IReadOnlyList<PurchaseLineDto> Lines, IReadOnlyList<SupplierPaymentDto> Payments, Guid WarehouseId, decimal Subtotal = 0m, decimal TaxAmount = 0m);
 public sealed record CreateSupplierRequest(string Name, string? TaxIdentifier, string Email, string Phone, string? Notes);
 public sealed record UpdateSupplierRequest(string Name, string? TaxIdentifier, string Email, string Phone, string? Notes, long ExpectedRevision);
-public sealed record CreatePurchaseLineRequest(Guid ProductId, int Quantity, decimal UnitCost);
+public sealed record CreatePurchaseLineRequest(Guid ProductId, int Quantity, decimal UnitCost, decimal TaxRate = 0m);
 public sealed record CreatePurchaseOrderRequest(Guid SupplierId, string? Reference, IReadOnlyCollection<CreatePurchaseLineRequest> Lines, DateOnly? DueDate = null, Guid WarehouseId = default);
 public sealed record InventoryTransferRequest(Guid ProductId, Guid SourceWarehouseId, Guid DestinationWarehouseId, int Quantity, string? Reference = null);
 public sealed record InventoryTransferResult(string Reference, int Quantity, Guid ProductId, Guid SourceWarehouseId, int SourceBalance, Guid DestinationWarehouseId, int DestinationBalance);
