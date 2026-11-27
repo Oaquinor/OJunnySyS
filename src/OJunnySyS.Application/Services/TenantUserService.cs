@@ -7,6 +7,7 @@ public sealed class TenantUserService(ITenantUserRepository repository)
 {
     public Task<IReadOnlyList<TenantUserDto>> GetUsersAsync(CancellationToken ct = default) => repository.GetUsersAsync(ct);
     public Task<IReadOnlyList<TenantMemberDto>> GetActiveMembersAsync(CancellationToken ct = default) => repository.GetActiveMembersAsync(ct);
+    public Task<IReadOnlyList<TenantMemberDto>> GetActiveSalespeopleAsync(CancellationToken ct = default) => repository.GetActiveSalespeopleAsync(ct);
     public Task<ProvisionedTenantUserDto> CreateAsync(CreateTenantUserRequest request, CancellationToken ct = default)
     {
         if (string.IsNullOrWhiteSpace(request.DisplayName) || request.DisplayName.Trim().Length > 160)

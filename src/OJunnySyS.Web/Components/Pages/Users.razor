@@ -37,7 +37,7 @@
     <EditForm Model="_form" OnValidSubmit="CreateAsync"><DataAnnotationsValidator /><div class="form-grid">
         <label>Nombre completo<InputText @bind-Value="_form.DisplayName" maxlength="160" autocomplete="name" /></label>
         <label>Correo electrónico<InputText @bind-Value="_form.Email" type="email" maxlength="254" autocomplete="email" /></label>
-        <label class="full-span">Rol de acceso<InputSelect @bind-Value="_form.Role"><option value="Manager">Gerente</option><option value="Cashier">Cajero</option><option value="PurchasingAgent">Compras</option><option value="Administrator">Administrador</option></InputSelect></label>
+        <label class="full-span">Rol de acceso<InputSelect @bind-Value="_form.Role"><option value="Salesperson">Vendedor</option><option value="Manager">Gerente</option><option value="Cashier">Cajero</option><option value="PurchasingAgent">Compras</option><option value="Administrator">Administrador</option></InputSelect></label>
     </div><ValidationSummary />@if (!string.IsNullOrWhiteSpace(_error)) { <div class="inline-error">@_error</div> }
     <div class="modal-actions"><button type="button" class="button button-secondary" @onclick="CloseForm">Cancelar</button><button type="submit" class="button button-primary" disabled="@_saving">@(_saving ? "Creando…" : "Crear acceso")</button></div></EditForm>
 </section></div> }
@@ -85,6 +85,6 @@
     }
     private void DismissPassword() { _provisioned = null; _copyNotice = null; }
     private static string Initials(string name) => string.Concat(name.Split(' ', StringSplitOptions.RemoveEmptyEntries).Take(2).Select(x => char.ToUpperInvariant(x[0])));
-    private static string RoleLabel(string role) => role switch { "Administrator" => "Administrador", "Manager" => "Gerente", "Cashier" => "Cajero", "PurchasingAgent" => "Compras", _ => role };
+    private static string RoleLabel(string role) => role switch { "Administrator" => "Administrador", "Manager" => "Gerente", "Salesperson" => "Vendedor", "Cashier" => "Cajero", "PurchasingAgent" => "Compras", _ => role };
     private sealed class TenantUserForm { [Required, StringLength(160, MinimumLength = 2)] public string DisplayName { get; set; } = ""; [Required, EmailAddress, StringLength(254)] public string Email { get; set; } = ""; [Required] public string Role { get; set; } = "Manager"; }
 }

@@ -54,6 +54,10 @@
                 <div class="panel-heading"><div><h2>Productos más vendidos</h2><p>Ordenados por ingresos</p></div></div>
                 <div class="table-wrap"><table><thead><tr><th>PRODUCTO</th><th class="align-right">UNIDADES</th><th class="align-right">INGRESOS</th></tr></thead><tbody>@foreach (var product in _report.TopProducts) { <tr><td><strong>@product.ProductName</strong></td><td class="align-right">@product.Quantity</td><td class="align-right amount">@Money(product.Revenue)</td></tr> }</tbody></table></div>
             </section>
+            <section class="panel report-panel">
+                <div class="panel-heading"><div><h2>Ventas por vendedor</h2><p>Ventas completadas atribuidas en el período</p></div></div>
+                @foreach (var seller in _report.Sellers ?? []) { <div class="report-row"><div><strong>@seller.SellerName</strong><small>@seller.Sales ventas</small></div><strong>@Money(seller.Revenue)</strong></div> }
+            </section>
         </div>
     }
 }

@@ -10,6 +10,7 @@ using OJunnySyS.Domain.Purchasing;
 using OJunnySyS.Domain.Cash;
 using OJunnySyS.Domain.Pos;
 using OJunnySyS.Domain.Inventory;
+using OJunnySyS.Infrastructure.Identity;
 
 namespace OJunnySyS.Infrastructure.Persistence;
 
@@ -237,6 +238,7 @@ public sealed class EfStoreRepository(IDbContextFactory<StoreDbContext> contextF
             ? await db.Customers.FromSqlInterpolated($"SELECT * FROM Customers WHERE Id = {id} AND TenantId = {tenantId} AND IsActive = 1 FOR UPDATE").SingleOrDefaultAsync(cancellationToken)
             : null;
         if (request.CustomerId is not null && customer is null) throw new DomainException("El cliente seleccionado no existe o está inactivo.");
+        var sellerName = await ResolveSellerNameAsync(db, tenantId, request.SellerUserId, cancellationToken);
 
         var tenant = await db.Tenants.SingleOrDefaultAsync(x => x.Id == tenantId, cancellationToken)
             ?? throw new DomainException("No se encontró la empresa activa.");
@@ -257,6 +259,7 @@ public sealed class EfStoreRepository(IDbContextFactory<StoreDbContext> contextF
         }
 
         var sale = new Sale(tenantId, $"V-{DateTimeOffset.UtcNow:yyyyMMddHHmmss}-{Guid.NewGuid():N}", customer, request.PaymentMethod, lines, cashSession.Id, cashierUserId, tenant.DefaultTaxRate, request.IdempotencyKey, registerCode, warehouseId);
+        sale.AssignSeller(request.SellerUserId, sellerName);
         sale.RecordPayments(await ResolvePaymentAllocationsAsync(db, tenantId, request, sale.Total, cancellationToken));
         foreach (var movement in stockMovements)
             db.InventoryMovements.Add(new InventoryMovement(tenantId, movement.Product.Id, InventoryMovementType.Sale, -movement.Quantity, movement.WarehouseBalance, sale.Number, warehouseId));
@@ -308,11 +311,25 @@ public sealed class EfStoreRepository(IDbContextFactory<StoreDbContext> contextF
         }).ToArray();
     }
 
+    private static async Task<string?> ResolveSellerNameAsync(StoreDbContext db, Guid tenantId, Guid? sellerUserId, CancellationToken ct)
+    {
+        if (sellerUserId is null) return null;
+        var seller = await db.Users.FromSqlInterpolated($"SELECT * FROM AspNetUsers WHERE Id = {sellerUserId} AND TenantId = {tenantId} AND (LockoutEnd IS NULL OR LockoutEnd <= UTC_TIMESTAMP()) FOR UPDATE")
+            .SingleOrDefaultAsync(ct) ?? throw new DomainException("El vendedor seleccionado no está activo en esta empresa.");
+        var allowedRoles = new[] { AppRoles.Administrator, AppRoles.Manager, AppRoles.Salesperson };
+        var hasSellerRole = await (from userRole in db.UserRoles
+                                   join role in db.Roles on userRole.RoleId equals role.Id
+                                   where userRole.UserId == seller.Id && role.Name != null && allowedRoles.Contains(role.Name)
+                                   select role.Id).AnyAsync(ct);
+        if (!hasSellerRole) throw new DomainException("La cuenta seleccionada no puede asignarse como vendedor.");
+        return seller.DisplayName;
+    }
+
     private static void EnsureSameCheckout(Sale sale, CheckoutRequest request, Guid cashierUserId, string registerCode)
     {
         var requestedLines = request.Lines.GroupBy(x => x.ProductId).ToDictionary(x => x.Key, x => SumQuantities(x.Select(line => line.Quantity)));
         var storedLines = sale.Lines.ToDictionary(x => x.ProductId, x => x.Quantity);
-        if (sale.CashierUserId != cashierUserId || sale.CustomerId != request.CustomerId || (request.Payments is null && sale.PaymentMethod != request.PaymentMethod) || sale.RegisterCode != registerCode
+        if (sale.CashierUserId != cashierUserId || sale.CustomerId != request.CustomerId || sale.SellerUserId != request.SellerUserId || (request.Payments is null && sale.PaymentMethod != request.PaymentMethod) || sale.RegisterCode != registerCode
             || requestedLines.Count != storedLines.Count || requestedLines.Any(x => !storedLines.TryGetValue(x.Key, out var quantity) || quantity != x.Value))
             throw new DomainException("La clave de idempotencia ya se utilizó con otros datos de cobro.");
         if (request.Payments is not null)
@@ -414,7 +431,7 @@ public sealed class EfStoreRepository(IDbContextFactory<StoreDbContext> contextF
         return new SaleReceiptDto(sale.Id, sale.Number, sale.CustomerName, sale.Subtotal, sale.TaxRate, sale.TaxAmount, sale.Total,
             sale.PaymentMethod, sale.Status, sale.CreatedAtUtc, registerCode,
             sale.Lines.Select(x => new ReceiptLineDto(x.Sku, x.ProductName, x.Quantity, x.UnitPrice, x.LineTotal)).ToArray(),
-            sale.Payments.Select(x => new SalePaymentDto(x.MethodName, x.Type, x.Amount, x.Reference)).ToArray());
+            sale.Payments.Select(x => new SalePaymentDto(x.MethodName, x.Type, x.Amount, x.Reference)).ToArray(), sale.SellerName);
     }
 
     private static async Task<CashSessionDto> MapCashSessionAsync(StoreDbContext db, CashSession session, CancellationToken cancellationToken)

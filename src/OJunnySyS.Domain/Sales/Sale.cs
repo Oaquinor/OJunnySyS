@@ -39,6 +39,8 @@ public sealed class Sale : TenantEntity
     public string RegisterCode { get; private set; } = "MAIN";
     public Guid WarehouseId { get; private set; }
     public Guid? CashierUserId { get; private set; }
+    public Guid? SellerUserId { get; private set; }
+    public string? SellerName { get; private set; }
     public Guid? IdempotencyKey { get; private set; }
     public Guid? CustomerId { get; private set; }
     public string CustomerName { get; private set; } = "";
@@ -50,6 +52,20 @@ public sealed class Sale : TenantEntity
     public decimal Total { get; private set; }
     public IReadOnlyCollection<SaleLine> Lines => _lines;
     public IReadOnlyCollection<SalePayment> Payments => _payments;
+
+    public void AssignSeller(Guid? sellerUserId, string? sellerName)
+    {
+        if (SellerUserId is not null) throw new DomainException("El vendedor de esta venta ya quedó registrado.");
+        if (sellerUserId is null)
+        {
+            if (!string.IsNullOrWhiteSpace(sellerName)) throw new DomainException("No se puede guardar un nombre de vendedor sin seleccionar su cuenta.");
+            return;
+        }
+        if (sellerUserId == Guid.Empty || string.IsNullOrWhiteSpace(sellerName) || sellerName.Trim().Length > 160)
+            throw new DomainException("El vendedor seleccionado no es válido.");
+        SellerUserId = sellerUserId;
+        SellerName = sellerName.Trim();
+    }
 
     public void RecordPayments(IEnumerable<PaymentAllocation> allocations)
     {

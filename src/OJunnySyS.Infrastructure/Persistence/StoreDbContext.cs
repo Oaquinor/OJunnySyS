@@ -205,6 +205,8 @@ public sealed class StoreDbContext(DbContextOptions<StoreDbContext> options)
             entity.HasOne<Warehouse>().WithMany().HasForeignKey(x => new { x.TenantId, x.WarehouseId }).HasPrincipalKey(x => new { x.TenantId, x.Id }).OnDelete(DeleteBehavior.Restrict);
             entity.Property(x => x.IdempotencyKey).IsRequired(false);
             entity.Property(x => x.CustomerName).HasMaxLength(220).IsRequired();
+            entity.Property(x => x.SellerName).HasMaxLength(160);
+            entity.HasIndex(x => new { x.TenantId, x.SellerUserId, x.CreatedAtUtc });
             entity.Property(x => x.Subtotal).HasPrecision(14, 2);
             entity.Property(x => x.TaxAmount).HasPrecision(14, 2);
             entity.Property(x => x.Total).HasPrecision(14, 2);

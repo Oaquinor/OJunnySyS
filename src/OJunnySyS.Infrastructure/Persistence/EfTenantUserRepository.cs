@@ -42,6 +42,21 @@ public sealed class EfTenantUserRepository(
                       select new TenantMemberDto(user.Id, user.DisplayName)).Distinct().ToListAsync(cancellationToken);
     }
 
+    public async Task<IReadOnlyList<TenantMemberDto>> GetActiveSalespeopleAsync(CancellationToken cancellationToken = default)
+    {
+        var tenantId = tenantContext.GetRequiredTenantId();
+        await tenantAccess.EnsureCanOperateAsync(tenantId, tenantContext.CurrentUserId, cancellationToken);
+        var now = DateTimeOffset.UtcNow;
+        var sellerRoles = new[] { AppRoles.Administrator, AppRoles.Manager, AppRoles.Salesperson };
+        return await (from user in db.Users.AsNoTracking()
+                      join userRole in db.UserRoles on user.Id equals userRole.UserId
+                      join role in db.Roles on userRole.RoleId equals role.Id
+                      where user.TenantId == tenantId && (user.LockoutEnd == null || user.LockoutEnd <= now) &&
+                            role.Name != null && sellerRoles.Contains(role.Name)
+                      orderby user.DisplayName
+                      select new TenantMemberDto(user.Id, user.DisplayName)).Distinct().ToListAsync(cancellationToken);
+    }
+
     public async Task<ProvisionedTenantUserDto> CreateAsync(CreateTenantUserRequest request, CancellationToken cancellationToken = default)
     {
         var tenantId = tenantContext.GetRequiredTenantId();

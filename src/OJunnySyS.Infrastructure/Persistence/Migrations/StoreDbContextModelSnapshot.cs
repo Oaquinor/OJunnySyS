@@ -1048,6 +1048,13 @@ namespace OJunnySyS.Infrastructure.Persistence.Migrations
                         .HasMaxLength(40)
                         .HasColumnType("varchar(40)");
 
+                    b.Property<string>("SellerName")
+                        .HasMaxLength(160)
+                        .HasColumnType("varchar(160)");
+
+                    b.Property<Guid?>("SellerUserId")
+                        .HasColumnType("char(36)");
+
                     b.Property<int>("Status")
                         .HasColumnType("int");
 
@@ -1093,6 +1100,8 @@ namespace OJunnySyS.Infrastructure.Persistence.Migrations
                     b.HasIndex("TenantId", "WarehouseId");
 
                     b.HasIndex("TenantId", "CustomerId", "CreatedAtUtc");
+
+                    b.HasIndex("TenantId", "SellerUserId", "CreatedAtUtc");
 
                     b.ToTable("Sales");
                 });

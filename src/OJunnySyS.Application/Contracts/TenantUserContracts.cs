@@ -12,5 +12,6 @@ public static class TenantUserRoles
     public const string Manager = "Manager";
     public const string Cashier = "Cashier";
     public const string PurchasingAgent = "PurchasingAgent";
-    public static readonly IReadOnlyList<string> Assignable = [Administrator, Manager, Cashier, PurchasingAgent];
+    public const string Salesperson = "Salesperson";
+    public static readonly IReadOnlyList<string> Assignable = [Administrator, Manager, Salesperson, Cashier, PurchasingAgent];
 }

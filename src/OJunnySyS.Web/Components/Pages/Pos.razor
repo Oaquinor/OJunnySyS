@@ -5,6 +5,7 @@
 @inject PosRegisterService PosRegisters
 @inject WarehouseService WarehouseService
 @inject PosPaymentMethodService PaymentMethods
+@inject TenantUserService TenantUsers
 @inject AuthenticationStateProvider AuthenticationState
 @inject ILogger<Pos> Logger
 
@@ -34,6 +35,7 @@
     <aside class="order-panel">
         <div class="order-header"><div><span class="eyebrow">VENTA ACTUAL</span><h2>Tu orden <span class="order-count">@_cart.Values.Sum()</span></h2></div><button class="clear-button" @onclick="ClearCart" disabled="@(_cart.Count == 0)">Vaciar</button></div>
         <div class="customer-select"><label for="customer">Cliente</label><select id="customer" @bind="_customerId" @bind:after="ResetCheckoutKey"><option value="">Consumidor final</option>@foreach (var customer in _customers) { <option value="@customer.Id">@customer.Name</option> }</select></div>
+        <div class="customer-select"><label for="seller">Vendedor</label><select id="seller" @bind="_sellerUserId" @bind:after="ResetCheckoutKey"><option value="">Sin asignar</option>@foreach (var seller in _salespeople) { <option value="@seller.Id">@seller.DisplayName</option> }</select></div>
         <div class="order-lines">
             @if (_cart.Count == 0) { <div class="cart-empty"><span>▣</span><strong>Tu orden está vacía</strong><p>Selecciona un producto para comenzar la venta.</p></div> }
             @foreach (var line in CartLines)
@@ -56,6 +58,7 @@
 @code {
     private List<ProductDto> _products = [];
     private List<CustomerDto> _customers = [];
+    private List<TenantMemberDto> _salespeople = [];
     private List<PosRegisterDto> _registers = [];
     private List<WarehouseDto> _warehouses = [];
     private CashSessionDto? _cashSession;
@@ -65,6 +68,7 @@
     private string _search = "";
     private string? _category, _error, _notice;
     private Guid? _customerId;
+    private Guid? _sellerUserId;
     private string _registerCode = "MAIN";
     private Guid _warehouseId;
     private IReadOnlyList<TenantPaymentMethodDto> _paymentMethods = [];
@@ -80,7 +84,7 @@
     private decimal Total => Subtotal + Tax;
     private decimal TenderBalance => decimal.Round(Total - _tenders.Sum(x => x.Amount), 2);
     private bool CashOpen => _cashSession?.Status == CashSessionStatus.Open;
-    protected override async Task OnInitializedAsync() { var principal = (await AuthenticationState.GetAuthenticationStateAsync()).User; if (!Guid.TryParse(principal.FindFirstValue(System.Security.Claims.ClaimTypes.NameIdentifier), out _cashierUserId)) throw new InvalidOperationException("No se pudo identificar al cajero."); _registers = (await PosRegisters.GetRegistersAsync(includeInactive: false)).ToList(); _warehouses = (await WarehouseService.GetAsync(includeInactive: false)).ToList(); if (_registers.All(x => x.Code != _registerCode)) _registerCode = _registers.FirstOrDefault()?.Code ?? ""; _warehouseId = _registers.FirstOrDefault(x => x.Code == _registerCode)?.WarehouseId ?? Guid.Empty; _paymentMethods = await PaymentMethods.GetAsync(false); if (_paymentMethods.FirstOrDefault(x => x.Type == PaymentMethodType.Cash) is { } cashMethod) _tenders.Add(new(cashMethod.Id, 0)); _taxRate = (await TenantSettings.GetAsync()).DefaultTaxRate; _cashSession = string.IsNullOrEmpty(_registerCode) ? null : await Store.GetCurrentCashSessionAsync(_registerCode); await LoadProductsAsync(); _customers = (await Store.SearchCustomersAsync(null)).ToList(); }
+    protected override async Task OnInitializedAsync() { var principal = (await AuthenticationState.GetAuthenticationStateAsync()).User; if (!Guid.TryParse(principal.FindFirstValue(System.Security.Claims.ClaimTypes.NameIdentifier), out _cashierUserId)) throw new InvalidOperationException("No se pudo identificar al cajero."); _registers = (await PosRegisters.GetRegistersAsync(includeInactive: false)).ToList(); _warehouses = (await WarehouseService.GetAsync(includeInactive: false)).ToList(); _salespeople = (await TenantUsers.GetActiveSalespeopleAsync()).ToList(); if (_registers.All(x => x.Code != _registerCode)) _registerCode = _registers.FirstOrDefault()?.Code ?? ""; _warehouseId = _registers.FirstOrDefault(x => x.Code == _registerCode)?.WarehouseId ?? Guid.Empty; _paymentMethods = await PaymentMethods.GetAsync(false); if (_paymentMethods.FirstOrDefault(x => x.Type == PaymentMethodType.Cash) is { } cashMethod) _tenders.Add(new(cashMethod.Id, 0)); _taxRate = (await TenantSettings.GetAsync()).DefaultTaxRate; _cashSession = string.IsNullOrEmpty(_registerCode) ? null : await Store.GetCurrentCashSessionAsync(_registerCode); await LoadProductsAsync(); _customers = (await Store.SearchCustomersAsync(null)).ToList(); }
     private async Task OnRegisterChangedAsync() { ClearCart(); _error = null; _warehouseId = _registers.FirstOrDefault(x => x.Code == _registerCode)?.WarehouseId ?? Guid.Empty; _cashSession = string.IsNullOrEmpty(_registerCode) ? null : await Store.GetCurrentCashSessionAsync(_registerCode); await LoadProductsAsync(); }
     private async Task LoadProductsAsync() => _products = _warehouseId == Guid.Empty ? [] : (await Store.SearchProductsInWarehouseAsync(_search, _warehouseId)).ToList();
     private void ResetCheckoutKey() { _checkoutKey = Guid.NewGuid(); if (_tenders.Count == 1) _tenders[0].Amount = Total; }
@@ -90,7 +94,7 @@
     private void Add(ProductDto product) { if (_cart.GetValueOrDefault(product.Id) < product.StockOnHand) { _cart[product.Id] = _cart.GetValueOrDefault(product.Id) + 1; ResetCheckoutKey(); } _error = null; }
     private void ChangeQuantity(ProductDto product, int delta) { var quantity = _cart.GetValueOrDefault(product.Id) + delta; if (quantity <= 0) { _cart.Remove(product.Id); ResetCheckoutKey(); } else if (quantity <= product.StockOnHand) { _cart[product.Id] = quantity; ResetCheckoutKey(); } }
     private void ClearCart() { _cart.Clear(); ResetCheckoutKey(); _error = null; }
-    private async Task CheckoutAsync() { _saving = true; _error = null; try { var sale = await Store.CheckoutAsync(new CheckoutRequest(_customerId, SummaryPaymentMethod, _cart.Select(x => new CheckoutLine(x.Key, x.Value)).ToArray(), _checkoutKey, _registerCode, _tenders.Select(x => new CheckoutPaymentLine(x.PaymentMethodId, x.Amount, x.Reference)).ToArray()), _cashierUserId); _notice = $"Venta {sale.Number} completada · {Money(sale.Total)}"; _lastSaleId = sale.Id; ClearCart(); _cashSession = await Store.GetCurrentCashSessionAsync(_registerCode); await LoadProductsAsync(); } catch (DomainException ex) { _error = ex.Message; await LoadProductsAsync(); } catch (Exception ex) { Logger.LogError(ex, "No se pudo completar el checkout."); _error = "No se pudo completar el cobro. Revisa la caja y el inventario e inténtalo de nuevo; el mismo intento de cobro se reconocerá al reintentar."; await LoadProductsAsync(); } finally { _saving = false; } }
+    private async Task CheckoutAsync() { _saving = true; _error = null; try { var sale = await Store.CheckoutAsync(new CheckoutRequest(_customerId, SummaryPaymentMethod, _cart.Select(x => new CheckoutLine(x.Key, x.Value)).ToArray(), _checkoutKey, _registerCode, _tenders.Select(x => new CheckoutPaymentLine(x.PaymentMethodId, x.Amount, x.Reference)).ToArray(), _sellerUserId), _cashierUserId); _notice = $"Venta {sale.Number} completada · {Money(sale.Total)}"; _lastSaleId = sale.Id; ClearCart(); _sellerUserId = null; _cashSession = await Store.GetCurrentCashSessionAsync(_registerCode); await LoadProductsAsync(); } catch (DomainException ex) { _error = ex.Message; await LoadProductsAsync(); } catch (Exception ex) { Logger.LogError(ex, "No se pudo completar el checkout."); _error = "No se pudo completar el cobro. Revisa la caja y el inventario e inténtalo de nuevo; el mismo intento de cobro se reconocerá al reintentar."; await LoadProductsAsync(); } finally { _saving = false; } }
     private PaymentMethod SummaryPaymentMethod => _tenders.Count > 1 ? PaymentMethod.Other : _paymentMethods.FirstOrDefault(x => x.Id == _tenders.FirstOrDefault()?.PaymentMethodId)?.Type switch { PaymentMethodType.Cash => PaymentMethod.Cash, PaymentMethodType.Card => PaymentMethod.Card, PaymentMethodType.Transfer => PaymentMethod.Transfer, _ => PaymentMethod.Other };
     private sealed class TenderForm(Guid paymentMethodId, decimal amount) { public Guid PaymentMethodId { get; set; } = paymentMethodId; public decimal Amount { get; set; } = amount; public string? Reference { get; set; } }
     private string CategoryClass(string? value) => _category == value ? "category-tab active" : "category-tab";
