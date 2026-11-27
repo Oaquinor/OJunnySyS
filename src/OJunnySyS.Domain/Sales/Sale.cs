@@ -16,11 +16,16 @@ public sealed class Sale : TenantEntity
     private readonly List<SalePayment> _payments = [];
     private readonly List<CustomerReceipt> _receipts = [];
 
-    public Sale(Guid tenantId, string number, Customer? customer, PaymentMethod paymentMethod, IEnumerable<SaleLine> lines, Guid cashSessionId, Guid cashierUserId, decimal taxRate = 0.18m, Guid? idempotencyKey = null, string registerCode = "MAIN", Guid warehouseId = default, DateOnly? dueDate = null) : base(tenantId)
+    public Sale(Guid tenantId, string number, Customer? customer, PaymentMethod paymentMethod, IEnumerable<SaleLine> lines, Guid? cashSessionId, Guid cashierUserId, decimal taxRate = 0.18m, Guid? idempotencyKey = null, string registerCode = "MAIN", Guid warehouseId = default, DateOnly? dueDate = null) : base(tenantId)
     {
         if (string.IsNullOrWhiteSpace(number)) throw new DomainException("El número de venta es obligatorio.");
         if (number.Length > 64) throw new DomainException("El número de venta no puede superar 64 caracteres.");
-        if (cashSessionId == Guid.Empty || cashierUserId == Guid.Empty) throw new DomainException("La venta debe quedar asociada a una caja abierta y a un usuario.");
+        if (cashierUserId == Guid.Empty) throw new DomainException("La venta debe quedar asociada a un usuario.");
+        if (paymentMethod != PaymentMethod.Credit && (cashSessionId is null || cashSessionId == Guid.Empty))
+            throw new DomainException("Las ventas con cobro inmediato requieren una caja abierta.");
+        if (customer is not null && (customer.TenantId != tenantId || !customer.IsActive)) throw new DomainException("El cliente no pertenece a la empresa o está inactivo.");
+        if (paymentMethod == PaymentMethod.Credit && (customer is null || dueDate is null))
+            throw new DomainException("Las ventas a crédito requieren un cliente y una fecha de vencimiento.");
         if (!Enum.IsDefined(paymentMethod)) throw new DomainException("El método de pago no es válido.");
         if (taxRate is < 0 or > 1) throw new DomainException("La tasa de impuesto debe estar entre 0 y 1.");
         RegisterCode = PosRegister.NormalizeCode(registerCode);
@@ -88,7 +93,7 @@ public sealed class Sale : TenantEntity
         var items = allocations?.ToArray() ?? throw new DomainException("Debes seleccionar al menos un medio de pago.");
         if (PaymentMethod == PaymentMethod.Credit)
         {
-            if (CustomerId is null) throw new DomainException("Las ventas a crédito requieren un cliente registrado.");
+            if (CustomerId is null || DueDate is null) throw new DomainException("Las ventas a crédito requieren un cliente y una fecha de vencimiento.");
             if (items.Length != 0) throw new DomainException("La venta a crédito no puede incluir cobros iniciales en este flujo.");
             return;
         }

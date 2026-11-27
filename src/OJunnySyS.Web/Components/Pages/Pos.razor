@@ -61,7 +61,7 @@ else
             @if (_paymentMethods.FirstOrDefault(x => x.Id == _tenders.FirstOrDefault()?.PaymentMethodId) is { } selected && (!string.IsNullOrWhiteSpace(selected.Instructions) || !string.IsNullOrWhiteSpace(selected.AccountLabel) || !string.IsNullOrWhiteSpace(selected.AccountReference) || !string.IsNullOrWhiteSpace(selected.QrPayload))) { <small class="payment-instructions">@selected.Instructions @selected.AccountLabel @selected.AccountReference @selected.QrPayload</small> }
             <small class="tender-balance">@if (TenderBalance == 0) { <span>Pago completo</span> } else if (TenderBalance > 0) { <span>Falta @Money(TenderBalance)</span> } else { <span>Exceso @Money(-TenderBalance)</span> }</small> }
         </div>
-        <button class="button button-primary checkout-button" @onclick="CheckoutAsync" disabled="@(_cart.Count == 0 || _saving || !CashOpen || (_isCredit ? (_customerId is null || _dueDate is null) : (_paymentMethods.Count == 0 || TenderBalance != 0 || _tenders.Any(x => x.Amount <= 0))))">@(_saving ? "Procesando…" : _isCredit ? "Crear cuenta · " + Money(Total) : "Cobrar · " + Money(Total)) <span>→</span></button>
+        <button class="button button-primary checkout-button" @onclick="CheckoutAsync" disabled="@(_cart.Count == 0 || _saving || (!_isCredit && !CashOpen) || (_isCredit ? (_customerId is null || _dueDate is null) : (_paymentMethods.Count == 0 || TenderBalance != 0 || _tenders.Any(x => x.Amount <= 0))))">@(_saving ? "Procesando…" : _isCredit ? "Crear cuenta · " + Money(Total) : "Cobrar · " + Money(Total)) <span>→</span></button>
         @if (!string.IsNullOrWhiteSpace(_error)) { <div class="inline-error">@_error</div> }
         <div class="secure-note">▣ Transacción registrada de forma segura</div>
     </aside>

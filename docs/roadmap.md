@@ -13,7 +13,9 @@ OJunnySyS se desarrolla en C#, ASP.NET Core .NET 10, Blazor Server interactivo, 
 - [x] Separación de datos y autorización por empresa en CRM, ventas, compras, caja e inventario.
 - [x] CRM de clientes, historial de actividad, oportunidades, tareas, etiquetas y segmentos.
 - [x] Catálogo de productos, precios, código de barras y movimientos de inventario.
-- [x] POS transaccional, pagos divididos, caja, recibos, devoluciones y crédito.
+- [x] POS transaccional, pagos divididos, caja, recibos y ventas a crédito con abonos.
+- [ ] Devoluciones, reembolsos y notas de crédito con restitución de inventario y reversos contables.
+- [x] Reglas de dominio cubiertas por pruebas unitarias de venta a crédito, abonos parciales, límites de saldo, idempotencia y asociación de cobros en efectivo a caja.
 - [x] Administración multiempresa de terminales POS con caja por terminal y selección de caja en pagos en efectivo a proveedores.
 - [x] Almacenes por empresa, asignación de terminal/compra, saldos por ubicación, transferencias auditables y checkout limitado al stock de la sucursal.
 - [x] Proveedores, compras, recepciones parciales y completas, cuentas por pagar y antigüedad de saldos.
@@ -33,7 +35,7 @@ OJunnySyS se desarrolla en C#, ASP.NET Core .NET 10, Blazor Server interactivo, 
 
 ## Operación y producción
 
-- [ ] Pruebas unitarias e integración contra MySQL para flujos de caja, ventas y compras.
+- [ ] Pruebas de integración contra MySQL para flujos de caja, ventas y compras; el ciclo completo de cobro aún no está cubierto por la suite.
 - [ ] Observabilidad, límites de solicitudes, alertas y auditoría operativa completa.
 - [ ] Copias de seguridad cifradas con restauración practicada.
 - [ ] CI/CD, migración controlada, rollback y revisión de seguridad.

@@ -239,8 +239,10 @@ public sealed class EfStoreRepository(IDbContextFactory<StoreDbContext> contextF
         var warehouseId = register.WarehouseId;
         if (!await db.Warehouses.AnyAsync(x => x.Id == warehouseId && x.IsActive, cancellationToken))
             throw new DomainException("El almacén asignado al terminal no existe o está inactivo.");
-        var cashSession = await db.CashSessions.FromSqlInterpolated($"SELECT * FROM CashSessions WHERE TenantId = {tenantId} AND RegisterCode = {registerCode} AND Status = {(int)CashSessionStatus.Open} FOR UPDATE").SingleOrDefaultAsync(cancellationToken)
-            ?? throw new DomainException("Abre el turno del terminal seleccionado antes de registrar ventas.");
+        CashSession? cashSession = null;
+        if (request.PaymentMethod != PaymentMethod.Credit)
+            cashSession = await db.CashSessions.FromSqlInterpolated($"SELECT * FROM CashSessions WHERE TenantId = {tenantId} AND RegisterCode = {registerCode} AND Status = {(int)CashSessionStatus.Open} FOR UPDATE").SingleOrDefaultAsync(cancellationToken)
+                ?? throw new DomainException("Abre el turno del terminal seleccionado antes de registrar ventas.");
         priorSale = await LoadSaleByCheckoutKeyAsync(db, tenantId, request.IdempotencyKey, cancellationToken);
         if (priorSale is not null)
         {
@@ -274,7 +276,7 @@ public sealed class EfStoreRepository(IDbContextFactory<StoreDbContext> contextF
         }
 
         if (request.PaymentMethod == PaymentMethod.Credit && (customer is null || request.DueDate is null)) throw new DomainException("Selecciona un cliente y una fecha de vencimiento para vender a crédito.");
-        var sale = new Sale(tenantId, $"V-{DateTimeOffset.UtcNow:yyyyMMddHHmmss}-{Guid.NewGuid():N}", customer, request.PaymentMethod, lines, cashSession.Id, cashierUserId, tenant.DefaultTaxRate, request.IdempotencyKey, registerCode, warehouseId, request.DueDate);
+        var sale = new Sale(tenantId, $"V-{DateTimeOffset.UtcNow:yyyyMMddHHmmss}-{Guid.NewGuid():N}", customer, request.PaymentMethod, lines, cashSession?.Id, cashierUserId, tenant.DefaultTaxRate, request.IdempotencyKey, registerCode, warehouseId, request.DueDate);
         sale.AssignSeller(request.SellerUserId, sellerName);
         sale.RecordPayments(request.PaymentMethod == PaymentMethod.Credit ? [] : await ResolvePaymentAllocationsAsync(db, tenantId, request, sale.Total, cancellationToken));
         foreach (var movement in stockMovements)
