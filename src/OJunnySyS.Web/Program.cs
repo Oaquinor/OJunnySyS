@@ -111,6 +111,7 @@ builder.Services.AddScoped<CustomerTagService>();
 builder.Services.AddScoped<CustomerSegmentService>();
 builder.Services.AddScoped<PosRegisterService>();
 builder.Services.AddScoped<WarehouseService>();
+builder.Services.AddScoped<PosPaymentMethodService>();
 
 var app = builder.Build();
 
@@ -137,6 +138,25 @@ app.UseAntiforgery();
 app.MapGet("/account/denied", () => Results.Content("<h1>Acceso denegado</h1><p>Tu cuenta no tiene permiso para esta sección.</p><a href='/'>Volver</a>", "text/html"));
 app.MapControllers();
 
+var paymentMethods = app.MapGroup("/api/v1/pos/payment-methods").RequireAuthorization("TenantUserManagement");
+paymentMethods.MapGet("/", async (bool? includeInactive, PosPaymentMethodService service, CancellationToken ct) => Results.Ok(await service.GetAsync(includeInactive ?? false, ct)));
+paymentMethods.MapPost("/", async (CreatePaymentMethodRequest request, PosPaymentMethodService service, CancellationToken ct) =>
+{
+    try { var method = await service.CreateAsync(request, ct); return Results.Created($"/api/v1/pos/payment-methods/{method.Id}", method); }
+    catch (DomainException ex) { return Results.ValidationProblem(new Dictionary<string, string[]> { ["paymentMethod"] = [ex.Message] }); }
+});
+paymentMethods.MapPut("/{id:guid}", async (Guid id, UpdatePaymentMethodRequest request, PosPaymentMethodService service, CancellationToken ct) =>
+{
+    try { return Results.Ok(await service.UpdateAsync(id, request, ct)); }
+    catch (ConcurrencyConflictException ex) { return Results.Conflict(new { error = ex.Message }); }
+    catch (DomainException ex) { return Results.ValidationProblem(new Dictionary<string, string[]> { ["paymentMethod"] = [ex.Message] }); }
+});
+paymentMethods.MapPatch("/{id:guid}/activation", async (Guid id, SetPaymentMethodActiveRequest request, PosPaymentMethodService service, CancellationToken ct) =>
+{
+    try { return Results.Ok(await service.SetActiveAsync(id, request, ct)); }
+    catch (ConcurrencyConflictException ex) { return Results.Conflict(new { error = ex.Message }); }
+    catch (DomainException ex) { return Results.ValidationProblem(new Dictionary<string, string[]> { ["paymentMethod"] = [ex.Message] }); }
+});
 var api = app.MapGroup("/api/v1").RequireAuthorization();
 var tenantUsers = api.MapGroup("/users").RequireAuthorization("TenantUserManagement");
 tenantUsers.MapGet("", async (TenantUserService service, CancellationToken ct) => Results.Ok(await service.GetUsersAsync(ct)));

@@ -1137,6 +1137,116 @@ namespace OJunnySyS.Infrastructure.Persistence.Migrations
                     b.ToTable("SaleLine");
                 });
 
+            modelBuilder.Entity("OJunnySyS.Domain.Sales.SalePayment", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("char(36)");
+
+                    b.Property<decimal>("Amount")
+                        .HasPrecision(14, 2)
+                        .HasColumnType("decimal(14,2)");
+
+                    b.Property<DateTimeOffset>("CreatedAtUtc")
+                        .HasColumnType("datetime");
+
+                    b.Property<string>("MethodName")
+                        .IsRequired()
+                        .HasMaxLength(80)
+                        .HasColumnType("varchar(80)");
+
+                    b.Property<Guid>("PaymentMethodId")
+                        .HasColumnType("char(36)");
+
+                    b.Property<string>("Reference")
+                        .HasMaxLength(120)
+                        .HasColumnType("varchar(120)");
+
+                    b.Property<Guid>("SaleId")
+                        .HasColumnType("char(36)");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("char(36)");
+
+                    b.Property<int>("Type")
+                        .HasColumnType("int");
+
+                    b.Property<DateTimeOffset?>("UpdatedAtUtc")
+                        .HasColumnType("datetime");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TenantId", "SaleId");
+
+                    b.HasIndex("TenantId", "PaymentMethodId", "Type");
+
+                    b.ToTable("SalePayments");
+                });
+
+            modelBuilder.Entity("OJunnySyS.Domain.Sales.TenantPaymentMethod", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("char(36)");
+
+                    b.Property<string>("AccountLabel")
+                        .HasMaxLength(120)
+                        .HasColumnType("varchar(120)");
+
+                    b.Property<string>("AccountReference")
+                        .HasMaxLength(100)
+                        .HasColumnType("varchar(100)");
+
+                    b.Property<string>("Code")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("varchar(40)");
+
+                    b.Property<DateTimeOffset>("CreatedAtUtc")
+                        .HasColumnType("datetime");
+
+                    b.Property<string>("Instructions")
+                        .HasMaxLength(300)
+                        .HasColumnType("varchar(300)");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("tinyint(1)");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(80)
+                        .HasColumnType("varchar(80)");
+
+                    b.Property<string>("QrPayload")
+                        .HasMaxLength(2000)
+                        .HasColumnType("varchar(2000)");
+
+                    b.Property<long>("Revision")
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint")
+                        .HasDefaultValue(0L);
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("char(36)");
+
+                    b.Property<int>("Type")
+                        .HasColumnType("int");
+
+                    b.Property<DateTimeOffset?>("UpdatedAtUtc")
+                        .HasColumnType("datetime");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TenantId", "Code")
+                        .IsUnique();
+
+                    b.HasIndex("TenantId", "Name")
+                        .IsUnique();
+
+                    b.ToTable("TenantPaymentMethods");
+                });
+
             modelBuilder.Entity("OJunnySyS.Domain.Tenancy.Tenant", b =>
                 {
                     b.Property<Guid>("Id")
@@ -1751,6 +1861,38 @@ namespace OJunnySyS.Infrastructure.Persistence.Migrations
                         .IsRequired();
                 });
 
+            modelBuilder.Entity("OJunnySyS.Domain.Sales.SalePayment", b =>
+                {
+                    b.HasOne("OJunnySyS.Domain.Tenancy.Tenant", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("OJunnySyS.Domain.Sales.TenantPaymentMethod", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "PaymentMethodId")
+                        .HasPrincipalKey("TenantId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("OJunnySyS.Domain.Sales.Sale", null)
+                        .WithMany("Payments")
+                        .HasForeignKey("TenantId", "SaleId")
+                        .HasPrincipalKey("TenantId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("OJunnySyS.Domain.Sales.TenantPaymentMethod", b =>
+                {
+                    b.HasOne("OJunnySyS.Domain.Tenancy.Tenant", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("OJunnySyS.Infrastructure.Identity.ApplicationUser", b =>
                 {
                     b.HasOne("OJunnySyS.Domain.Tenancy.Tenant", null)
@@ -1769,6 +1911,8 @@ namespace OJunnySyS.Infrastructure.Persistence.Migrations
             modelBuilder.Entity("OJunnySyS.Domain.Sales.Sale", b =>
                 {
                     b.Navigation("Lines");
+
+                    b.Navigation("Payments");
                 });
 #pragma warning restore 612, 618
         }

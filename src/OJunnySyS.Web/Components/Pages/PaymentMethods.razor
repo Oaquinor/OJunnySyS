@@ -1,0 +1,51 @@
+@page "/app/settings/payments"
+@attribute [Authorize(Roles = "Administrator")]
+@inject PosPaymentMethodService Payments
+@inject ILogger<PaymentMethods> Logger
+
+<PageTitle>Medios de pago · OJunnySyS</PageTitle>
+<PageHeader Eyebrow="CONFIGURACIÓN / POS" Title="Medios de pago" Description="Configura efectivo, tarjetas, transferencias y opciones propias para tus cobros." />
+@if (_error is not null) { <div class="inline-error">@_error</div> }
+@if (_notice is not null) { <div class="success-banner">✓ @_notice</div> }
+<div class="panel settings-panel">
+    <div class="panel-heading"><div><h2>Medios disponibles</h2><p>Los cambios aplican a los siguientes cobros; cada venta conserva el nombre y tipo usados al cobrar.</p></div></div>
+    @if (_loading) { <div class="loading-panel">Cargando medios de pago…</div> }
+    else {
+        @foreach (var item in _items) {
+            <EditForm Model="item" OnValidSubmit="() => SaveAsync(item)">
+                <div class="payment-config-row">
+                    <div class="payment-config-title"><strong>@item.Name</strong><small>@TypeLabel(item.Type) · @item.Code</small></div>
+                    <label>Nombre<InputText @bind-Value="item.EditName" maxlength="80" /></label>
+                    <label>Instrucciones<InputText @bind-Value="item.Instructions" maxlength="300" /></label>
+                    <label>Nombre de cuenta<InputText @bind-Value="item.AccountLabel" maxlength="120" /></label>
+                    <label>Cuenta / referencia<InputText @bind-Value="item.AccountReference" maxlength="100" /></label>
+                    <label>Contenido QR (opcional)<InputText @bind-Value="item.QrPayload" maxlength="2000" /></label>
+                    <div class="payment-config-actions"><label class="receipt-option"><InputCheckbox @bind-Value="item.IsActive" @bind:after="() => ToggleAsync(item)" /> Activo</label><button class="button button-secondary button-small" type="submit" disabled="@_saving">Guardar</button></div>
+                </div>
+            </EditForm>
+        }
+    }
+</div>
+<div class="panel settings-panel">
+    <div class="panel-heading"><div><h2>Agregar otro medio</h2><p>Útil para billeteras, vales, pagos contra entrega u otras formas aceptadas.</p></div></div>
+    <EditForm Model="_newMethod" OnValidSubmit="CreateAsync">
+        <DataAnnotationsValidator />
+        <div class="form-grid"><label>Nombre<InputText @bind-Value="_newMethod.Name" maxlength="80" /></label><label>Clasificación<InputSelect @bind-Value="_newMethod.Type"><option value="@PaymentMethodType.Other">Otro</option><option value="@PaymentMethodType.Cash">Efectivo</option><option value="@PaymentMethodType.Card">Tarjeta</option><option value="@PaymentMethodType.Transfer">Transferencia</option></InputSelect></label><label>Instrucciones<InputText @bind-Value="_newMethod.Instructions" maxlength="300" /></label></div>
+        <div class="modal-actions"><button class="button button-primary" disabled="@_saving">Agregar medio</button></div>
+    </EditForm>
+</div>
+
+@code {
+    private List<PaymentMethodEdit> _items = [];
+    private NewPaymentMethod _newMethod = new();
+    private bool _loading = true, _saving;
+    private string? _error, _notice;
+    protected override async Task OnInitializedAsync() => await LoadAsync();
+    private async Task LoadAsync() { _loading = true; try { _items = (await Payments.GetAsync(true)).Select(x => new PaymentMethodEdit(x)).ToList(); } catch (Exception ex) { Logger.LogError(ex, "No se pudieron cargar los medios de pago."); _error = "No se pudo cargar la configuración."; } finally { _loading = false; } }
+    private async Task SaveAsync(PaymentMethodEdit item) { _error = null; _notice = null; _saving = true; try { await Payments.UpdateAsync(item.Id, new(item.EditName, item.Instructions, item.AccountLabel, item.AccountReference, item.QrPayload, item.Revision)); _notice = "Medio de pago actualizado."; await LoadAsync(); } catch (Exception ex) { Logger.LogWarning(ex, "No se pudo guardar el medio de pago."); _error = ex is DomainException ? ex.Message : "No se pudo guardar. Recarga y vuelve a intentarlo."; } finally { _saving = false; } }
+    private async Task ToggleAsync(PaymentMethodEdit item) { _error = null; _notice = null; try { await Payments.SetActiveAsync(item.Id, new(item.IsActive, item.Revision)); await LoadAsync(); _notice = "Estado actualizado."; } catch (Exception ex) { item.IsActive = !item.IsActive; _error = ex is DomainException ? ex.Message : "No se pudo cambiar el estado del medio."; } }
+    private async Task CreateAsync() { _error = null; _notice = null; _saving = true; try { await Payments.CreateAsync(new(_newMethod.Name, _newMethod.Type, _newMethod.Instructions)); _newMethod = new(); _notice = "Medio de pago creado."; await LoadAsync(); } catch (Exception ex) { _error = ex is DomainException ? ex.Message : "No se pudo crear el medio."; } finally { _saving = false; } }
+    private static string TypeLabel(PaymentMethodType type) => type switch { PaymentMethodType.Cash => "Efectivo · suma al arqueo", PaymentMethodType.Card => "Tarjeta", PaymentMethodType.Transfer => "Transferencia", _ => "Otro" };
+    private sealed class PaymentMethodEdit(TenantPaymentMethodDto method) { public Guid Id { get; } = method.Id; public string Code { get; } = method.Code; public PaymentMethodType Type { get; } = method.Type; public long Revision { get; } = method.Revision; public string Name { get; } = method.Name; public string EditName { get; set; } = method.Name; public string? Instructions { get; set; } = method.Instructions; public string? AccountLabel { get; set; } = method.AccountLabel; public string? AccountReference { get; set; } = method.AccountReference; public string? QrPayload { get; set; } = method.QrPayload; public bool IsActive { get; set; } = method.IsActive; }
+    private sealed class NewPaymentMethod { [System.ComponentModel.DataAnnotations.Required, System.ComponentModel.DataAnnotations.StringLength(80, MinimumLength = 2)] public string Name { get; set; } = ""; public PaymentMethodType Type { get; set; } = PaymentMethodType.Other; public string? Instructions { get; set; } }
+}

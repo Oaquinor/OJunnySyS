@@ -47,7 +47,7 @@
                 <div class="panel-heading"><div><h2>Métodos de pago</h2><p>Distribución de transacciones</p></div></div>
                 @foreach (var payment in _report.Payments)
                 {
-                    <div class="report-row"><div><strong>@PaymentLabel(payment.Method)</strong><small>@payment.Sales ventas</small></div><strong>@Money(payment.Total)</strong></div>
+                    <div class="report-row"><div><strong>@payment.Method</strong><small>@payment.Sales ventas</small></div><strong>@Money(payment.Total)</strong></div>
                 }
             </section>
             <section class="panel report-panel top-products-panel">

@@ -55,12 +55,12 @@ La prueba está en República Dominicana y muestra numeración fiscal NCF, DOP, 
 
 ## Comparación con la implementación actual
 
-OJunnySyS ya tiene catálogo con SKU/barcode, stock agregado y por almacén, búsqueda POS filtrada por el almacén de la terminal, cliente, cobro por efectivo/tarjeta/transferencia, cajas y arqueos por terminal, transferencias auditables, recepciones por almacén, movimiento de entrada/retiro, cierre con efectivo contado/diferencia, historial, ventas idempotentes y PWA. La venta es transaccional: saldo del almacén, saldo global, ledger, venta y turno se escriben coordinadamente. El recibo también permite configurar diseño clásico/minimalista/detallado, ancho de papel, tipografía, tamaño, márgenes, densidad de líneas y visibilidad del precio unitario/importe por artículo; estas preferencias se guardan por empresa y se aplican en la vista imprimible.
+OJunnySyS ya tiene catálogo con SKU/barcode, stock agregado y por almacén, búsqueda POS filtrada por el almacén de la terminal, cliente, cobro por medios configurables y combinado, cajas y arqueos por terminal, transferencias auditables, recepciones por almacén, movimiento de entrada/retiro, cierre con efectivo contado/diferencia, historial, ventas idempotentes y PWA. Cada venta conserva snapshots de método/importes; el arqueo suma únicamente las partes en efectivo y los reportes y recibos muestran cada medio. La migración convierte ventas existentes a un pago histórico preservando importes y método. La venta es transaccional: saldo del almacén, saldo global, ledger, venta y turno se escriben coordinadamente. El recibo también permite configurar diseño clásico/minimalista/detallado, ancho de papel, tipografía, tamaño, márgenes, densidad de líneas y visibilidad del precio unitario/importe por artículo; estas preferencias se guardan por empresa y se aplican en la vista imprimible.
 
 La revisión confirma que los siguientes trabajos son concretos y necesarios:
 
 1. **Configuración POS por empresa y terminal**: gestión de terminales y almacenes, selección de almacén por terminal y stock por ubicación ya están implementados; faltan numeraciones, vendedor, centro de costo y destinos de pago, separando configuración global y configuración de sucursal.
-2. **Medios de pago configurables**: crear/desactivar medios propios por tenant y asociar cada uno a su cuenta; combinar pagos en una misma venta con importes cuya suma valide el total.
+2. **Medios de pago configurables**: implementados por empresa con tipo, instrucciones, datos de cuenta y payload QR opcional; medios configurables se pueden activar/desactivar, el POS divide el importe entre hasta diez medios y valida el total en servidor. Reportes, recibos y arqueo usan el detalle inmutable de cada medio; los históricos se migran. Pendiente: generar/mostrar QR gráfico y asociar una cuenta bancaria real al libro contable.
 3. **Vendedores vinculados a ventas**: catálogo y asignación; conservar vendedor en el snapshot de venta y permitir informes por vendedor.
 4. **Preferencias de venta**: descuento, venta rápida, venta simple, propina/impuestos locales, monedas y ventas pendientes, siempre con validación transaccional.
 5. **Diseñador de recibo**: presets, ancho térmico/A4, densidad/márgenes, tipografía, precio unitario/importe, cliente/SKU/impuesto y mensaje ya están en configuración; siguen pendientes orden/visibilidad de más campos, QR, vista previa en vivo y prueba de impresión.
@@ -68,7 +68,7 @@ La revisión confirma que los siguientes trabajos son concretos y necesarios:
 7. **Dispositivos**: interfaz de extensión para balanza, lector y futuras impresoras; degradación limpia cuando el navegador/dispositivo no es compatible.
 8. **Caja de auditoría/reportes**: cierres por operador/terminal, ventas por método y vendedor, conciliación y trazabilidad de cambios.
 
-La siguiente entrega de código debe mantener el monolito modular .NET/Blazor/MySQL, tenant scoping en índices y relaciones, API/casos de uso separados del UI, migraciones compatibles, snapshots inmutables para datos históricos y operaciones financieras idempotentes. No se debe llamar “factura fiscal electrónica” a una impresión POS sin integración DGII validada.
+Las siguientes entregas de código deben mantener el monolito modular .NET/Blazor/MySQL, tenant scoping en índices y relaciones, API/casos de uso separados del UI, migraciones compatibles, snapshots inmutables para datos históricos y operaciones financieras idempotentes. No se debe llamar “factura fiscal electrónica” a una impresión POS sin integración DGII validada.
 
 ## Fuera de alcance observado o sin acceso
 

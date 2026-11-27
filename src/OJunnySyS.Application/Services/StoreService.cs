@@ -39,8 +39,9 @@ public sealed class StoreService(IStoreRepository repository, IBusinessClock clo
         var (startUtc, endUtc) = clock.GetUtcRange(from, to);
         var sales = await repository.GetSalesInPeriodAsync(startUtc, endUtc, ct);
         var completed = sales.Where(x => x.Status == SaleStatus.Completed).ToArray();
-        var payments = completed.GroupBy(x => x.PaymentMethod)
-            .Select(group => new PaymentBreakdown(group.Key, group.Count(), group.Sum(x => x.Total)))
+        var payments = completed.SelectMany(sale => sale.Payments.Select(payment => (Sale: sale, Payment: payment)))
+            .GroupBy(x => x.Payment.MethodName)
+            .Select(group => new PaymentBreakdown(group.Key, group.Select(x => x.Sale.Id).Distinct().Count(), group.Sum(x => x.Payment.Amount)))
             .OrderByDescending(x => x.Total).ToArray();
         var topProducts = completed.SelectMany(x => x.Lines)
             .GroupBy(x => x.ProductName)
@@ -164,7 +165,8 @@ public sealed class StoreService(IStoreRepository repository, IBusinessClock clo
 
     private static ProductDto Map(Product product) => new(product.Id, product.Sku, product.Name, product.Category, product.UnitPrice, product.StockOnHand, product.Barcode, product.IsActive, product.Revision);
     private static CustomerDto Map(Customer customer) => new(customer.Id, customer.FullName, customer.Email, customer.Phone, customer.Company, customer.LifetimeValue, customer.Revision, customer.FirstName, customer.LastName, customer.CreatedAtUtc);
-    private static SaleDto Map(Sale sale) => new(sale.Id, sale.Number, sale.CustomerName, sale.Subtotal, sale.TaxAmount, sale.Total, sale.PaymentMethod, sale.CreatedAtUtc, sale.Status);
+    private static SaleDto Map(Sale sale) => new(sale.Id, sale.Number, sale.CustomerName, sale.Subtotal, sale.TaxAmount, sale.Total, sale.PaymentMethod, sale.CreatedAtUtc, sale.Status,
+        sale.Payments.Count == 0 ? null : string.Join(" + ", sale.Payments.Select(x => x.MethodName).Distinct()));
     private static SupplierDto Map(Supplier supplier) => new(supplier.Id, supplier.Name, supplier.TaxIdentifier, supplier.Email, supplier.Phone, supplier.Notes, supplier.Revision);
     private static PurchaseOrderDto Map(PurchaseOrder order) => new(order.Id, order.Number, order.SupplierName, order.Reference, order.DueDate, order.Status, order.Total, order.AmountPaid, order.BalanceDue, order.CreatedAtUtc,
         order.Lines.Select(x => new PurchaseLineDto(x.Id, x.ProductId, x.Sku, x.ProductName, x.Quantity, x.ReceivedQuantity, x.UnitCost, x.LineTotal)).ToArray(),

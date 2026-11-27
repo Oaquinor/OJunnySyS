@@ -107,14 +107,14 @@ else {
             x.Kind == CrmActivityKind.Task && !x.IsCompleted ? $"/app/crm?customerId={CustomerId}" : null,
             x.Kind == CrmActivityKind.Task ? "✓" : "✎", "timeline-activity")));
         _timeline.AddRange(_sales.Select(x => new TimelineItem(x.CreatedAtUtc, "VENTA", $"Venta {x.Number}",
-            $"{PaymentLabel(x.PaymentMethod)} · {x.Status switch { SaleStatus.Completed => "Venta completada", _ => "Venta anulada" }}",
+            $"{(x.PaymentSummary ?? PaymentLabel(x.PaymentMethod))} · {x.Status switch { SaleStatus.Completed => "Venta completada", _ => "Venta anulada" }}",
             x.Total, x.Status == SaleStatus.Completed ? "Completada" : "Anulada", null, $"/app/receipts/{x.Id}", "＄", x.Status == SaleStatus.Completed ? "timeline-sale" : "timeline-void")));
         _timeline = _timeline.OrderByDescending(x => x.AtUtc).ToList();
     }
 
     private static string StageLabel(OpportunityStage stage) => stage switch { OpportunityStage.Qualification => "Calificación", OpportunityStage.Proposal => "Propuesta", OpportunityStage.Negotiation => "Negociación", OpportunityStage.Won => "Ganada", _ => "Perdida" };
     private static string KindLabel(CrmActivityKind kind) => kind switch { CrmActivityKind.Note => "Nota", CrmActivityKind.Call => "Llamada", CrmActivityKind.Email => "Correo", CrmActivityKind.Meeting => "Reunión", _ => "Tarea" };
-    private static string PaymentLabel(PaymentMethod method) => method switch { PaymentMethod.Cash => "Efectivo", PaymentMethod.Card => "Tarjeta", PaymentMethod.Transfer => "Transferencia", _ => "Crédito" };
+    private static string PaymentLabel(PaymentMethod method) => method switch { PaymentMethod.Cash => "Efectivo", PaymentMethod.Card => "Tarjeta", PaymentMethod.Transfer => "Transferencia", PaymentMethod.Other => "Otro", _ => "Crédito" };
     private static string TagCss(CustomerTagColor color) => $"customer-tag-{color.ToString().ToLowerInvariant()}";
     private static string TagColorLabel(CustomerTagColor color) => color switch { CustomerTagColor.Green => "Verde", CustomerTagColor.Blue => "Azul", CustomerTagColor.Purple => "Violeta", CustomerTagColor.Amber => "Ámbar", CustomerTagColor.Rose => "Rosa", _ => "Gris" };
     private sealed record TimelineItem(DateTimeOffset AtUtc, string Kind, string Title, string Description, decimal? Amount, string? Status, string? Assignee, string? Url, string Icon, string CssClass);

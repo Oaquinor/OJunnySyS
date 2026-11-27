@@ -6,13 +6,14 @@ using OJunnySyS.Domain.Inventory;
 
 namespace OJunnySyS.Domain.Sales;
 
-public enum PaymentMethod { Cash, Card, Transfer, Credit }
+public enum PaymentMethod { Cash, Card, Transfer, Credit, Other }
 public enum SaleStatus { Completed, Voided }
 
 public sealed class Sale : TenantEntity
 {
     private Sale() { }
     private readonly List<SaleLine> _lines = [];
+    private readonly List<SalePayment> _payments = [];
 
     public Sale(Guid tenantId, string number, Customer? customer, PaymentMethod paymentMethod, IEnumerable<SaleLine> lines, Guid cashSessionId, Guid cashierUserId, decimal taxRate = 0.18m, Guid? idempotencyKey = null, string registerCode = "MAIN", Guid warehouseId = default) : base(tenantId)
     {
@@ -48,6 +49,28 @@ public sealed class Sale : TenantEntity
     public decimal TaxAmount { get; private set; }
     public decimal Total { get; private set; }
     public IReadOnlyCollection<SaleLine> Lines => _lines;
+    public IReadOnlyCollection<SalePayment> Payments => _payments;
+
+    public void RecordPayments(IEnumerable<PaymentAllocation> allocations)
+    {
+        if (_payments.Count != 0) throw new DomainException("Los pagos de esta venta ya quedaron registrados.");
+        var items = allocations?.ToArray() ?? throw new DomainException("Debes seleccionar al menos un medio de pago.");
+        if (items.Length is < 1 or > 10) throw new DomainException("Una venta debe tener entre uno y diez medios de pago.");
+        if (items.Any(x => x.PaymentMethodId == Guid.Empty) || items.Select(x => x.PaymentMethodId).Distinct().Count() != items.Length)
+            throw new DomainException("Cada medio de pago puede agregarse una sola vez a la venta.");
+        if (items.Any(x => x.Type == PaymentMethodType.Other && x.Amount > 0 && string.IsNullOrWhiteSpace(x.MethodName)))
+            throw new DomainException("Indica el nombre de cada medio de pago.");
+        if (items.Sum(x => x.Amount) != Total)
+            throw new DomainException("La suma de los medios de pago debe coincidir exactamente con el total de la venta.");
+        foreach (var item in items) _payments.Add(new SalePayment(TenantId, Id, item.PaymentMethodId, item.MethodName, item.Type, item.Amount, item.Reference));
+        PaymentMethod = items.Length > 1 ? PaymentMethod.Other : items[0].Type switch
+        {
+            PaymentMethodType.Cash => PaymentMethod.Cash,
+            PaymentMethodType.Card => PaymentMethod.Card,
+            PaymentMethodType.Transfer => PaymentMethod.Transfer,
+            _ => PaymentMethod.Other
+        };
+    }
 
     public void Void() { if (Status == SaleStatus.Voided) throw new DomainException("La venta ya fue anulada."); Status = SaleStatus.Voided; MarkUpdated(); }
 }

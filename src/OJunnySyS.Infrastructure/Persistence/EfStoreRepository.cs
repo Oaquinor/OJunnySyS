@@ -57,19 +57,19 @@ public sealed class EfStoreRepository(IDbContextFactory<StoreDbContext> contextF
     {
         await using var db = await CreateDbContextAsync(cancellationToken);
         return await db.Sales.AsNoTracking().Where(x => x.CustomerId == customerId)
-            .OrderByDescending(x => x.CreatedAtUtc).Take(Math.Clamp(count, 1, 200)).ToListAsync(cancellationToken);
+            .Include(x => x.Payments).OrderByDescending(x => x.CreatedAtUtc).Take(Math.Clamp(count, 1, 200)).ToListAsync(cancellationToken);
     }
 
     public async Task<IReadOnlyList<Sale>> GetRecentSalesAsync(int count, CancellationToken cancellationToken = default)
     {
         await using var db = await CreateDbContextAsync(cancellationToken);
-        return await db.Sales.AsNoTracking().OrderByDescending(x => x.CreatedAtUtc).Take(Math.Clamp(count, 1, 100)).ToListAsync(cancellationToken);
+        return await db.Sales.AsNoTracking().Include(x => x.Payments).OrderByDescending(x => x.CreatedAtUtc).Take(Math.Clamp(count, 1, 100)).ToListAsync(cancellationToken);
     }
 
     public async Task<IReadOnlyList<Sale>> GetSalesInPeriodAsync(DateTimeOffset from, DateTimeOffset to, CancellationToken cancellationToken = default)
     {
         await using var db = await CreateDbContextAsync(cancellationToken);
-        return await db.Sales.AsNoTracking().Include(x => x.Lines)
+        return await db.Sales.AsNoTracking().Include(x => x.Lines).Include(x => x.Payments)
             .Where(x => x.CreatedAtUtc >= from && x.CreatedAtUtc < to).ToListAsync(cancellationToken);
     }
 
@@ -206,12 +206,12 @@ public sealed class EfStoreRepository(IDbContextFactory<StoreDbContext> contextF
         if (request.Lines.Count > 200 || request.Lines.Any(x => x.ProductId == Guid.Empty || x.Quantity <= 0)) throw new DomainException("La venta debe tener hasta 200 líneas con productos y cantidades válidas.");
         if (request.IdempotencyKey == Guid.Empty) throw new DomainException("La clave de idempotencia del cobro es obligatoria.");
         var registerCode = PosRegister.NormalizeCode(request.RegisterCode);
-        if (request.PaymentMethod == PaymentMethod.Credit) throw new DomainException("Las ventas a crédito aún no están habilitadas.");
+        if (request.Payments is null && request.PaymentMethod == PaymentMethod.Credit) throw new DomainException("Las ventas a crédito aún no están habilitadas.");
         if (cashierUserId == Guid.Empty) throw new DomainException("No se pudo identificar al cajero.");
         var tenantId = tenantContext.GetRequiredTenantId();
         await using var db = await CreateDbContextAsync(cancellationToken);
         await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
-        var priorSale = await db.Sales.AsNoTracking().Include(x => x.Lines)
+        var priorSale = await db.Sales.AsNoTracking().Include(x => x.Lines).Include(x => x.Payments)
             .SingleOrDefaultAsync(x => x.IdempotencyKey == request.IdempotencyKey, cancellationToken);
         if (priorSale is not null)
         {
@@ -257,6 +257,7 @@ public sealed class EfStoreRepository(IDbContextFactory<StoreDbContext> contextF
         }
 
         var sale = new Sale(tenantId, $"V-{DateTimeOffset.UtcNow:yyyyMMddHHmmss}-{Guid.NewGuid():N}", customer, request.PaymentMethod, lines, cashSession.Id, cashierUserId, tenant.DefaultTaxRate, request.IdempotencyKey, registerCode, warehouseId);
+        sale.RecordPayments(await ResolvePaymentAllocationsAsync(db, tenantId, request, sale.Total, cancellationToken));
         foreach (var movement in stockMovements)
             db.InventoryMovements.Add(new InventoryMovement(tenantId, movement.Product.Id, InventoryMovementType.Sale, -movement.Quantity, movement.WarehouseBalance, sale.Number, warehouseId));
         customer?.RecordPurchase(sale.Total);
@@ -268,15 +269,59 @@ public sealed class EfStoreRepository(IDbContextFactory<StoreDbContext> contextF
 
     private static async Task<Sale?> LoadSaleByCheckoutKeyAsync(StoreDbContext db, Guid tenantId, Guid idempotencyKey, CancellationToken ct) =>
         await db.Sales.FromSqlInterpolated($"SELECT * FROM Sales WHERE TenantId = {tenantId} AND IdempotencyKey = {idempotencyKey} FOR UPDATE")
-            .AsSplitQuery().Include(x => x.Lines).SingleOrDefaultAsync(ct);
+            .AsSplitQuery().Include(x => x.Lines).Include(x => x.Payments).SingleOrDefaultAsync(ct);
+
+    private static async Task<IReadOnlyList<PaymentAllocation>> ResolvePaymentAllocationsAsync(StoreDbContext db, Guid tenantId,
+        CheckoutRequest request, decimal total, CancellationToken ct)
+    {
+        if (request.Payments is null)
+        {
+            var kind = request.PaymentMethod switch
+            {
+                PaymentMethod.Cash => PaymentMethodType.Cash,
+                PaymentMethod.Card => PaymentMethodType.Card,
+                PaymentMethod.Transfer => PaymentMethodType.Transfer,
+                PaymentMethod.Other => PaymentMethodType.Other,
+                _ => throw new DomainException("El método de pago no es válido.")
+            };
+            var defaultCode = kind switch { PaymentMethodType.Cash => "cash", PaymentMethodType.Card => "card", PaymentMethodType.Transfer => "transfer", _ => "other" };
+            var method = await db.TenantPaymentMethods.AsNoTracking().Where(x => x.IsActive && x.Type == kind)
+                .OrderBy(x => x.Code == defaultCode ? 0 : 1).ThenBy(x => x.Name).FirstOrDefaultAsync(ct)
+                ?? throw new DomainException("Ese medio de pago no está activo. Actualiza el POS y elige otra forma de pago.");
+            return [new PaymentAllocation(method.Id, method.Name, method.Type, total)];
+        }
+
+        if (request.Payments.Count is < 1 or > 10) throw new DomainException("Selecciona entre uno y diez medios de pago.");
+        if (request.Payments.Any(x => x.PaymentMethodId == Guid.Empty) || request.Payments.Select(x => x.PaymentMethodId).Distinct().Count() != request.Payments.Count)
+            throw new DomainException("Cada medio de pago puede aparecer una sola vez.");
+        var methods = new Dictionary<Guid, TenantPaymentMethod>();
+        foreach (var payment in request.Payments.OrderBy(x => x.PaymentMethodId))
+        {
+            var method = await db.TenantPaymentMethods.AsNoTracking().SingleOrDefaultAsync(x => x.Id == payment.PaymentMethodId && x.IsActive, ct)
+                ?? throw new DomainException("Uno de los medios de pago ya no está disponible. Actualiza el POS.");
+            methods.Add(method.Id, method);
+        }
+        return request.Payments.Select(payment =>
+        {
+            var method = methods[payment.PaymentMethodId];
+            return new PaymentAllocation(method.Id, method.Name, method.Type, payment.Amount, payment.Reference);
+        }).ToArray();
+    }
 
     private static void EnsureSameCheckout(Sale sale, CheckoutRequest request, Guid cashierUserId, string registerCode)
     {
         var requestedLines = request.Lines.GroupBy(x => x.ProductId).ToDictionary(x => x.Key, x => SumQuantities(x.Select(line => line.Quantity)));
         var storedLines = sale.Lines.ToDictionary(x => x.ProductId, x => x.Quantity);
-        if (sale.CashierUserId != cashierUserId || sale.CustomerId != request.CustomerId || sale.PaymentMethod != request.PaymentMethod || sale.RegisterCode != registerCode
+        if (sale.CashierUserId != cashierUserId || sale.CustomerId != request.CustomerId || (request.Payments is null && sale.PaymentMethod != request.PaymentMethod) || sale.RegisterCode != registerCode
             || requestedLines.Count != storedLines.Count || requestedLines.Any(x => !storedLines.TryGetValue(x.Key, out var quantity) || quantity != x.Value))
             throw new DomainException("La clave de idempotencia ya se utilizó con otros datos de cobro.");
+        if (request.Payments is not null)
+        {
+            var expected = request.Payments.ToDictionary(x => x.PaymentMethodId, x => (x.Amount, Reference: x.Reference?.Trim()));
+            var actual = sale.Payments.ToDictionary(x => x.PaymentMethodId, x => (x.Amount, x.Reference));
+            if (expected.Count != actual.Count || expected.Any(x => !actual.TryGetValue(x.Key, out var value) || value != x.Value))
+                throw new DomainException("La clave de idempotencia ya se utilizó con otra distribución de pagos.");
+        }
     }
 
     public async Task<CashSessionDto?> GetCurrentCashSessionAsync(string registerCode = "MAIN", CancellationToken cancellationToken = default)
@@ -349,7 +394,7 @@ public sealed class EfStoreRepository(IDbContextFactory<StoreDbContext> contextF
         var session = await db.CashSessions.FromSqlInterpolated($"SELECT * FROM CashSessions WHERE Id = {sessionId} AND TenantId = {tenantId} FOR UPDATE").SingleOrDefaultAsync(cancellationToken)
             ?? throw new DomainException("La sesión de caja no existe.");
         if (session.Status != CashSessionStatus.Open) throw new DomainException("La caja ya está cerrada.");
-        var sales = await db.Sales.AsNoTracking().Where(x => x.CashSessionId == session.Id && x.PaymentMethod == PaymentMethod.Cash && x.Status == SaleStatus.Completed).SumAsync(x => (decimal?)x.Total, cancellationToken) ?? 0m;
+        var sales = await GetCashTenderSalesAsync(db, session.Id, cancellationToken);
         var cashIn = await db.CashMovements.AsNoTracking().Where(x => x.SessionId == session.Id && x.Kind == CashMovementKind.CashIn).SumAsync(x => (decimal?)x.Amount, cancellationToken) ?? 0m;
         var cashOut = await db.CashMovements.AsNoTracking().Where(x => x.SessionId == session.Id && x.Kind == CashMovementKind.CashOut).SumAsync(x => (decimal?)x.Amount, cancellationToken) ?? 0m;
         session.Close(userId, session.OpeningFloat + sales + cashIn - cashOut, countedCash);
@@ -361,19 +406,20 @@ public sealed class EfStoreRepository(IDbContextFactory<StoreDbContext> contextF
     public async Task<SaleReceiptDto?> GetSaleReceiptAsync(Guid saleId, CancellationToken cancellationToken = default)
     {
         await using var db = await CreateDbContextAsync(cancellationToken);
-        var sale = await db.Sales.AsNoTracking().Include(x => x.Lines).SingleOrDefaultAsync(x => x.Id == saleId, cancellationToken);
+        var sale = await db.Sales.AsNoTracking().Include(x => x.Lines).Include(x => x.Payments).SingleOrDefaultAsync(x => x.Id == saleId, cancellationToken);
         if (sale is null) return null;
         var registerCode = sale.CashSessionId is { } sessionId
             ? await db.CashSessions.AsNoTracking().Where(x => x.Id == sessionId).Select(x => x.RegisterCode).SingleOrDefaultAsync(cancellationToken)
             : null;
         return new SaleReceiptDto(sale.Id, sale.Number, sale.CustomerName, sale.Subtotal, sale.TaxRate, sale.TaxAmount, sale.Total,
             sale.PaymentMethod, sale.Status, sale.CreatedAtUtc, registerCode,
-            sale.Lines.Select(x => new ReceiptLineDto(x.Sku, x.ProductName, x.Quantity, x.UnitPrice, x.LineTotal)).ToArray());
+            sale.Lines.Select(x => new ReceiptLineDto(x.Sku, x.ProductName, x.Quantity, x.UnitPrice, x.LineTotal)).ToArray(),
+            sale.Payments.Select(x => new SalePaymentDto(x.MethodName, x.Type, x.Amount, x.Reference)).ToArray());
     }
 
     private static async Task<CashSessionDto> MapCashSessionAsync(StoreDbContext db, CashSession session, CancellationToken cancellationToken)
     {
-        var sales = await db.Sales.AsNoTracking().Where(x => x.CashSessionId == session.Id && x.PaymentMethod == PaymentMethod.Cash && x.Status == SaleStatus.Completed).SumAsync(x => (decimal?)x.Total, cancellationToken) ?? 0m;
+        var sales = await GetCashTenderSalesAsync(db, session.Id, cancellationToken);
         var cashIn = await db.CashMovements.AsNoTracking().Where(x => x.SessionId == session.Id && x.Kind == CashMovementKind.CashIn).SumAsync(x => (decimal?)x.Amount, cancellationToken) ?? 0m;
         var cashOut = await db.CashMovements.AsNoTracking().Where(x => x.SessionId == session.Id && x.Kind == CashMovementKind.CashOut).SumAsync(x => (decimal?)x.Amount, cancellationToken) ?? 0m;
         var movements = await db.CashMovements.AsNoTracking().Where(x => x.SessionId == session.Id).OrderByDescending(x => x.CreatedAtUtc).Take(100).ToListAsync(cancellationToken);
@@ -382,6 +428,12 @@ public sealed class EfStoreRepository(IDbContextFactory<StoreDbContext> contextF
             sales, cashIn, cashOut, expected, session.ClosedAtUtc, session.CountedCash, session.Difference,
             movements.Select(x => new CashMovementDto(x.Id, x.Kind, x.Amount, x.Description, x.UserId, x.CreatedAtUtc)).ToArray());
     }
+
+    private static async Task<decimal> GetCashTenderSalesAsync(StoreDbContext db, Guid sessionId, CancellationToken ct) =>
+        await (from payment in db.SalePayments.AsNoTracking()
+         join sale in db.Sales.AsNoTracking() on new { payment.TenantId, payment.SaleId } equals new { sale.TenantId, SaleId = sale.Id }
+         where sale.CashSessionId == sessionId && sale.Status == SaleStatus.Completed && payment.Type == PaymentMethodType.Cash
+         select (decimal?)payment.Amount).SumAsync(ct) ?? 0m;
 
     public async Task<IReadOnlyList<Supplier>> SearchSuppliersAsync(string? query, CancellationToken cancellationToken = default)
     {
