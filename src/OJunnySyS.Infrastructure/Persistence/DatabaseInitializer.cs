@@ -27,11 +27,11 @@ public static class DatabaseInitializer
 
         var products = new[]
         {
-            new Product(TenantDefaults.LocalDemoTenantId, "CAF-001", "Café de origen · 250 g", "Café", 480m, 24, "746000000001"),
-            new Product(TenantDefaults.LocalDemoTenantId, "CAF-002", "Cold brew clásico", "Bebidas", 225m, 18, "746000000002"),
-            new Product(TenantDefaults.LocalDemoTenantId, "ACC-001", "Vaso térmico Ojunny", "Accesorios", 890m, 7, "746000000003"),
-            new Product(TenantDefaults.LocalDemoTenantId, "CAF-003", "Caja degustación", "Regalos", 1350m, 4, "746000000004"),
-            new Product(TenantDefaults.LocalDemoTenantId, "ACC-002", "Filtro reutilizable", "Accesorios", 390m, 16, "746000000005")
+            new Product(TenantDefaults.LocalDemoTenantId, "CAF-001", "Café de origen · 250 g", "Café", 480m, 24, "746000000001", initialUnitCost: 240m),
+            new Product(TenantDefaults.LocalDemoTenantId, "CAF-002", "Cold brew clásico", "Bebidas", 225m, 18, "746000000002", initialUnitCost: 90m),
+            new Product(TenantDefaults.LocalDemoTenantId, "ACC-001", "Vaso térmico Ojunny", "Accesorios", 890m, 7, "746000000003", initialUnitCost: 420m),
+            new Product(TenantDefaults.LocalDemoTenantId, "CAF-003", "Caja degustación", "Regalos", 1350m, 4, "746000000004", initialUnitCost: 720m),
+            new Product(TenantDefaults.LocalDemoTenantId, "ACC-002", "Filtro reutilizable", "Accesorios", 390m, 16, "746000000005", initialUnitCost: 170m)
         };
         db.Products.AddRange(products);
         db.WarehouseStocks.AddRange(products.Select(x => new WarehouseStock(x.TenantId, warehouse.Id, x.Id, x.StockOnHand)));

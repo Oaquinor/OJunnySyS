@@ -94,12 +94,16 @@ public sealed class Sale : TenantEntity
 public sealed class SaleLine
 {
     private SaleLine() { }
-    public SaleLine(Guid productId, string sku, string productName, decimal unitPrice, int quantity, decimal taxRate = 0m)
+    public SaleLine(Guid productId, string sku, string productName, decimal unitPrice, int quantity, decimal taxRate = 0m, decimal unitCost = 0m, int uncostedQuantity = 0)
     {
         if (quantity <= 0) throw new DomainException("La cantidad debe ser mayor que cero.");
         if (unitPrice < 0) throw new DomainException("El precio no puede ser negativo.");
         if (taxRate is < 0 or > 1) throw new DomainException("La tasa de impuesto del artículo debe estar entre 0 y 100 por ciento.");
+        if (unitCost is < 0 or > 9999999999.9999m) throw new DomainException("El costo unitario del artículo no es válido.");
+        if (uncostedQuantity < 0 || uncostedQuantity > quantity) throw new DomainException("La cantidad sin costo del artículo no es válida.");
         ProductId = productId; Sku = sku; ProductName = productName; UnitPrice = unitPrice; Quantity = quantity;
+        UnitCost = decimal.Round(unitCost, 4, MidpointRounding.AwayFromZero);
+        UncostedQuantity = uncostedQuantity;
         LineTotal = decimal.Round(unitPrice * quantity, 2); TaxRate = taxRate;
     }
     public Guid Id { get; private set; } = Guid.NewGuid();
@@ -108,8 +112,12 @@ public sealed class SaleLine
     public string Sku { get; private set; } = "";
     public string ProductName { get; private set; } = "";
     public decimal UnitPrice { get; private set; }
+    public decimal UnitCost { get; private set; }
+    public int UncostedQuantity { get; private set; }
+    public int CostedQuantity => Quantity - UncostedQuantity;
     public int Quantity { get; private set; }
     public decimal LineTotal { get; private set; }
     public decimal TaxRate { get; private set; }
     public decimal TaxAmount => decimal.Round(LineTotal * TaxRate, 2);
+    public decimal CostTotal => decimal.Round(UnitCost * CostedQuantity, 2, MidpointRounding.AwayFromZero);
 }

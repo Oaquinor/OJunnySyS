@@ -453,6 +453,17 @@ namespace OJunnySyS.Infrastructure.Persistence.Migrations
                     b.Property<Guid>("TenantId")
                         .HasColumnType("char(36)");
 
+                    b.Property<int>("UncostedQuantity")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int")
+                        .HasDefaultValue(0);
+
+                    b.Property<decimal>("UnitCost")
+                        .ValueGeneratedOnAdd()
+                        .HasPrecision(14, 4)
+                        .HasColumnType("decimal(14,4)")
+                        .HasDefaultValue(0m);
+
                     b.Property<decimal>("UnitPrice")
                         .HasPrecision(12, 2)
                         .HasColumnType("decimal(12,2)");
@@ -1322,6 +1333,17 @@ namespace OJunnySyS.Infrastructure.Persistence.Migrations
                     b.Property<decimal>("TaxRate")
                         .HasPrecision(5, 4)
                         .HasColumnType("decimal(5,4)");
+
+                    b.Property<int>("UncostedQuantity")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int")
+                        .HasDefaultValue(0);
+
+                    b.Property<decimal>("UnitCost")
+                        .ValueGeneratedOnAdd()
+                        .HasPrecision(14, 4)
+                        .HasColumnType("decimal(14,4)")
+                        .HasDefaultValue(0m);
 
                     b.Property<decimal>("UnitPrice")
                         .HasPrecision(12, 2)

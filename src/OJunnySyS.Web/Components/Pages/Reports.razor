@@ -64,8 +64,8 @@
                 }
             </section>
             <section class="panel report-panel top-products-panel">
-                <div class="panel-heading"><div><h2>Productos más vendidos</h2><p>Ordenados por ingresos</p></div></div>
-                <div class="table-wrap"><table><thead><tr><th>PRODUCTO</th><th class="align-right">UNIDADES</th><th class="align-right">INGRESOS</th></tr></thead><tbody>@foreach (var product in _report.TopProducts) { <tr><td><strong>@product.ProductName</strong></td><td class="align-right">@product.Quantity</td><td class="align-right amount">@Money(product.Revenue)</td></tr> }</tbody></table></div>
+                <div class="panel-heading"><div><h2>Productos más vendidos</h2><p>Margen calculado sobre unidades con costo conocido</p></div></div>
+                <div class="table-wrap"><table><thead><tr><th>PRODUCTO</th><th class="align-right">UNIDADES</th><th class="align-right">INGRESOS</th><th class="align-right">COSTO CONOCIDO</th><th class="align-right">MARGEN BRUTO*</th><th class="align-right">SIN COSTO</th></tr></thead><tbody>@foreach (var product in _report.TopProducts) { <tr><td><strong>@product.ProductName</strong></td><td class="align-right">@product.Quantity</td><td class="align-right amount">@Money(product.Revenue)</td><td class="align-right">@Money(product.Cost)</td><td class="align-right amount">@Money(product.GrossProfit)</td><td class="align-right">@product.UncostedUnits</td></tr> }</tbody></table></div><small class="report-filter-note">* El margen es parcial cuando la columna «Sin costo» muestra unidades. Los costos históricos desconocidos no se incluyen.</small>
             </section>
             <section class="panel report-panel">
                 <div class="panel-heading"><div><h2>Ventas por vendedor</h2><p>Ventas completadas atribuidas en el período</p></div></div>

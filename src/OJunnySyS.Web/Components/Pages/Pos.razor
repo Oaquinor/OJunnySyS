@@ -13,6 +13,16 @@
 <PageHeader Eyebrow="VENTAS / PUNTO DE VENTA" Title="Punto de venta" Description="Agrega productos, elige cómo cobrar y listo.">
     <Actions><div class="pos-terminal-select"><label for="pos-terminal">Terminal<select id="pos-terminal" @bind="_registerCode" @bind:after="OnRegisterChangedAsync"><option value="">Selecciona un terminal</option>@foreach (var register in _registers) { <option value="@register.Code">@register.Name</option> }</select></label></div><a class="register-status" href="/app/cash"><span class="@(CashOpen ? "online-dot" : "cash-closed-dot")"></span><span><strong>@(CashOpen ? "Caja abierta" : "Caja cerrada")</strong><small>@(_registers.FirstOrDefault(x => x.Code == _registerCode)?.Name ?? _registerCode) · @_warehouses.FirstOrDefault(x => x.Id == _warehouseId)?.Name · administrar</small></span></a></Actions>
 </PageHeader>
+@if (_loading)
+{
+    <div class="loading-panel" role="status">Preparando caja, terminales, impuestos y catálogo…</div>
+}
+else if (!string.IsNullOrWhiteSpace(_loadError))
+{
+    <div class="inline-error cash-error" role="alert">@_loadError <button type="button" class="button button-secondary button-small" @onclick="InitializeAsync">Reintentar</button></div>
+}
+else
+{
 @if (!string.IsNullOrWhiteSpace(_notice)) { <div class="success-banner">✓ @_notice @if (_lastSaleId is { } saleId) { <a class="receipt-quick-link" href="/app/receipts/@saleId">Ver recibo</a> }<button @onclick="() => _notice = null">×</button></div> }
 @if (!CashOpen && !string.IsNullOrEmpty(_registerCode)) { <div class="inline-error cash-error">Abre el turno de @_registers.FirstOrDefault(x => x.Code == _registerCode)?.Name antes de cobrar. <a href="/app/cash">Ir a caja y arqueo →</a></div> }
 @if (_registers.Count == 0) { <div class="inline-error cash-error">No hay terminales POS activos. Pide al administrador que configure uno en <a href="/app/pos/registers">Terminales POS</a>.</div> }
@@ -54,6 +64,7 @@
         <div class="secure-note">▣ Transacción registrada de forma segura</div>
     </aside>
 </div>
+}
 
 @code {
     private List<ProductDto> _products = [];
@@ -73,7 +84,8 @@
     private Guid _warehouseId;
     private IReadOnlyList<TenantPaymentMethodDto> _paymentMethods = [];
     private readonly List<TenderForm> _tenders = [];
-    private bool _saving;
+    private bool _saving, _loading = true;
+    private string? _loadError;
     private Guid _checkoutKey = Guid.NewGuid();
     private decimal _taxRate = 0.18m;
     private IReadOnlyList<string> _categories => _products.Select(x => x.Category).Distinct().Order().ToArray();
@@ -84,7 +96,41 @@
     private decimal Total => Subtotal + Tax;
     private decimal TenderBalance => decimal.Round(Total - _tenders.Sum(x => x.Amount), 2);
     private bool CashOpen => _cashSession?.Status == CashSessionStatus.Open;
-    protected override async Task OnInitializedAsync() { var principal = (await AuthenticationState.GetAuthenticationStateAsync()).User; if (!Guid.TryParse(principal.FindFirstValue(System.Security.Claims.ClaimTypes.NameIdentifier), out _cashierUserId)) throw new InvalidOperationException("No se pudo identificar al cajero."); _registers = (await PosRegisters.GetRegistersAsync(includeInactive: false)).ToList(); _warehouses = (await WarehouseService.GetAsync(includeInactive: false)).ToList(); _salespeople = (await TenantUsers.GetActiveSalespeopleAsync()).ToList(); if (_registers.All(x => x.Code != _registerCode)) _registerCode = _registers.FirstOrDefault()?.Code ?? ""; _warehouseId = _registers.FirstOrDefault(x => x.Code == _registerCode)?.WarehouseId ?? Guid.Empty; _paymentMethods = await PaymentMethods.GetAsync(false); if (_paymentMethods.FirstOrDefault(x => x.Type == PaymentMethodType.Cash) is { } cashMethod) _tenders.Add(new(cashMethod.Id, 0)); _taxRate = (await TenantSettings.GetAsync()).DefaultTaxRate; _cashSession = string.IsNullOrEmpty(_registerCode) ? null : await Store.GetCurrentCashSessionAsync(_registerCode); await LoadProductsAsync(); _customers = (await Store.SearchCustomersAsync(null)).ToList(); }
+    protected override Task OnInitializedAsync() => InitializeAsync();
+    private async Task InitializeAsync()
+    {
+        _loading = true;
+        _loadError = null;
+        try
+        {
+            var principal = (await AuthenticationState.GetAuthenticationStateAsync()).User;
+            if (!Guid.TryParse(principal.FindFirstValue(System.Security.Claims.ClaimTypes.NameIdentifier), out _cashierUserId))
+                throw new InvalidOperationException("No se pudo identificar al cajero.");
+
+            _registers = (await PosRegisters.GetRegistersAsync(includeInactive: false)).ToList();
+            _warehouses = (await WarehouseService.GetAsync(includeInactive: false)).ToList();
+            _salespeople = (await TenantUsers.GetActiveSalespeopleAsync()).ToList();
+            if (_registers.All(x => x.Code != _registerCode)) _registerCode = _registers.FirstOrDefault()?.Code ?? "";
+            _warehouseId = _registers.FirstOrDefault(x => x.Code == _registerCode)?.WarehouseId ?? Guid.Empty;
+            _paymentMethods = await PaymentMethods.GetAsync(false);
+            if (_tenders.Count == 0 && _paymentMethods.FirstOrDefault(x => x.Type == PaymentMethodType.Cash) is { } cashMethod)
+                _tenders.Add(new(cashMethod.Id, 0));
+            _taxRate = (await TenantSettings.GetAsync()).DefaultTaxRate;
+            _cashSession = string.IsNullOrEmpty(_registerCode) ? null : await Store.GetCurrentCashSessionAsync(_registerCode);
+            await LoadProductsAsync();
+            _customers = (await Store.SearchCustomersAsync(null)).ToList();
+            ResetCheckoutKey();
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "No se pudo preparar el punto de venta.");
+            _loadError = "No se pudo cargar la caja. Comprueba tu conexión y vuelve a intentarlo.";
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
     private async Task OnRegisterChangedAsync() { ClearCart(); _error = null; _warehouseId = _registers.FirstOrDefault(x => x.Code == _registerCode)?.WarehouseId ?? Guid.Empty; _cashSession = string.IsNullOrEmpty(_registerCode) ? null : await Store.GetCurrentCashSessionAsync(_registerCode); await LoadProductsAsync(); }
     private async Task LoadProductsAsync() => _products = _warehouseId == Guid.Empty ? [] : (await Store.SearchProductsInWarehouseAsync(_search, _warehouseId)).ToList();
     private void ResetCheckoutKey() { _checkoutKey = Guid.NewGuid(); if (_tenders.Count == 1) _tenders[0].Amount = Total; }

@@ -136,6 +136,8 @@ public sealed class StoreDbContext(DbContextOptions<StoreDbContext> options)
             entity.Property(x => x.Name).HasMaxLength(160).IsRequired();
             entity.Property(x => x.Category).HasMaxLength(80);
             entity.Property(x => x.UnitPrice).HasPrecision(12, 2);
+            entity.Property(x => x.UnitCost).HasPrecision(14, 4).HasDefaultValue(0m);
+            entity.Property(x => x.UncostedQuantity).HasDefaultValue(0);
             entity.Property(x => x.TaxRateOverride).HasPrecision(5, 4);
             entity.Property(x => x.Revision).IsConcurrencyToken();
             entity.Property(x => x.Revision).HasDefaultValue(0L);
@@ -231,6 +233,9 @@ public sealed class StoreDbContext(DbContextOptions<StoreDbContext> options)
             entity.Property(x => x.Sku).HasMaxLength(40).IsRequired();
             entity.Property(x => x.ProductName).HasMaxLength(160).IsRequired();
             entity.Property(x => x.UnitPrice).HasPrecision(12, 2);
+            entity.Property(x => x.UnitCost).HasPrecision(14, 4).HasDefaultValue(0m);
+            entity.Property(x => x.UncostedQuantity).HasDefaultValue(0);
+            entity.Ignore(x => x.CostedQuantity);
             entity.Property(x => x.LineTotal).HasPrecision(14, 2);
             entity.Property(x => x.TaxRate).HasPrecision(5, 4);
             entity.Ignore(x => x.TaxAmount);

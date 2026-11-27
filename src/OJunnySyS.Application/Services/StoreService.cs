@@ -13,6 +13,8 @@ public sealed class StoreService(IStoreRepository repository, IBusinessClock clo
     public async Task<IReadOnlyList<ProductDto>> SearchProductsAsync(string? query, bool includeInactive = false, CancellationToken ct = default) =>
         (await repository.SearchProductsAsync(query, includeInactive, ct)).Select(Map).ToArray();
 
+    public Task<InventoryValuationDto> GetInventoryValuationAsync(CancellationToken ct = default) => repository.GetInventoryValuationAsync(ct);
+
     public async Task<IReadOnlyList<ProductDto>> SearchProductsInWarehouseAsync(string? query, Guid warehouseId, CancellationToken ct = default) =>
         (await repository.SearchProductsInWarehouseAsync(query, warehouseId, ct))
             .Select(x => Map(x.Product) with { StockOnHand = x.WarehouseStock }).ToArray();
@@ -45,7 +47,12 @@ public sealed class StoreService(IStoreRepository repository, IBusinessClock clo
             .OrderByDescending(x => x.Total).ToArray();
         var topProducts = completed.SelectMany(x => x.Lines)
             .GroupBy(x => x.ProductName)
-            .Select(group => new ProductSalesSummary(group.Key, group.Sum(x => x.Quantity), group.Sum(x => x.LineTotal)))
+            .Select(group =>
+            {
+                var revenue = group.Sum(x => x.LineTotal);
+                var cost = group.Sum(x => x.CostTotal);
+                return new ProductSalesSummary(group.Key, group.Sum(x => x.Quantity), revenue, cost, revenue - cost, group.Sum(x => x.UncostedQuantity));
+            })
             .OrderByDescending(x => x.Revenue).Take(5).ToArray();
         var dailySales = completed.GroupBy(x => DateOnly.FromDateTime(clock.ToBusinessTime(x.CreatedAtUtc).DateTime))
             .Select(group => new DailySalesSummary(group.Key, group.Sum(x => x.Total)))
@@ -69,9 +76,9 @@ public sealed class StoreService(IStoreRepository repository, IBusinessClock clo
     public async Task<CustomerDto> DeactivateCustomerAsync(Guid id, long expectedRevision, CancellationToken ct = default) =>
         Map(await repository.DeactivateCustomerAsync(id, expectedRevision, ct));
 
-    public async Task<ProductDto> CreateProductAsync(string sku, string name, string category, decimal unitPrice, int stock, string? barcode, decimal? taxRateOverride = null, CancellationToken ct = default)
+    public async Task<ProductDto> CreateProductAsync(string sku, string name, string category, decimal unitPrice, int stock, string? barcode, decimal? taxRateOverride = null, decimal? initialUnitCost = null, CancellationToken ct = default)
     {
-        var product = await repository.CreateProductAsync(sku, name, category, unitPrice, stock, barcode, taxRateOverride, ct);
+        var product = await repository.CreateProductAsync(sku, name, category, unitPrice, stock, barcode, taxRateOverride, initialUnitCost, ct);
         return Map(product);
     }
 

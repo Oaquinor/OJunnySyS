@@ -17,7 +17,8 @@ public sealed record CheckoutPaymentLine(Guid PaymentMethodId, decimal Amount, s
 public sealed record CheckoutRequest(Guid? CustomerId, PaymentMethod PaymentMethod, IReadOnlyCollection<CheckoutLine> Lines, Guid IdempotencyKey = default, string RegisterCode = "MAIN", IReadOnlyCollection<CheckoutPaymentLine>? Payments = null, Guid? SellerUserId = null);
 public sealed record DashboardSummary(decimal SalesToday, int OrdersToday, int ActiveCustomers, int LowStockProducts, IReadOnlyList<SaleDto> RecentSales);
 public sealed record PaymentBreakdown(string Method, int Sales, decimal Total);
-public sealed record ProductSalesSummary(string ProductName, int Quantity, decimal Revenue);
+public sealed record ProductSalesSummary(string ProductName, int Quantity, decimal Revenue, decimal Cost, decimal GrossProfit, int UncostedUnits);
+public sealed record InventoryValuationDto(decimal CostedInventoryValue, int UncostedUnits);
 public sealed record SellerSalesSummary(string SellerName, int Sales, decimal Revenue);
 public sealed record DailySalesSummary(DateOnly Date, decimal Total);
 public sealed record SupplierDto(Guid Id, string Name, string? TaxIdentifier, string Email, string Phone, string? Notes, long Revision);

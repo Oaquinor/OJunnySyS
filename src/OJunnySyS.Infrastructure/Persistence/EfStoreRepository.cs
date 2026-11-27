@@ -26,6 +26,16 @@ public sealed class EfStoreRepository(IDbContextFactory<StoreDbContext> contextF
         return await products.OrderBy(x => x.Name).Take(100).ToListAsync(cancellationToken);
     }
 
+    public async Task<InventoryValuationDto> GetInventoryValuationAsync(CancellationToken cancellationToken = default)
+    {
+        await using var db = await CreateDbContextAsync(cancellationToken);
+        var inventory = db.Products.AsNoTracking().Where(x => x.IsActive);
+        var grossValue = await inventory.SumAsync(x => x.UnitCost * x.StockOnHand, cancellationToken);
+        var uncostedValue = await inventory.SumAsync(x => x.UnitCost * x.UncostedQuantity, cancellationToken);
+        var uncostedUnits = await inventory.SumAsync(x => x.UncostedQuantity, cancellationToken);
+        return new InventoryValuationDto(Math.Max(0m, grossValue - uncostedValue), uncostedUnits);
+    }
+
     public async Task<IReadOnlyList<ProductStockSnapshot>> SearchProductsInWarehouseAsync(string? query, Guid warehouseId, CancellationToken cancellationToken = default)
     {
         await using var db = await CreateDbContextAsync(cancellationToken);
@@ -118,10 +128,10 @@ public sealed class EfStoreRepository(IDbContextFactory<StoreDbContext> contextF
         return customer;
     }
 
-    public async Task<Product> CreateProductAsync(string sku, string name, string category, decimal unitPrice, int stock, string? barcode, decimal? taxRateOverride = null, CancellationToken cancellationToken = default)
+    public async Task<Product> CreateProductAsync(string sku, string name, string category, decimal unitPrice, int stock, string? barcode, decimal? taxRateOverride = null, decimal? initialUnitCost = null, CancellationToken cancellationToken = default)
     {
         var tenantId = tenantContext.GetRequiredTenantId();
-        var product = new Product(tenantId, sku, name, category, unitPrice, stock, barcode, taxRateOverride);
+        var product = new Product(tenantId, sku, name, category, unitPrice, stock, barcode, taxRateOverride, initialUnitCost);
         await using var db = await CreateDbContextAsync(cancellationToken);
         await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
         _ = await db.Tenants.FromSqlInterpolated($"SELECT * FROM Tenants WHERE Id = {tenantId} FOR UPDATE").SingleOrDefaultAsync(cancellationToken)
@@ -257,9 +267,10 @@ public sealed class EfStoreRepository(IDbContextFactory<StoreDbContext> contextF
             var warehouseStock = await db.WarehouseStocks.FromSqlInterpolated($"SELECT * FROM WarehouseStocks WHERE TenantId = {tenantId} AND WarehouseId = {warehouseId} AND ProductId = {product.Id} FOR UPDATE").SingleOrDefaultAsync(cancellationToken)
                 ?? throw new DomainException("No hay un saldo inicializado para este producto en el almacén del terminal.");
             warehouseStock.Adjust(-quantity);
-            product.AdjustStock(-quantity);
+            var costSnapshot = product.ConsumeInventory(quantity);
             stockMovements.Add((product, quantity, warehouseStock.Quantity));
-            lines.Add(new SaleLine(product.Id, product.Sku, product.Name, product.UnitPrice, quantity, product.TaxRateOverride ?? tenant.DefaultTaxRate));
+            lines.Add(new SaleLine(product.Id, product.Sku, product.Name, product.UnitPrice, quantity,
+                product.TaxRateOverride ?? tenant.DefaultTaxRate, costSnapshot.UnitCost, costSnapshot.UncostedQuantity));
         }
 
         var sale = new Sale(tenantId, $"V-{DateTimeOffset.UtcNow:yyyyMMddHHmmss}-{Guid.NewGuid():N}", customer, request.PaymentMethod, lines, cashSession.Id, cashierUserId, tenant.DefaultTaxRate, request.IdempotencyKey, registerCode, warehouseId);
@@ -279,7 +290,7 @@ public sealed class EfStoreRepository(IDbContextFactory<StoreDbContext> contextF
     {
         if (sale.Total <= 0) return;
 
-        var codes = sale.TaxAmount > 0 ? new[] { "1000", "2100", "4000" } : new[] { "1000", "4000" };
+        var codes = sale.TaxAmount > 0 ? new[] { "1000", "1200", "2100", "4000", "5000" } : new[] { "1000", "1200", "4000", "5000" };
         var accounts = await db.ChartAccounts.Where(x => codes.Contains(x.Code) && x.IsActive)
             .ToDictionaryAsync(x => x.Code, ct);
         if (accounts.Count != codes.Length)
@@ -296,6 +307,14 @@ public sealed class EfStoreRepository(IDbContextFactory<StoreDbContext> contextF
         if (sale.TaxAmount > 0)
             lines.Add(new JournalEntryLine(tenantId, accounts["2100"].Id, accounts["2100"].Code,
                 accounts["2100"].Name, 0, sale.TaxAmount, $"Impuesto de venta {sale.Number}"));
+        var costOfGoods = sale.Lines.Sum(x => x.CostTotal);
+        if (costOfGoods > 0)
+        {
+            lines.Add(new JournalEntryLine(tenantId, accounts["5000"].Id, accounts["5000"].Code,
+                accounts["5000"].Name, costOfGoods, 0, $"Costo de productos vendidos {sale.Number}"));
+            lines.Add(new JournalEntryLine(tenantId, accounts["1200"].Id, accounts["1200"].Code,
+                accounts["1200"].Name, 0, costOfGoods, $"Salida de inventario {sale.Number}"));
+        }
 
         var entryDate = DateOnly.FromDateTime(sale.CreatedAtUtc.UtcDateTime);
         var number = $"AUTO-{entryDate:yyyyMMdd}-{sale.Id:N}"[..36];
@@ -629,6 +648,7 @@ public sealed class EfStoreRepository(IDbContextFactory<StoreDbContext> contextF
                 ?? throw new DomainException("El producto de la orden ya no existe.");
             var warehouseStock = await db.WarehouseStocks.FromSqlInterpolated($"SELECT * FROM WarehouseStocks WHERE TenantId = {tenantId} AND WarehouseId = {order.WarehouseId} AND ProductId = {product.Id} FOR UPDATE").SingleOrDefaultAsync(cancellationToken)
                 ?? throw new DomainException("No existe el saldo del producto en el almacén de recepción.");
+            product.ApplyPurchaseCost(receipt.Quantity, line.UnitCost);
             warehouseStock.Adjust(receipt.Quantity);
             product.AdjustStock(receipt.Quantity);
             db.InventoryMovements.Add(new InventoryMovement(tenantId, product.Id, InventoryMovementType.PurchaseReceipt, receipt.Quantity, warehouseStock.Quantity, order.Number, order.WarehouseId));
