@@ -14,6 +14,7 @@ public static class ChartAccountDefaults
         ("1030", "Otros medios por liquidar", AccountType.Asset),
         ("1100", "Cuentas por cobrar", AccountType.Asset),
         ("1200", "Inventario", AccountType.Asset),
+        ("1300", "Impuestos acreditables", AccountType.Asset),
         ("2000", "Cuentas por pagar", AccountType.Liability),
         ("2100", "Impuestos por pagar", AccountType.Liability),
         ("3000", "Capital", AccountType.Equity),

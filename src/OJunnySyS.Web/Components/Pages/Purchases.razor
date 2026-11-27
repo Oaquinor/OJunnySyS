@@ -210,7 +210,9 @@
         _saving = true; _error = null;
         try
         {
-            await Store.ReceivePurchaseOrderAsync(orderId, [new ReceivePurchaseLineRequest(lineId, _receiveQuantities[lineId])]);
+            var auth = await AuthenticationStateProvider.GetAuthenticationStateAsync();
+            var actorId = Guid.Parse(auth.User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)!.Value);
+            await Store.ReceivePurchaseOrderAsync(orderId, actorId, [new ReceivePurchaseLineRequest(lineId, _receiveQuantities[lineId])]);
             _notice = "Recepción guardada y existencias actualizadas."; await LoadAsync();
         }
         catch (DomainException ex) { _error = ex.Message; }

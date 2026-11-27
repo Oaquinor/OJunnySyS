@@ -371,9 +371,9 @@ api.MapPost("/purchases", async (CreatePurchaseOrderRequest request, StoreServic
     try { var purchase = await store.CreatePurchaseOrderAsync(request, ct); return Results.Created($"/api/v1/purchases/{purchase.Id}", purchase); }
     catch (DomainException ex) { return Results.ValidationProblem(new Dictionary<string, string[]> { ["purchase"] = [ex.Message] }); }
 }).RequireAuthorization("PurchasingWrite");
-api.MapPost("/purchases/{id:guid}/receive", async (Guid id, IReadOnlyCollection<ReceivePurchaseLineRequest> request, StoreService store, CancellationToken ct) =>
+api.MapPost("/purchases/{id:guid}/receive", async (Guid id, IReadOnlyCollection<ReceivePurchaseLineRequest> request, ClaimsPrincipal user, StoreService store, CancellationToken ct) =>
 {
-    try { return Results.Ok(await store.ReceivePurchaseOrderAsync(id, request, ct)); }
+    try { return Results.Ok(await store.ReceivePurchaseOrderAsync(id, CurrentActorId(user), request, ct)); }
     catch (DomainException ex) { return Results.ValidationProblem(new Dictionary<string, string[]> { ["receipt"] = [ex.Message] }); }
 }).RequireAuthorization("PurchasingWrite");
 api.MapPost("/purchases/{id:guid}/payments", async (Guid id, CreateSupplierPaymentRequest request, ClaimsPrincipal user, StoreService store, CancellationToken ct) =>

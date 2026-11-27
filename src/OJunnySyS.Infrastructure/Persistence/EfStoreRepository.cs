@@ -636,8 +636,9 @@ public sealed class EfStoreRepository(IDbContextFactory<StoreDbContext> contextF
         return order;
     }
 
-    public async Task<PurchaseOrder> ReceivePurchaseOrderAsync(Guid purchaseOrderId, IReadOnlyCollection<ReceivePurchaseLineRequest> lines, CancellationToken cancellationToken = default)
+    public async Task<PurchaseOrder> ReceivePurchaseOrderAsync(Guid purchaseOrderId, Guid receivedByUserId, IReadOnlyCollection<ReceivePurchaseLineRequest> lines, CancellationToken cancellationToken = default)
     {
+        if (receivedByUserId == Guid.Empty) throw new DomainException("No se pudo identificar al usuario que registra la recepción.");
         if (lines.Count == 0) throw new DomainException("Indica al menos una línea recibida.");
         if (lines.Count > 200 || lines.Any(x => x.LineId == Guid.Empty || x.Quantity <= 0))
             throw new DomainException("La recepción debe incluir hasta 200 líneas con cantidades válidas.");
@@ -650,9 +651,15 @@ public sealed class EfStoreRepository(IDbContextFactory<StoreDbContext> contextF
             .Include(x => x.Lines)
             .Include(x => x.Payments)
             .SingleOrDefaultAsync(cancellationToken) ?? throw new DomainException("La orden de compra no existe.");
+        var receivedLines = new List<(PurchaseOrderLine Line, int Quantity, decimal Tax)>();
         foreach (var receipt in lines.GroupBy(x => x.LineId).Select(x => new ReceivePurchaseLineRequest(x.Key, SumQuantities(x.Select(y => y.Quantity)))))
         {
-            var line = order.Receive(receipt.LineId, receipt.Quantity);
+            var line = order.Lines.SingleOrDefault(x => x.Id == receipt.LineId) ?? throw new DomainException("La línea no pertenece a esta compra.");
+            var previouslyReceived = line.ReceivedQuantity;
+            order.Receive(receipt.LineId, receipt.Quantity);
+            var taxBefore = decimal.Round(line.UnitCost * previouslyReceived * line.TaxRate, 2, MidpointRounding.AwayFromZero);
+            var taxAfter = decimal.Round(line.UnitCost * line.ReceivedQuantity * line.TaxRate, 2, MidpointRounding.AwayFromZero);
+            receivedLines.Add((line, receipt.Quantity, taxAfter - taxBefore));
             var product = await db.Products.FromSqlInterpolated($"SELECT * FROM Products WHERE Id = {line.ProductId} AND TenantId = {tenantId} FOR UPDATE").SingleOrDefaultAsync(cancellationToken)
                 ?? throw new DomainException("El producto de la orden ya no existe.");
             var warehouseStock = await db.WarehouseStocks.FromSqlInterpolated($"SELECT * FROM WarehouseStocks WHERE TenantId = {tenantId} AND WarehouseId = {order.WarehouseId} AND ProductId = {product.Id} FOR UPDATE").SingleOrDefaultAsync(cancellationToken)
@@ -662,9 +669,33 @@ public sealed class EfStoreRepository(IDbContextFactory<StoreDbContext> contextF
             product.AdjustStock(receipt.Quantity);
             db.InventoryMovements.Add(new InventoryMovement(tenantId, product.Id, InventoryMovementType.PurchaseReceipt, receipt.Quantity, warehouseStock.Quantity, order.Number, order.WarehouseId));
         }
+        await PostPurchaseReceiptJournalEntryAsync(db, tenantId, order, receivedLines, receivedByUserId, cancellationToken);
         await db.SaveChangesAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);
         return order;
+    }
+
+    private static async Task PostPurchaseReceiptJournalEntryAsync(StoreDbContext db, Guid tenantId, PurchaseOrder order,
+        IReadOnlyCollection<(PurchaseOrderLine Line, int Quantity, decimal Tax)> receivedLines, Guid actorId, CancellationToken ct)
+    {
+        var subtotal = receivedLines.Sum(x => decimal.Round(x.Line.UnitCost * x.Quantity, 2, MidpointRounding.AwayFromZero));
+        var tax = receivedLines.Sum(x => x.Tax);
+        var total = subtotal + tax;
+        if (total <= 0) return;
+        var codes = tax > 0 ? new[] { "1200", "1300", "2000" } : new[] { "1200", "2000" };
+        var accounts = await db.ChartAccounts.Where(x => codes.Contains(x.Code) && x.IsActive).ToDictionaryAsync(x => x.Code, ct);
+        if (codes.Any(code => !accounts.ContainsKey(code)))
+            throw new DomainException("Faltan las cuentas de inventario, impuesto acreditable o cuentas por pagar para contabilizar la recepción.");
+        var lines = new List<JournalEntryLine>
+        {
+            new(tenantId, accounts["1200"].Id, accounts["1200"].Code, accounts["1200"].Name, subtotal, 0, $"Inventario recibido · {order.Number}")
+        };
+        if (tax > 0) lines.Add(new JournalEntryLine(tenantId, accounts["1300"].Id, accounts["1300"].Code, accounts["1300"].Name, tax, 0, $"Impuesto acreditable · {order.Number}"));
+        lines.Add(new JournalEntryLine(tenantId, accounts["2000"].Id, accounts["2000"].Code, accounts["2000"].Name, 0, total, $"Cuenta por pagar · {order.SupplierName}"));
+        var batchId = Guid.NewGuid();
+        var entry = new JournalEntry(tenantId, $"REC-{DateTimeOffset.UtcNow:yyyyMMddHHmmss}-{Guid.NewGuid():N}"[..40],
+            DateOnly.FromDateTime(DateTime.UtcNow), $"Recepción de compra {order.Number}", actorId, lines, "PURCHASERECEIPT", batchId);
+        db.JournalEntries.Add(entry);
     }
 
     public async Task<PurchaseOrder> CancelPurchaseOrderAsync(Guid purchaseOrderId, CancellationToken cancellationToken = default)
@@ -717,10 +748,28 @@ public sealed class EfStoreRepository(IDbContextFactory<StoreDbContext> contextF
                 ?? throw new DomainException("Para pagar en efectivo debe estar abierto el turno del terminal seleccionado.");
         }
 
+        var ledgerCode = request.Method switch
+        {
+            SupplierPaymentMethod.Cash => "1000",
+            SupplierPaymentMethod.BankTransfer or SupplierPaymentMethod.Check => "1010",
+            SupplierPaymentMethod.Card => "1020",
+            _ => "1030"
+        };
+        var paymentAccount = await db.ChartAccounts.SingleOrDefaultAsync(x => x.Code == ledgerCode && x.IsActive, cancellationToken);
+        if (paymentAccount is null || !paymentAccount.CanReceivePayments)
+            throw new DomainException("Activa una cuenta de caja, banco o saldo de pago para registrar abonos a proveedores.");
         var payment = new SupplierPayment(tenantId, order.Id, paidByUserId, request.IdempotencyKey, request.Amount,
-            request.Method, request.Reference, cashSession?.Id, registerCode);
+            request.Method, request.Reference, cashSession?.Id, paymentAccount.Id, registerCode);
         order.RecordPayment(payment);
         db.SupplierPayments.Add(payment);
+        var payableAccount = await db.ChartAccounts.SingleOrDefaultAsync(x => x.Code == "2000" && x.IsActive, cancellationToken)
+            ?? throw new DomainException("La cuenta de cuentas por pagar está inactiva o no existe.");
+        var paymentEntry = new JournalEntry(tenantId, $"PAG-{DateTimeOffset.UtcNow:yyyyMMddHHmmss}-{Guid.NewGuid():N}"[..40],
+            DateOnly.FromDateTime(DateTime.UtcNow), $"Pago a proveedor {order.Number}", paidByUserId,
+            [new JournalEntryLine(tenantId, payableAccount.Id, payableAccount.Code, payableAccount.Name, payment.Amount, 0, $"Abono · {order.SupplierName}"),
+             new JournalEntryLine(tenantId, paymentAccount.Id, paymentAccount.Code, paymentAccount.Name, 0, payment.Amount, $"Pago {request.Method} · {order.Number}")],
+            "SUPPLIERPAYMENT", payment.Id);
+        db.JournalEntries.Add(paymentEntry);
         if (cashSession is not null)
             db.CashMovements.Add(new CashMovement(tenantId, cashSession.Id, paidByUserId, CashMovementKind.CashOut,
                 payment.Amount, $"Pago a proveedor · {order.Number}"));

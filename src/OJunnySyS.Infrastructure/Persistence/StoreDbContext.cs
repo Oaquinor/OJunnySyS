@@ -456,10 +456,12 @@ public sealed class StoreDbContext(DbContextOptions<StoreDbContext> options)
             entity.HasKey(x => x.Id);
             entity.HasIndex(x => new { x.TenantId, x.IdempotencyKey }).IsUnique();
             entity.HasIndex(x => new { x.TenantId, x.PurchaseOrderId, x.CreatedAtUtc });
+            entity.HasIndex(x => new { x.TenantId, x.LedgerAccountId });
             entity.HasOne<Tenant>().WithMany().HasForeignKey(x => x.TenantId).OnDelete(DeleteBehavior.Restrict);
             entity.HasOne<PurchaseOrder>().WithMany(nameof(PurchaseOrder.Payments)).HasForeignKey(x => x.PurchaseOrderId).OnDelete(DeleteBehavior.Restrict);
             entity.HasOne<ApplicationUser>().WithMany().HasForeignKey(x => x.PaidByUserId).OnDelete(DeleteBehavior.Restrict);
             entity.HasOne<CashSession>().WithMany().HasForeignKey(x => x.CashSessionId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne<ChartAccount>().WithMany().HasForeignKey(x => new { x.TenantId, x.LedgerAccountId }).HasPrincipalKey(x => new { x.TenantId, x.Id }).OnDelete(DeleteBehavior.Restrict);
             entity.HasQueryFilter(x => CurrentTenantId != null && x.TenantId == CurrentTenantId);
             entity.Property(x => x.Amount).HasPrecision(14, 2);
             entity.Property(x => x.Method).HasConversion<int>();

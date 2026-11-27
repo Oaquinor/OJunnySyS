@@ -81,11 +81,12 @@ public sealed class SupplierPayment : TenantEntity
     private SupplierPayment() { }
 
     public SupplierPayment(Guid tenantId, Guid purchaseOrderId, Guid paidByUserId, Guid idempotencyKey,
-        decimal amount, SupplierPaymentMethod method, string? reference, Guid? cashSessionId, string registerCode = "MAIN") : base(tenantId)
+        decimal amount, SupplierPaymentMethod method, string? reference, Guid? cashSessionId, Guid ledgerAccountId, string registerCode = "MAIN") : base(tenantId)
     {
         if (purchaseOrderId == Guid.Empty || paidByUserId == Guid.Empty || idempotencyKey == Guid.Empty)
             throw new DomainException("La compra, el usuario y la clave del pago son obligatorios.");
         if (amount is <= 0 or > 999999999999.99m) throw new DomainException("El abono debe ser mayor que cero y estar dentro del límite permitido.");
+        if (ledgerAccountId == Guid.Empty) throw new DomainException("La cuenta de pago al proveedor es obligatoria.");
         if (!Enum.IsDefined(method)) throw new DomainException("El método de pago al proveedor no es válido.");
         if (method == SupplierPaymentMethod.Cash && cashSessionId is null) throw new DomainException("Un pago en efectivo debe quedar asociado a un turno de caja abierto.");
         if (method != SupplierPaymentMethod.Cash && cashSessionId is not null) throw new DomainException("Solo los pagos en efectivo se asocian a la caja.");
@@ -98,6 +99,7 @@ public sealed class SupplierPayment : TenantEntity
         Method = method;
         Reference = string.IsNullOrWhiteSpace(reference) ? null : reference.Trim();
         CashSessionId = cashSessionId;
+        LedgerAccountId = ledgerAccountId;
     }
 
     public Guid PurchaseOrderId { get; private set; }
@@ -107,6 +109,7 @@ public sealed class SupplierPayment : TenantEntity
     public SupplierPaymentMethod Method { get; private set; }
     public string? Reference { get; private set; }
     public Guid? CashSessionId { get; private set; }
+    public Guid LedgerAccountId { get; private set; }
     public string RegisterCode { get; private set; } = "MAIN";
 }
 

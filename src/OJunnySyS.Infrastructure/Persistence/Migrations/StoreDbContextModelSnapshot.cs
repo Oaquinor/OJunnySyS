@@ -1164,6 +1164,9 @@ namespace OJunnySyS.Infrastructure.Persistence.Migrations
                     b.Property<Guid>("IdempotencyKey")
                         .HasColumnType("char(36)");
 
+                    b.Property<Guid>("LedgerAccountId")
+                        .HasColumnType("char(36)");
+
                     b.Property<int>("Method")
                         .HasColumnType("int");
 
@@ -1198,6 +1201,8 @@ namespace OJunnySyS.Infrastructure.Persistence.Migrations
 
                     b.HasIndex("TenantId", "IdempotencyKey")
                         .IsUnique();
+
+                    b.HasIndex("TenantId", "LedgerAccountId");
 
                     b.HasIndex("TenantId", "PurchaseOrderId", "CreatedAtUtc");
 
@@ -2098,6 +2103,13 @@ namespace OJunnySyS.Infrastructure.Persistence.Migrations
                     b.HasOne("OJunnySyS.Domain.Tenancy.Tenant", null)
                         .WithMany()
                         .HasForeignKey("TenantId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("OJunnySyS.Domain.Accounting.ChartAccount", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "LedgerAccountId")
+                        .HasPrincipalKey("TenantId", "Id")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
                 });

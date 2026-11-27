@@ -131,8 +131,8 @@ public sealed class StoreService(IStoreRepository repository, IBusinessClock clo
     public async Task<PurchaseOrderDto> CreatePurchaseOrderAsync(CreatePurchaseOrderRequest request, CancellationToken ct = default) =>
         Map(await repository.CreatePurchaseOrderAsync(request, ct));
 
-    public async Task<PurchaseOrderDto> ReceivePurchaseOrderAsync(Guid id, IReadOnlyCollection<ReceivePurchaseLineRequest> lines, CancellationToken ct = default) =>
-        Map(await repository.ReceivePurchaseOrderAsync(id, lines, ct));
+    public async Task<PurchaseOrderDto> ReceivePurchaseOrderAsync(Guid id, Guid actorId, IReadOnlyCollection<ReceivePurchaseLineRequest> lines, CancellationToken ct = default) =>
+        Map(await repository.ReceivePurchaseOrderAsync(id, actorId, lines, ct));
 
     public async Task<PurchaseOrderDto> RecordSupplierPaymentAsync(Guid id, Guid actorId, CreateSupplierPaymentRequest request, CancellationToken ct = default) =>
         Map(await repository.RecordSupplierPaymentAsync(id, actorId, request, ct));
