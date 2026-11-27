@@ -521,14 +521,47 @@ public sealed class EfStoreRepository(IDbContextFactory<StoreDbContext> contextF
         await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
         var session = await db.CashSessions.FromSqlInterpolated($"SELECT * FROM CashSessions WHERE Id = {sessionId} AND TenantId = {tenantId} FOR UPDATE").SingleOrDefaultAsync(cancellationToken)
             ?? throw new DomainException("La sesión de caja no existe.");
+        if (request.IdempotencyKey == Guid.Empty) throw new DomainException("La clave del movimiento de caja es obligatoria.");
+        var previous = await db.CashMovements.SingleOrDefaultAsync(x => x.IdempotencyKey == request.IdempotencyKey, cancellationToken);
+        if (previous is not null)
+        {
+            if (previous.SessionId != session.Id || previous.Kind != request.Kind || previous.Amount != request.Amount ||
+                !string.Equals(previous.Description, request.Description?.Trim(), StringComparison.Ordinal) || previous.CashPaymentMethodId != request.CashPaymentMethodId ||
+                previous.CounterAccountId != request.CounterAccountId)
+                throw new DomainException("La clave de idempotencia ya se usó para otro movimiento.");
+            await transaction.CommitAsync(cancellationToken);
+            return await MapCashSessionAsync(db, session, cancellationToken);
+        }
         if (session.Status != CashSessionStatus.Open) throw new DomainException("La caja está cerrada y no admite movimientos.");
-        db.CashMovements.Add(new CashMovement(tenantId, session.Id, userId, request.Kind, request.Amount, request.Description));
+        var paymentMethod = await db.TenantPaymentMethods.SingleOrDefaultAsync(x => x.Id == request.CashPaymentMethodId && x.Type == PaymentMethodType.Cash, cancellationToken)
+            ?? throw new DomainException("Selecciona un medio de pago de efectivo activo de la empresa.");
+        if (!paymentMethod.IsActive || paymentMethod.LedgerAccountId is not { } cashAccountId)
+            throw new DomainException("Configura una cuenta contable activa para el medio de pago de efectivo seleccionado.");
+        var accounts = await db.ChartAccounts.Where(x => (x.Id == cashAccountId || x.Id == request.CounterAccountId) && x.IsActive).ToDictionaryAsync(x => x.Id, cancellationToken);
+        if (accounts.Count != (cashAccountId == request.CounterAccountId ? 1 : 2))
+            throw new DomainException("Selecciona cuentas contables activas de esta empresa.");
+        var cashAccount = accounts[cashAccountId];
+        var counterAccount = accounts[request.CounterAccountId];
+        ValidateCashLedgerAccount(cashAccount);
+        if (cashAccount.Id == counterAccount.Id) throw new DomainException("La contrapartida debe ser distinta de la cuenta de efectivo.");
+        var movement = new CashMovement(tenantId, session.Id, userId, request.Kind, request.Amount, request.Description,
+            request.IdempotencyKey, paymentMethod.Id, counterAccount.Id);
+        db.CashMovements.Add(movement);
+        var entryDate = DateOnly.FromDateTime(businessClock.ToBusinessTime(movement.CreatedAtUtc).DateTime);
+        var debitAccount = request.Kind == CashMovementKind.CashIn ? cashAccount : counterAccount;
+        var creditAccount = request.Kind == CashMovementKind.CashIn ? counterAccount : cashAccount;
+        var entryNumber = $"CM-{entryDate:yyyyMMdd}-{movement.Id:N}"[..35];
+        db.JournalEntries.Add(new JournalEntry(tenantId, entryNumber, entryDate,
+            $"{(request.Kind == CashMovementKind.CashIn ? "Entrada" : "Retiro")} de caja · {session.RegisterCode}", userId,
+            [new JournalEntryLine(tenantId, debitAccount.Id, debitAccount.Code, debitAccount.Name, movement.Amount, 0m, movement.Description),
+             new JournalEntryLine(tenantId, creditAccount.Id, creditAccount.Code, creditAccount.Name, 0m, movement.Amount, movement.Description)],
+            "CASHMOVEMENT", movement.Id));
         await db.SaveChangesAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);
         return await MapCashSessionAsync(db, session, cancellationToken);
     }
 
-    public async Task<CashSessionDto> CloseCashSessionAsync(Guid sessionId, Guid userId, decimal countedCash, CancellationToken cancellationToken = default)
+    public async Task<CashSessionDto> CloseCashSessionAsync(Guid sessionId, Guid userId, CloseCashSessionRequest request, CancellationToken cancellationToken = default)
     {
         var tenantId = tenantContext.GetRequiredTenantId();
         await using var db = await CreateDbContextAsync(cancellationToken);
@@ -539,10 +572,43 @@ public sealed class EfStoreRepository(IDbContextFactory<StoreDbContext> contextF
         var sales = await GetCashTenderSalesAsync(db, session.Id, cancellationToken);
         var cashIn = await db.CashMovements.AsNoTracking().Where(x => x.SessionId == session.Id && x.Kind == CashMovementKind.CashIn).SumAsync(x => (decimal?)x.Amount, cancellationToken) ?? 0m;
         var cashOut = await db.CashMovements.AsNoTracking().Where(x => x.SessionId == session.Id && x.Kind == CashMovementKind.CashOut).SumAsync(x => (decimal?)x.Amount, cancellationToken) ?? 0m;
-        session.Close(userId, session.OpeningFloat + sales + cashIn - cashOut, countedCash);
+        session.Close(userId, session.OpeningFloat + sales + cashIn - cashOut, request.CountedCash);
+        if (session.Difference is { } difference && difference != 0m)
+        {
+            if (request.CashPaymentMethodId is not { } cashPaymentMethodId || request.DifferenceAccountId is not { } differenceAccountId)
+                throw new DomainException("Selecciona la cuenta de efectivo y la cuenta de ajuste para contabilizar la diferencia del arqueo.");
+            var cashMethod = await db.TenantPaymentMethods.SingleOrDefaultAsync(x => x.Id == cashPaymentMethodId && x.Type == PaymentMethodType.Cash, cancellationToken)
+                ?? throw new DomainException("El medio seleccionado no es una cuenta de efectivo válida de esta empresa.");
+            if (!cashMethod.IsActive || cashMethod.LedgerAccountId is not { } cashAccountId)
+                throw new DomainException("El medio de efectivo seleccionado debe estar activo y tener cuenta contable.");
+            var requiredType = difference > 0m ? AccountType.Revenue : AccountType.Expense;
+            var accounts = await db.ChartAccounts.Where(x => (x.Id == cashAccountId || x.Id == differenceAccountId) && x.IsActive).ToDictionaryAsync(x => x.Id, cancellationToken);
+            if (accounts.Count != (cashAccountId == differenceAccountId ? 1 : 2)) throw new DomainException("Selecciona cuentas contables activas de esta empresa.");
+            var cashAccount = accounts[cashAccountId];
+            var adjustmentAccount = accounts[differenceAccountId];
+            ValidateCashLedgerAccount(cashAccount);
+            if (adjustmentAccount.Type != requiredType || adjustmentAccount.Id == cashAccount.Id)
+                throw new DomainException(difference > 0m ? "El sobrante debe registrarse en una cuenta de ingreso activa." : "El faltante debe registrarse en una cuenta de gasto activa.");
+            var amount = Math.Abs(difference);
+            var entryDate = DateOnly.FromDateTime(businessClock.ToBusinessTime(session.ClosedAtUtc!.Value).DateTime);
+            var entryNumber = $"CC-{entryDate:yyyyMMdd}-{session.Id:N}"[..35];
+            var lines = difference > 0m
+                ? new[] { new JournalEntryLine(tenantId, cashAccount.Id, cashAccount.Code, cashAccount.Name, amount, 0m, $"Sobrante de caja · {session.RegisterCode}"),
+                          new JournalEntryLine(tenantId, adjustmentAccount.Id, adjustmentAccount.Code, adjustmentAccount.Name, 0m, amount, $"Sobrante de caja · {session.RegisterCode}") }
+                : [new JournalEntryLine(tenantId, adjustmentAccount.Id, adjustmentAccount.Code, adjustmentAccount.Name, amount, 0m, $"Faltante de caja · {session.RegisterCode}"),
+                   new JournalEntryLine(tenantId, cashAccount.Id, cashAccount.Code, cashAccount.Name, 0m, amount, $"Faltante de caja · {session.RegisterCode}")];
+            db.JournalEntries.Add(new JournalEntry(tenantId, entryNumber, entryDate,
+                $"Ajuste de arqueo · {session.RegisterCode}", userId, lines, "CASHCLOSING", session.Id));
+        }
         await db.SaveChangesAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);
         return await MapCashSessionAsync(db, session, cancellationToken);
+    }
+
+    private static void ValidateCashLedgerAccount(ChartAccount account)
+    {
+        if (account.Type != AccountType.Asset || !account.Code.StartsWith("10", StringComparison.Ordinal) || !account.CanReceivePayments)
+            throw new DomainException("La cuenta de efectivo debe ser una cuenta activa de caja del grupo 10 que admita cobros.");
     }
 
     public async Task<SaleReceiptDto?> GetSaleReceiptAsync(Guid saleId, CancellationToken cancellationToken = default)

@@ -4,16 +4,85 @@ using OJunnySyS.Application.Contracts;
 using OJunnySyS.Application.Services;
 using OJunnySyS.Domain.Accounting;
 using OJunnySyS.Domain.Banking;
+using OJunnySyS.Domain.Cash;
 using OJunnySyS.Domain.Common;
+using OJunnySyS.Domain.Inventory;
+using OJunnySyS.Domain.Pos;
+using OJunnySyS.Domain.Sales;
 using OJunnySyS.Domain.Tenancy;
 using OJunnySyS.Infrastructure.Identity;
 using OJunnySyS.Infrastructure.Persistence;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace OJunnySyS.Infrastructure.IntegrationTests;
 
 [TestClass]
 public sealed class BankReconciliationIntegrationTests
 {
+    [TestMethod]
+    public async Task CashMovement_IsIdempotent_AndClosingVariancePostsBalancedEntry()
+    {
+        var connectionString = Environment.GetEnvironmentVariable("OJUNNYSYS_TEST_CONNECTION");
+        if (string.IsNullOrWhiteSpace(connectionString)) Assert.Inconclusive("Define OJUNNYSYS_TEST_CONNECTION para ejecutar pruebas MySQL aisladas.");
+        var options = new DbContextOptionsBuilder<StoreDbContext>().UseMySQL(connectionString!).Options;
+        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        var tenant = new Tenant("Empresa de prueba de caja", "cash-test", "cash-test@example.test", "America/Santo_Domingo");
+        var user = new ApplicationUser
+        {
+            Id = Guid.NewGuid(), TenantId = tenant.Id, DisplayName = "Operador de caja",
+            UserName = "cash-test@example.test", NormalizedUserName = "CASH-TEST@EXAMPLE.TEST",
+            Email = "cash-test@example.test", NormalizedEmail = "CASH-TEST@EXAMPLE.TEST",
+            SecurityStamp = Guid.NewGuid().ToString(), ConcurrencyStamp = Guid.NewGuid().ToString()
+        };
+        var cashAccount = new ChartAccount(tenant.Id, "1000", "Caja de prueba", AccountType.Asset);
+        var incomeAccount = new ChartAccount(tenant.Id, "4100", "Ingresos varios", AccountType.Revenue);
+        var paymentMethod = new TenantPaymentMethod(tenant.Id, "cash", "Efectivo", PaymentMethodType.Cash, ledgerAccountId: cashAccount.Id);
+        var warehouse = new Warehouse(tenant.Id, "MAIN", "Almacén principal");
+        var register = new PosRegister(tenant.Id, "MAIN", "Caja principal", warehouse.Id);
+        var session = new CashSession(tenant.Id, "MAIN", 100m, user.Id);
+        await using (var db = new StoreDbContext(options))
+        {
+            await db.Database.MigrateAsync();
+            db.CurrentTenantId = tenant.Id;
+            db.Tenants.Add(tenant);
+            db.Users.Add(user);
+            db.ChartAccounts.AddRange(cashAccount, incomeAccount);
+            db.TenantPaymentMethods.Add(paymentMethod);
+            db.Warehouses.Add(warehouse);
+            db.PosRegisters.Add(register);
+            db.CashSessions.Add(session);
+            await db.SaveChangesAsync();
+        }
+
+        var tenantContext = new CashTestTenantContext(tenant.Id, user.Id);
+        var clock = new FixedBusinessClock(today);
+        var factory = new TestContextFactory(options);
+        var repository = new EfStoreRepository(factory, tenantContext, new TenantAccessGuard(factory, clock), clock,
+            NullLogger<EfStoreRepository>.Instance);
+        var request = new CashMovementRequest(CashMovementKind.CashIn, 25m, "Fondo para cambio", paymentMethod.Id,
+            incomeAccount.Id, Guid.NewGuid());
+        var first = await repository.RecordCashMovementAsync(session.Id, user.Id, request);
+        var replay = await repository.RecordCashMovementAsync(session.Id, user.Id, request);
+        Assert.AreEqual(125m, first.ExpectedCash);
+        Assert.AreEqual(125m, replay.ExpectedCash);
+
+        var closed = await repository.CloseCashSessionAsync(session.Id, user.Id,
+            new CloseCashSessionRequest(128m, paymentMethod.Id, incomeAccount.Id));
+        Assert.AreEqual(3m, closed.Difference);
+        await using var verify = new StoreDbContext(options);
+        verify.CurrentTenantId = tenant.Id;
+        var movements = await verify.CashMovements.Where(x => x.SessionId == session.Id).ToListAsync();
+        Assert.AreEqual(1, movements.Count, "El reintento con la misma clave no duplica el movimiento.");
+        var movementEntry = await verify.JournalEntries.Include(x => x.Lines)
+            .SingleAsync(x => x.SourceType == "CASHMOVEMENT" && x.SourceId == movements[0].Id);
+        Assert.AreEqual(25m, movementEntry.Lines.Sum(x => x.Debit));
+        Assert.AreEqual(25m, movementEntry.Lines.Sum(x => x.Credit));
+        var closingEntry = await verify.JournalEntries.Include(x => x.Lines)
+            .SingleAsync(x => x.SourceType == "CASHCLOSING" && x.SourceId == session.Id);
+        Assert.AreEqual(3m, closingEntry.Lines.Sum(x => x.Debit));
+        Assert.AreEqual(3m, closingEntry.Lines.Sum(x => x.Credit));
+    }
+
     [TestMethod]
     public async Task ImportedStatement_MatchesLedgerMovement_AndClosesOnlyWhenBalancesAgree()
     {
@@ -90,6 +159,14 @@ public sealed class BankReconciliationIntegrationTests
         public Guid? CurrentUserId => null;
         public Guid GetRequiredTenantId() => CurrentTenantId ?? throw new TenantAccessException("Test tenant missing.");
         public void SetTenantId(Guid? tenantId) => CurrentTenantId = tenantId;
+    }
+
+    private sealed class CashTestTenantContext(Guid tenantId, Guid userId) : ITenantContext
+    {
+        public Guid? CurrentTenantId { get; private set; } = tenantId;
+        public Guid? CurrentUserId => userId;
+        public Guid GetRequiredTenantId() => CurrentTenantId ?? throw new TenantAccessException("Test tenant missing.");
+        public void SetTenantId(Guid? value) => CurrentTenantId = value;
     }
 
     private sealed class FixedBusinessClock(DateOnly date) : IBusinessClock

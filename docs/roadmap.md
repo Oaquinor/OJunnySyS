@@ -16,6 +16,7 @@ OJunnySyS se desarrolla en C#, ASP.NET Core .NET 10, Blazor Server interactivo, 
 - [x] POS transaccional, pagos divididos, caja, recibos y ventas a crédito con abonos.
 - [x] Devoluciones parciales, reembolsos y notas de crédito con idempotencia, control de cantidades, restock, cartera, caja y reversos contables. Falta una prueba de integración autenticada del ciclo completo contra MySQL.
 - [x] Reglas de dominio cubiertas por pruebas unitarias de venta a crédito, abonos parciales, límites de saldo, idempotencia y asociación de cobros en efectivo a caja.
+- [x] Entradas/retiros manuales de caja con cuentas de contrapartida, clave idempotente y asiento de doble partida; el sobrante/faltante del arqueo se contabiliza atómicamente al cerrar.
 - [x] Administración multiempresa de terminales POS con caja por terminal y selección de caja en pagos en efectivo a proveedores.
 - [x] Almacenes por empresa, asignación de terminal/compra, saldos por ubicación, transferencias auditables y checkout limitado al stock de la sucursal.
 - [x] Proveedores, compras, recepciones parciales y completas, cuentas por pagar y antigüedad de saldos.
@@ -36,7 +37,7 @@ OJunnySyS se desarrolla en C#, ASP.NET Core .NET 10, Blazor Server interactivo, 
 
 ## Operación y producción
 
-- [ ] Pruebas de integración contra MySQL para flujos de caja, ventas y compras; el ciclo completo de cobro aún no está cubierto por la suite.
+- [ ] Ampliar pruebas MySQL a flujos autenticados completos de venta, devolución, cobro y compras; ya se verifican en MySQL movimientos manuales de caja, idempotencia, cierre con diferencia, conciliación bancaria y aislamiento tenant.
 - [ ] Observabilidad, límites de solicitudes, alertas y auditoría operativa completa.
 - [ ] Copias de seguridad cifradas con restauración practicada.
 - [ ] CI/CD, migración controlada, rollback y revisión de seguridad.

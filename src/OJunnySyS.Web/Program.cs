@@ -434,7 +434,7 @@ api.MapPost("/cash/sessions/{id:guid}/movements", async (Guid id, CashMovementRe
 }).RequireAuthorization("CashManagement");
 api.MapPost("/cash/sessions/{id:guid}/close", async (Guid id, CloseCashSessionRequest request, ClaimsPrincipal user, StoreService store, CancellationToken ct) =>
 {
-    try { return Results.Ok(await store.CloseCashSessionAsync(id, CurrentActorId(user), request.CountedCash, ct)); }
+    try { return Results.Ok(await store.CloseCashSessionAsync(id, CurrentActorId(user), request, ct)); }
     catch (DomainException ex) { return Results.ValidationProblem(new Dictionary<string, string[]> { ["cashSession"] = [ex.Message] }); }
 }).RequireAuthorization("CashManagement");
 api.MapGet("/sales/{id:guid}/receipt", async (Guid id, StoreService store, CancellationToken ct) =>

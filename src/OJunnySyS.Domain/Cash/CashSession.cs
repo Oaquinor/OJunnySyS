@@ -51,13 +51,20 @@ public sealed class CashMovement : TenantEntity
 {
     private CashMovement() { }
 
-    public CashMovement(Guid tenantId, Guid sessionId, Guid userId, CashMovementKind kind, decimal amount, string description) : base(tenantId)
+    public CashMovement(Guid tenantId, Guid sessionId, Guid userId, CashMovementKind kind, decimal amount, string description,
+        Guid? idempotencyKey = null, Guid? cashPaymentMethodId = null, Guid? counterAccountId = null) : base(tenantId)
     {
         if (sessionId == Guid.Empty || userId == Guid.Empty) throw new DomainException("La sesión y el usuario del movimiento son obligatorios.");
         if (!Enum.IsDefined(kind)) throw new DomainException("El tipo de movimiento de caja no es válido.");
-        if (amount is <= 0 or > 999999999999.99m) throw new DomainException("El importe del movimiento debe ser mayor que cero y estar dentro del límite permitido.");
+        if (amount is <= 0 or > 999999999999.99m || amount != decimal.Round(amount, 2, MidpointRounding.AwayFromZero))
+            throw new DomainException("El importe del movimiento debe ser positivo, tener hasta dos decimales y estar dentro del límite permitido.");
         if (string.IsNullOrWhiteSpace(description) || description.Trim().Length > 200) throw new DomainException("La descripción del movimiento debe tener entre 1 y 200 caracteres.");
+        if (idempotencyKey == Guid.Empty || cashPaymentMethodId == Guid.Empty || counterAccountId == Guid.Empty)
+            throw new DomainException("La clave y las cuentas del movimiento de caja no son válidas.");
+        if ((idempotencyKey is null) != (cashPaymentMethodId is null) || (idempotencyKey is null) != (counterAccountId is null))
+            throw new DomainException("Los movimientos contables de caja requieren clave y cuentas asociadas.");
         SessionId = sessionId; UserId = userId; Kind = kind; Amount = decimal.Round(amount, 2); Description = description.Trim();
+        IdempotencyKey = idempotencyKey; CashPaymentMethodId = cashPaymentMethodId; CounterAccountId = counterAccountId;
     }
 
     public Guid SessionId { get; private set; }
@@ -65,4 +72,7 @@ public sealed class CashMovement : TenantEntity
     public CashMovementKind Kind { get; private set; }
     public decimal Amount { get; private set; }
     public string Description { get; private set; } = "";
+    public Guid? IdempotencyKey { get; private set; }
+    public Guid? CashPaymentMethodId { get; private set; }
+    public Guid? CounterAccountId { get; private set; }
 }

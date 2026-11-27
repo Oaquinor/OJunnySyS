@@ -535,8 +535,13 @@ public sealed class StoreDbContext(DbContextOptions<StoreDbContext> options)
         {
             entity.HasKey(x => x.Id);
             entity.HasIndex(x => new { x.TenantId, x.SessionId, x.CreatedAtUtc });
+            entity.HasIndex(x => new { x.TenantId, x.IdempotencyKey }).IsUnique();
             entity.HasOne<Tenant>().WithMany().HasForeignKey(x => x.TenantId).OnDelete(DeleteBehavior.Restrict);
             entity.HasOne<CashSession>().WithMany().HasForeignKey(x => x.SessionId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne<TenantPaymentMethod>().WithMany().HasForeignKey(x => new { x.TenantId, x.CashPaymentMethodId })
+                .HasPrincipalKey(x => new { x.TenantId, x.Id }).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne<ChartAccount>().WithMany().HasForeignKey(x => new { x.TenantId, x.CounterAccountId })
+                .HasPrincipalKey(x => new { x.TenantId, x.Id }).OnDelete(DeleteBehavior.Restrict);
             entity.HasQueryFilter(x => CurrentTenantId != null && x.TenantId == CurrentTenantId);
             entity.Property(x => x.Amount).HasPrecision(14, 2);
             entity.Property(x => x.Description).HasMaxLength(200).IsRequired();

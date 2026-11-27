@@ -5,6 +5,8 @@
 @inject AuthenticationStateProvider AuthenticationState
 @inject ILogger<Cash> Logger
 @inject PosRegisterService PosRegisters
+@inject PosPaymentMethodService PaymentMethods
+@inject AccountingService Accounting
 
 <PageTitle>Caja · OJunnySyS</PageTitle>
 <PageHeader Eyebrow="VENTAS / CAJA" Title="Caja y arqueo" Description="Abre un turno, registra entradas y retiros, y compara el efectivo esperado con el conteo real.">
@@ -30,10 +32,15 @@ else
     </div>
     <div class="cash-actions-grid">
         <section class="panel cash-action-card"><span class="eyebrow">MOVIMIENTO DE CAJA</span><h2>Registrar entrada o retiro</h2><p>Indica el importe y explica el motivo para mantener el arqueo claro.</p>
-            <EditForm Model="_movementForm" OnValidSubmit="RecordMovementAsync"><DataAnnotationsValidator /><div class="form-grid"><label>Tipo<InputSelect @bind-Value="_movementForm.Kind"><option value="@CashMovementKind.CashIn">Entrada de efectivo</option><option value="@CashMovementKind.CashOut">Retiro de efectivo</option></InputSelect></label><label>Importe<NumericInput @bind-Value="_movementForm.Amount" min="0.01" step="0.01" /></label><label class="full-span">Motivo<InputText @bind-Value="_movementForm.Description" placeholder="Ej. Fondo para cambio" /></label></div><ValidationSummary /><button class="button button-secondary" type="submit" disabled="@_saving">Registrar movimiento</button></EditForm>
+            <EditForm Model="_movementForm" OnValidSubmit="RecordMovementAsync"><DataAnnotationsValidator /><div class="form-grid"><label>Tipo<InputSelect @bind-Value="_movementForm.Kind" @bind-Value:after="ResetMovementKey"><option value="@CashMovementKind.CashIn">Entrada de efectivo</option><option value="@CashMovementKind.CashOut">Retiro de efectivo</option></InputSelect></label><label>Importe<NumericInput @bind-Value="_movementForm.Amount" @bind-Value:after="ResetMovementKey" min="0.01" step="0.01" /></label><label>Cuenta de efectivo<InputSelect @bind-Value="_movementForm.CashPaymentMethodId" @bind-Value:after="OnCashMethodChanged"><option value="@Guid.Empty">Selecciona caja contable</option>@foreach (var method in CashMethods) { <option value="@method.Id">@CashMethodLabel(method)</option> }</InputSelect></label><label>Contrapartida contable<InputSelect @bind-Value="_movementForm.CounterAccountId" @bind-Value:after="ResetMovementKey"><option value="@Guid.Empty">Selecciona cuenta</option>@foreach (var account in CounterAccounts(_movementForm.CashPaymentMethodId)) { <option value="@account.Id">@account.Code · @account.Name</option> }</InputSelect></label><label class="full-span">Motivo<InputText @bind-Value="_movementForm.Description" @bind-Value:after="ResetMovementKey" placeholder="Ej. Fondo para cambio o pago de mensajería" /></label></div><small class="report-filter-note">La entrada debita efectivo y acredita la contrapartida; el retiro registra el asiento inverso.</small><ValidationSummary /><button class="button button-secondary" type="submit" disabled="@(_saving || CashMethods.Count == 0 || _movementForm.CashPaymentMethodId == Guid.Empty || _movementForm.CounterAccountId == Guid.Empty)">Registrar movimiento</button></EditForm>
         </section>
         <section class="panel cash-action-card cash-close-card"><span class="eyebrow">CIERRE DE TURNO</span><h2>Arqueo de efectivo</h2><p>Cuenta el dinero físico del cajón. El sistema calculará la diferencia contra el efectivo esperado.</p>
-            <EditForm Model="_closeForm" OnValidSubmit="CloseAsync"><DataAnnotationsValidator /><label>Efectivo contado<NumericInput @bind-Value="_closeForm.CountedCash" min="0" step="0.01" /></label><div class="cash-reconcile"><span>Esperado</span><strong>@Money(_current.ExpectedCash)</strong><span>Conteo</span><strong>@Money(_closeForm.CountedCash)</strong><span>Diferencia estimada</span><strong class="@(_closeForm.CountedCash - _current.ExpectedCash < 0 ? "alert-number" : "")">@Money(_closeForm.CountedCash - _current.ExpectedCash)</strong></div><button class="button button-primary" type="submit" disabled="@_saving">@(_saving ? "Cerrando…" : "Cerrar caja y guardar arqueo")</button></EditForm>
+            <EditForm Model="_closeForm" OnValidSubmit="CloseAsync"><DataAnnotationsValidator /><label>Efectivo contado<NumericInput @bind-Value="_closeForm.CountedCash" @bind-Value:after="UpdateCloseAccount" min="0" step="0.01" /></label><div class="cash-reconcile"><span>Esperado</span><strong>@Money(_current.ExpectedCash)</strong><span>Conteo</span><strong>@Money(_closeForm.CountedCash)</strong><span>Diferencia estimada</span><strong class="@(_closeForm.CountedCash - _current.ExpectedCash < 0 ? "alert-number" : "")">@Money(_closeForm.CountedCash - _current.ExpectedCash)</strong></div>
+                @if (_closeForm.CountedCash != _current.ExpectedCash)
+                {
+                    <div class="cash-close-ledger-grid"><label>Cuenta de efectivo<InputSelect @bind-Value="_closeForm.CashPaymentMethodId"><option value="">Selecciona caja contable</option>@foreach (var method in CashMethods) { <option value="@method.Id">@CashMethodLabel(method)</option> }</InputSelect></label><label>@(_closeForm.CountedCash > _current.ExpectedCash ? "Cuenta de ingreso · sobrante" : "Cuenta de gasto · faltante")<InputSelect @bind-Value="_closeForm.DifferenceAccountId"><option value="">Selecciona cuenta de ajuste</option>@foreach (var account in DifferenceAccounts) { <option value="@account.Id">@account.Code · @account.Name</option> }</InputSelect></label></div><small class="report-filter-note">El ajuste se contabilizará con el asiento del cierre y quedará relacionado con este turno.</small>
+                }
+                <button class="button button-primary" type="submit" disabled="@(_saving || (_closeForm.CountedCash != _current.ExpectedCash && (_closeForm.CashPaymentMethodId is null || _closeForm.DifferenceAccountId is null)))">@(_saving ? "Cerrando…" : "Cerrar caja y guardar arqueo")</button></EditForm>
         </section>
     </div>
 }
@@ -55,6 +62,8 @@ else
     private Guid _userId;
     private CashSessionDto? _current;
     private List<PosRegisterDto> _registers = [];
+    private IReadOnlyList<TenantPaymentMethodDto> _paymentMethods = [];
+    private IReadOnlyList<ChartAccountDto> _chartAccounts = [];
     private string _registerCode = "MAIN";
     private List<CashSessionDto> _sessions = [];
     private OpenForm _openForm = new();
@@ -68,6 +77,9 @@ else
         var principal = (await AuthenticationState.GetAuthenticationStateAsync()).User;
         if (!Guid.TryParse(principal.FindFirstValue(System.Security.Claims.ClaimTypes.NameIdentifier), out _userId)) throw new InvalidOperationException("La sesión autenticada no tiene un identificador válido.");
         _registers = (await PosRegisters.GetRegistersAsync(includeInactive: false)).ToList();
+        _paymentMethods = await PaymentMethods.GetAsync(includeInactive: true);
+        _chartAccounts = await Accounting.GetChartOfAccountsAsync();
+        _movementForm.CashPaymentMethodId = CashMethods.FirstOrDefault()?.Id ?? Guid.Empty;
         if (_registers.All(x => x.Code != _registerCode)) _registerCode = _registers.FirstOrDefault()?.Code ?? "";
         await LoadAsync();
     }
@@ -77,6 +89,7 @@ else
         _current = string.IsNullOrEmpty(_registerCode) ? null : await Store.GetCurrentCashSessionAsync(_registerCode);
         _sessions = (await Store.GetRecentCashSessionsAsync(10)).ToList();
         if (_current is not null) _closeForm.CountedCash = _current.ExpectedCash;
+        if (_current is not null) UpdateCloseAccount();
     }
 
     private async Task OnRegisterChangedAsync()
@@ -100,7 +113,7 @@ else
     {
         if (_current is null) return;
         _saving = true; _error = null;
-        try { await Store.RecordCashMovementAsync(_current.Id, _userId, new CashMovementRequest(_movementForm.Kind, _movementForm.Amount, _movementForm.Description)); _movementForm = new(); _notice = "Movimiento de caja registrado."; await LoadAsync(); }
+        try { await Store.RecordCashMovementAsync(_current.Id, _userId, new CashMovementRequest(_movementForm.Kind, _movementForm.Amount, _movementForm.Description, _movementForm.CashPaymentMethodId, _movementForm.CounterAccountId, _movementForm.IdempotencyKey)); _movementForm = new(); _notice = "Movimiento registrado y contabilizado."; await LoadAsync(); }
         catch (DomainException ex) { _error = ex.Message; }
         catch (Exception ex) { Logger.LogError(ex, "No se pudo registrar el movimiento de caja."); _error = "No se pudo registrar el movimiento."; }
         finally { _saving = false; }
@@ -110,14 +123,37 @@ else
     {
         if (_current is null) return;
         _saving = true; _error = null;
-        try { var closed = await Store.CloseCashSessionAsync(_current.Id, _userId, _closeForm.CountedCash); _notice = $"Caja cerrada. Diferencia: {Money(closed.Difference ?? 0m)}."; _closeForm = new(); await LoadAsync(); }
+        try { var closed = await Store.CloseCashSessionAsync(_current.Id, _userId, new CloseCashSessionRequest(_closeForm.CountedCash, _closeForm.CashPaymentMethodId, _closeForm.DifferenceAccountId)); _notice = $"Caja cerrada. Diferencia: {Money(closed.Difference ?? 0m)}."; _closeForm = new(); await LoadAsync(); }
         catch (DomainException ex) { _error = ex.Message; }
         catch (Exception ex) { Logger.LogError(ex, "No se pudo cerrar la caja."); _error = "No se pudo cerrar la caja."; }
         finally { _saving = false; }
     }
 
     private static string Money(decimal value) => DisplayFormat.Money(value, showCents: true);
+    private IReadOnlyList<TenantPaymentMethodDto> CashMethods => _paymentMethods.Where(x => x.Type == PaymentMethodType.Cash && x.LedgerAccountId is { } id && _chartAccounts.Any(a => a.Id == id && a.IsActive)).OrderBy(x => x.Name).ToArray();
+    private IReadOnlyList<ChartAccountDto> DifferenceAccounts => _chartAccounts.Where(x => x.IsActive && x.Type == (_closeForm.CountedCash > (_current?.ExpectedCash ?? 0m) ? OJunnySyS.Domain.Accounting.AccountType.Revenue : OJunnySyS.Domain.Accounting.AccountType.Expense)).OrderBy(x => x.Code).ToArray();
+    private IEnumerable<ChartAccountDto> CounterAccounts(Guid cashPaymentMethodId)
+    {
+        var cashAccountId = CashMethods.FirstOrDefault(x => x.Id == cashPaymentMethodId)?.LedgerAccountId;
+        return _chartAccounts.Where(x => x.IsActive && x.Id != cashAccountId).OrderBy(x => x.Code);
+    }
+    private string CashMethodLabel(TenantPaymentMethodDto method)
+    {
+        var account = _chartAccounts.FirstOrDefault(x => x.Id == method.LedgerAccountId);
+        return account is null ? method.Name : $"{method.Name} · {account.Code} {account.Name}";
+    }
+    private void UpdateCloseAccount()
+    {
+        var desiredType = _closeForm.CountedCash > (_current?.ExpectedCash ?? 0m) ? OJunnySyS.Domain.Accounting.AccountType.Revenue : OJunnySyS.Domain.Accounting.AccountType.Expense;
+        if (_closeForm.DifferenceAccountId is { } id && !_chartAccounts.Any(x => x.Id == id && x.IsActive && x.Type == desiredType))
+            _closeForm.DifferenceAccountId = null;
+        if (_closeForm.DifferenceAccountId is null)
+            _closeForm.DifferenceAccountId = _chartAccounts.FirstOrDefault(x => x.IsActive && x.Type == desiredType)?.Id;
+        _closeForm.CashPaymentMethodId ??= CashMethods.FirstOrDefault()?.Id;
+    }
+    private void ResetMovementKey() => _movementForm.IdempotencyKey = Guid.NewGuid();
+    private void OnCashMethodChanged() { _movementForm.CounterAccountId = Guid.Empty; ResetMovementKey(); }
     private sealed class OpenForm { [System.ComponentModel.DataAnnotations.Range(typeof(decimal), "0", "999999999999.99", ErrorMessage = "El fondo debe ser cero o mayor.")] public decimal OpeningFloat { get; set; } }
-    private sealed class MovementForm { public CashMovementKind Kind { get; set; } = CashMovementKind.CashIn; [System.ComponentModel.DataAnnotations.Range(typeof(decimal), "0.01", "999999999999.99", ErrorMessage = "El importe debe ser mayor que cero.")] public decimal Amount { get; set; } [System.ComponentModel.DataAnnotations.Required, System.ComponentModel.DataAnnotations.StringLength(200, MinimumLength = 2)] public string Description { get; set; } = ""; }
-    private sealed class CloseForm { [System.ComponentModel.DataAnnotations.Range(typeof(decimal), "0", "999999999999.99", ErrorMessage = "El efectivo contado debe ser cero o mayor.")] public decimal CountedCash { get; set; } }
+    private sealed class MovementForm { public CashMovementKind Kind { get; set; } = CashMovementKind.CashIn; [System.ComponentModel.DataAnnotations.Range(typeof(decimal), "0.01", "999999999999.99", ErrorMessage = "El importe debe ser mayor que cero.")] public decimal Amount { get; set; } [System.ComponentModel.DataAnnotations.Required, System.ComponentModel.DataAnnotations.StringLength(200, MinimumLength = 2)] public string Description { get; set; } = ""; public Guid CashPaymentMethodId { get; set; } public Guid CounterAccountId { get; set; } public Guid IdempotencyKey { get; set; } = Guid.NewGuid(); }
+    private sealed class CloseForm { [System.ComponentModel.DataAnnotations.Range(typeof(decimal), "0", "999999999999.99", ErrorMessage = "El efectivo contado debe ser cero o mayor.")] public decimal CountedCash { get; set; } public Guid? CashPaymentMethodId { get; set; } public Guid? DifferenceAccountId { get; set; } }
 }

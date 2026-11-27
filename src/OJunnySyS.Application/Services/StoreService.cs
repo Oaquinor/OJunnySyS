@@ -102,7 +102,7 @@ public sealed class StoreService(IStoreRepository repository, IBusinessClock clo
     }
     public Task<CashSessionDto> OpenCashSessionAsync(Guid userId, OpenCashSessionRequest request, CancellationToken ct = default) => repository.OpenCashSessionAsync(userId, request, ct);
     public Task<CashSessionDto> RecordCashMovementAsync(Guid sessionId, Guid userId, CashMovementRequest request, CancellationToken ct = default) => repository.RecordCashMovementAsync(sessionId, userId, request, ct);
-    public Task<CashSessionDto> CloseCashSessionAsync(Guid sessionId, Guid userId, decimal countedCash, CancellationToken ct = default) => repository.CloseCashSessionAsync(sessionId, userId, countedCash, ct);
+    public Task<CashSessionDto> CloseCashSessionAsync(Guid sessionId, Guid userId, CloseCashSessionRequest request, CancellationToken ct = default) => repository.CloseCashSessionAsync(sessionId, userId, request, ct);
     public Task<SaleReceiptDto?> GetSaleReceiptAsync(Guid saleId, CancellationToken ct = default) => repository.GetSaleReceiptAsync(saleId, ct);
 
     public async Task<IReadOnlyList<SupplierDto>> SearchSuppliersAsync(string? query, CancellationToken ct = default) =>

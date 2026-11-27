@@ -56,8 +56,9 @@ public sealed record PayablesAgingReport(DateOnly AsOfDate, int OpenItems, decim
 public sealed record CashSessionDto(Guid Id, string RegisterCode, CashSessionStatus Status, decimal OpeningFloat, Guid OpenedByUserId, DateTimeOffset OpenedAtUtc, decimal CashSales, decimal CashIn, decimal CashOut, decimal ExpectedCash, DateTimeOffset? ClosedAtUtc, decimal? CountedCash, decimal? Difference, IReadOnlyList<CashMovementDto> Movements);
 public sealed record CashMovementDto(Guid Id, CashMovementKind Kind, decimal Amount, string Description, Guid UserId, DateTimeOffset CreatedAtUtc);
 public sealed record OpenCashSessionRequest(string RegisterCode, decimal OpeningFloat);
-public sealed record CashMovementRequest(CashMovementKind Kind, decimal Amount, string Description);
-public sealed record CloseCashSessionRequest(decimal CountedCash);
+public sealed record CashMovementRequest(CashMovementKind Kind, decimal Amount, string Description,
+    Guid CashPaymentMethodId, Guid CounterAccountId, Guid IdempotencyKey);
+public sealed record CloseCashSessionRequest(decimal CountedCash, Guid? CashPaymentMethodId = null, Guid? DifferenceAccountId = null);
 public sealed record SalePaymentDto(string MethodName, PaymentMethodType Type, decimal Amount, string? Reference);
 public sealed record SaleReturnDto(Guid Id, string Number, decimal Subtotal, decimal TaxAmount, decimal Total, decimal ReceivableCredit, decimal RefundAmount, DateTimeOffset CreatedAtUtc, IReadOnlyList<SaleReturnLineDto> Lines);
 public sealed record SaleReturnLineDto(Guid SaleLineId, string Sku, string ProductName, int Quantity, decimal UnitPrice, decimal TaxRate, decimal LineTotal, decimal TaxAmount);
