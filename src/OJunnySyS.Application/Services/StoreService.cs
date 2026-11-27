@@ -32,12 +32,12 @@ public sealed class StoreService(IStoreRepository repository, IBusinessClock clo
     public async Task<IReadOnlyList<SaleDto>> GetRecentSalesAsync(int count, CancellationToken ct = default) =>
         (await repository.GetRecentSalesAsync(count, ct)).Select(Map).ToArray();
 
-    public async Task<SalesReport> GetSalesReportAsync(DateOnly from, DateOnly to, CancellationToken ct = default)
+    public async Task<SalesReport> GetSalesReportAsync(DateOnly from, DateOnly to, Guid? warehouseId = null, Guid? sellerUserId = null, CancellationToken ct = default)
     {
         if (from > to) throw new OJunnySyS.Domain.Common.DomainException("La fecha inicial debe ser anterior o igual a la fecha final.");
         if (to.DayNumber - from.DayNumber > 365) throw new OJunnySyS.Domain.Common.DomainException("El período máximo del informe es de 366 días.");
         var (startUtc, endUtc) = clock.GetUtcRange(from, to);
-        var sales = await repository.GetSalesInPeriodAsync(startUtc, endUtc, ct);
+        var sales = await repository.GetSalesInPeriodAsync(startUtc, endUtc, warehouseId, sellerUserId, ct);
         var completed = sales.Where(x => x.Status == SaleStatus.Completed).ToArray();
         var payments = completed.SelectMany(sale => sale.Payments.Select(payment => (Sale: sale, Payment: payment)))
             .GroupBy(x => x.Payment.MethodName)
@@ -160,7 +160,7 @@ public sealed class StoreService(IStoreRepository repository, IBusinessClock clo
     public async Task<DashboardSummary> GetDashboardAsync(CancellationToken ct = default)
     {
         var (startUtc, endUtc) = clock.CurrentBusinessDayUtc;
-        var sales = await repository.GetSalesInPeriodAsync(startUtc, endUtc, ct);
+        var sales = await repository.GetSalesInPeriodAsync(startUtc, endUtc, cancellationToken: ct);
         var products = await repository.SearchProductsAsync(null, cancellationToken: ct);
         var customers = await repository.SearchCustomersAsync(null, ct);
         return new DashboardSummary(sales.Where(x => x.Status == SaleStatus.Completed).Sum(x => x.Total), sales.Count(x => x.Status == SaleStatus.Completed), customers.Count, products.Count(x => x.StockOnHand <= 5), (await repository.GetRecentSalesAsync(6, ct)).Select(Map).ToArray());

@@ -202,6 +202,7 @@ public sealed class StoreDbContext(DbContextOptions<StoreDbContext> options)
             entity.HasIndex(x => new { x.TenantId, x.Number }).IsUnique();
             entity.HasIndex(x => new { x.TenantId, x.CreatedAtUtc });
             entity.HasIndex(x => new { x.TenantId, x.CustomerId, x.CreatedAtUtc });
+            entity.HasIndex(x => new { x.TenantId, x.WarehouseId, x.CreatedAtUtc });
             entity.HasIndex(x => new { x.TenantId, x.IdempotencyKey }).IsUnique();
             entity.HasOne<Tenant>().WithMany().HasForeignKey(x => x.TenantId).OnDelete(DeleteBehavior.Restrict);
             entity.HasQueryFilter(x => CurrentTenantId != null && x.TenantId == CurrentTenantId);

@@ -67,11 +67,14 @@ public sealed class EfStoreRepository(IDbContextFactory<StoreDbContext> contextF
         return await db.Sales.AsNoTracking().Include(x => x.Payments).OrderByDescending(x => x.CreatedAtUtc).Take(Math.Clamp(count, 1, 100)).ToListAsync(cancellationToken);
     }
 
-    public async Task<IReadOnlyList<Sale>> GetSalesInPeriodAsync(DateTimeOffset from, DateTimeOffset to, CancellationToken cancellationToken = default)
+    public async Task<IReadOnlyList<Sale>> GetSalesInPeriodAsync(DateTimeOffset from, DateTimeOffset to, Guid? warehouseId = null, Guid? sellerUserId = null, CancellationToken cancellationToken = default)
     {
         await using var db = await CreateDbContextAsync(cancellationToken);
-        return await db.Sales.AsNoTracking().Include(x => x.Lines).Include(x => x.Payments)
-            .Where(x => x.CreatedAtUtc >= from && x.CreatedAtUtc < to).ToListAsync(cancellationToken);
+        var query = db.Sales.AsNoTracking().Include(x => x.Lines).Include(x => x.Payments)
+            .Where(x => x.CreatedAtUtc >= from && x.CreatedAtUtc < to);
+        if (warehouseId is { } warehouse) query = query.Where(x => x.WarehouseId == warehouse);
+        if (sellerUserId is { } seller) query = query.Where(x => x.SellerUserId == seller);
+        return await query.ToListAsync(cancellationToken);
     }
 
     public async Task<Customer> CreateCustomerAsync(string firstName, string lastName, string email, string phone, string? company, CancellationToken cancellationToken = default)

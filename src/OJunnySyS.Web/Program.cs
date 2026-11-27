@@ -10,6 +10,7 @@ using OJunnySyS.Infrastructure.Identity;
 using OJunnySyS.Infrastructure.Persistence;
 using OJunnySyS.Web.Identity;
 using OJunnySyS.Web.Components;
+using OJunnySyS.Web.Presentation;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -290,9 +291,19 @@ api.MapPost("/crm/activities/{id:guid}/complete", async (Guid id, CrmService crm
 }).RequireAuthorization("CrmWrite");
 api.MapGet("/sales", async (int? limit, StoreService store, CancellationToken ct) => Results.Ok(await store.GetRecentSalesAsync(limit ?? 50, ct))).RequireAuthorization("SalesRead");
 api.MapGet("/dashboard", async (StoreService store, CancellationToken ct) => Results.Ok(await store.GetDashboardAsync(ct)));
-api.MapGet("/reports/sales", async (DateOnly from, DateOnly to, StoreService store, CancellationToken ct) =>
+api.MapGet("/reports/sales", async (DateOnly from, DateOnly to, Guid? warehouseId, Guid? sellerUserId, StoreService store, CancellationToken ct) =>
 {
-    try { return Results.Ok(await store.GetSalesReportAsync(from, to, ct)); }
+    try { return Results.Ok(await store.GetSalesReportAsync(from, to, warehouseId, sellerUserId, ct)); }
+    catch (DomainException ex) { return Results.ValidationProblem(new Dictionary<string, string[]> { ["period"] = [ex.Message] }); }
+}).RequireAuthorization("ReportsRead");
+api.MapGet("/reports/sales.csv", async (DateOnly from, DateOnly to, Guid? warehouseId, Guid? sellerUserId, StoreService store, CancellationToken ct) =>
+{
+    try
+    {
+        var report = await store.GetSalesReportAsync(from, to, warehouseId, sellerUserId, ct);
+        var fileName = $"ojunny-ventas-{from:yyyyMMdd}-{to:yyyyMMdd}.csv";
+        return Results.File(SalesReportCsvWriter.Write(report), "text/csv; charset=utf-8", fileName);
+    }
     catch (DomainException ex) { return Results.ValidationProblem(new Dictionary<string, string[]> { ["period"] = [ex.Message] }); }
 }).RequireAuthorization("ReportsRead");
 api.MapGet("/reports/payables-aging", async (DateOnly? asOf, StoreService store, CancellationToken ct) => Results.Ok(await store.GetPayablesAgingAsync(asOf, ct)))

@@ -1281,11 +1281,11 @@ namespace OJunnySyS.Infrastructure.Persistence.Migrations
                     b.HasIndex("TenantId", "Number")
                         .IsUnique();
 
-                    b.HasIndex("TenantId", "WarehouseId");
-
                     b.HasIndex("TenantId", "CustomerId", "CreatedAtUtc");
 
                     b.HasIndex("TenantId", "SellerUserId", "CreatedAtUtc");
+
+                    b.HasIndex("TenantId", "WarehouseId", "CreatedAtUtc");
 
                     b.ToTable("Sales");
                 });

@@ -2,15 +2,28 @@
 @attribute [Authorize(Roles = "Administrator,Manager")]
 @inject StoreService Store
 @inject TenantSettingsService TenantSettings
+@inject WarehouseService Warehouses
+@inject TenantUserService TenantUsers
 @inject OJunnySyS.Application.Abstractions.IBusinessClock Clock
 
 <PageTitle>Reportes · OjunnySyS</PageTitle>
-<PageHeader Eyebrow="ANÁLISIS / VENTAS" Title="Reportes" Description="Entiende el rendimiento de las ventas en el período que elijas." />
+<PageHeader Eyebrow="ANÁLISIS / VENTAS" Title="Reportes" Description="Entiende el rendimiento de las ventas en el período que elijas.">
+    <Actions>@if (_report is not null) { <a class="button button-secondary" href="@ExportUrl">↓ Descargar CSV</a> }</Actions>
+</PageHeader>
+<div class="report-presets" aria-label="Períodos rápidos">
+    <span>Período rápido</span>
+    <button class="button button-secondary" @onclick="() => SetPeriodAsync(Today.AddDays(-6), Today)">Últimos 7 días</button>
+    <button class="button button-secondary" @onclick="() => SetPeriodAsync(Today.AddDays(-29), Today)">Últimos 30 días</button>
+    <button class="button button-secondary" @onclick="() => SetPeriodAsync(new DateOnly(Today.Year, Today.Month, 1), Today)">Este mes</button>
+    <button class="button button-secondary" @onclick="PreviousMonthAsync">Mes anterior</button>
+</div>
 <section class="panel report-filter">
     <label>Desde<InputDate @bind-Value="_from" /></label>
     <label>Hasta<InputDate @bind-Value="_to" /></label>
+    <label>Almacén<InputSelect @bind-Value="_warehouseId"><option value="">Todos los almacenes</option>@foreach (var warehouse in _warehouses) { <option value="@warehouse.Id">@warehouse.Name</option> }</InputSelect></label>
+    <label>Vendedor<InputSelect @bind-Value="_sellerUserId"><option value="">Todos los vendedores</option>@foreach (var seller in _sellers) { <option value="@seller.Id">@seller.DisplayName</option> }</InputSelect></label>
     <button class="button button-primary" @onclick="LoadAsync" disabled="@_loading">@(_loading ? "Generando…" : "Generar reporte")</button>
-    <span class="timezone-note">Fechas en la zona horaria del negocio</span>
+    <small class="report-filter-note">Fechas en la zona horaria del negocio. Almacén y vendedor filtran las ventas; caja usa solo el período.</small>
 </section>
 <div class="report-period">REPORTES OPERATIVOS <strong>Ventas · Caja y arqueos</strong></div>
 @if (!string.IsNullOrWhiteSpace(_error)) { <div class="inline-error">@_error</div> }
@@ -85,16 +98,24 @@
     private DateOnly _from, _to;
     private SalesReport? _report;
     private CashSessionReport? _cashReport;
+    private IReadOnlyList<WarehouseDto> _warehouses = [];
+    private IReadOnlyList<TenantMemberDto> _sellers = [];
+    private Guid? _warehouseId, _sellerUserId;
     private string _currencyCode = "DOP";
     private string? _error;
     private bool _loading;
+    private DateOnly Today => DateOnly.FromDateTime(Clock.ToBusinessTime(Clock.UtcNow).DateTime);
     private decimal Average => _report is null || _report.SalesCount == 0 ? 0 : decimal.Round(_report.Total / _report.SalesCount, 2);
+    private string ExportUrl => $"/api/v1/reports/sales.csv?from={_from:yyyy-MM-dd}&to={_to:yyyy-MM-dd}" +
+        (_warehouseId is { } warehouse ? $"&warehouseId={warehouse}" : "") + (_sellerUserId is { } seller ? $"&sellerUserId={seller}" : "");
 
     protected override async Task OnInitializedAsync()
     {
         _to = DateOnly.FromDateTime(Clock.ToBusinessTime(Clock.UtcNow).DateTime);
         _from = _to.AddDays(-29);
         _currencyCode = (await TenantSettings.GetAsync()).CurrencyCode;
+        _warehouses = await Warehouses.GetAsync(includeInactive: false);
+        _sellers = await TenantUsers.GetActiveSalespeopleAsync();
         await LoadAsync();
     }
 
@@ -102,9 +123,16 @@
     {
         _loading = true;
         _error = null;
-        try { _report = await Store.GetSalesReportAsync(_from, _to); _cashReport = await Store.GetCashSessionReportAsync(_from, _to); }
+        try { _report = await Store.GetSalesReportAsync(_from, _to, _warehouseId, _sellerUserId); _cashReport = await Store.GetCashSessionReportAsync(_from, _to); }
         catch (DomainException ex) { _report = null; _cashReport = null; _error = ex.Message; }
         finally { _loading = false; }
+    }
+
+    private async Task SetPeriodAsync(DateOnly from, DateOnly to) { _from = from; _to = to; await LoadAsync(); }
+    private Task PreviousMonthAsync()
+    {
+        var start = new DateOnly(Today.Year, Today.Month, 1).AddMonths(-1);
+        return SetPeriodAsync(start, start.AddMonths(1).AddDays(-1));
     }
 
     private string Money(decimal value) => DisplayFormat.Money(value, _currencyCode);
