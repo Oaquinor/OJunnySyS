@@ -2,6 +2,7 @@
 @attribute [Authorize]
 @inject StoreService Store
 @inject OJunnySyS.Application.Abstractions.IBusinessClock Clock
+@inject TenantWorkspaceService Workspace
 
 <PageTitle>Resumen · OjunnySyS</PageTitle>
 <PageHeader Eyebrow="INICIO / RESUMEN" Title="Buenos días, Ojunny" Description="Aquí tienes el pulso de tu negocio hoy.">
@@ -13,6 +14,10 @@
 }
 else
 {
+    @if (_workspace is not null)
+    {
+        <AuthorizeView Roles="Administrator"><Authorized><a class="workspace-dashboard-banner" href="/app/workspace"><span><strong>@_workspace.CompanyName</strong><small>@(_workspace.Status == TenantStatus.Trial ? "Prueba gratuita" : $"Plan {_workspace.PlanCode}") · @_completedSteps de 4 pasos de puesta en marcha</small></span><span class="workspace-dashboard-action">Mi empresa <b>→</b></span></a></Authorized></AuthorizeView>
+    }
     <div class="stats-grid">
         <MetricCard Label="VENTAS DE HOY" Value="@DisplayFormat.Money(_summary.SalesToday)" Icon="↗" Tone="green"><span class="stat-trend">En el día</span><span>zona horaria de negocio</span></MetricCard>
         <MetricCard Label="ÓRDENES" Value="@_summary.OrdersToday.ToString("00")" Icon="▧" Tone="lilac"><span class="muted-foot">Completadas hoy</span></MetricCard>
@@ -30,7 +35,13 @@ else
 
 @code {
     private DashboardSummary? _summary;
-    protected override async Task OnInitializedAsync() => _summary = await Store.GetDashboardAsync();
+    private TenantWorkspaceDto? _workspace;
+    private int _completedSteps => _workspace is null ? 0 : (_workspace.BusinessIdentityComplete ? 1 : 0) + (_workspace.ActiveProductCount > 0 ? 1 : 0) + (_workspace.ActiveCustomerCount > 0 ? 1 : 0) + (_workspace.SaleCount > 0 ? 1 : 0);
+    protected override async Task OnInitializedAsync()
+    {
+        _workspace = await Workspace.GetOverviewAsync();
+        _summary = await Store.GetDashboardAsync();
+    }
     private static string Money(decimal amount) => DisplayFormat.Money(amount);
     private static string Initials(string value) => DisplayFormat.Initials(value);
     private static string Payment(PaymentMethod method) => DisplayFormat.PaymentLabel(method);

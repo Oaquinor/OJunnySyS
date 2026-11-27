@@ -23,7 +23,7 @@ OJunnySyS se desarrolla en C#, ASP.NET Core .NET 10, Blazor Server interactivo, 
 - [x] API versionada para los flujos que requieren integración externa.
 - [x] Scaffold inicial para funcionalidades y componentes reutilizables.
 - [x] Generador de clases C# desde el esquema MySQL con preview y salida por capas sin sobrescribir archivos.
-- [ ] Recorrido guiado de primera empresa y control más visible del espacio, plan y usuario activo.
+- [x] Recorrido inicial por empresa con checklist basada en datos y panel de estado, prueba, plan y acceso administrador.
 - [ ] Invitaciones y correo transaccional real con recuperación de acceso verificada en el entorno local.
 - [ ] Pasarela de suscripciones con checkout y webhooks firmados e idempotentes.
 - [ ] Integración y autorización de comprobantes electrónicos DGII/e-CF.

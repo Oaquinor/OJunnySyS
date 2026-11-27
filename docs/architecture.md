@@ -26,6 +26,7 @@ Dependencias permitidas: Web → Application, Infrastructure; Infrastructure →
 - La antigüedad de saldos se calcula por fecha de vencimiento y fecha de negocio de la empresa, no por la zona horaria del servidor.
 - **Recibos**: vista imprimible derivada de la venta persistida, protegida por tenant; no acepta precios enviados por el navegador.
 - **Plataforma**: empresa, usuarios, roles y ciclo de prueba. Una compuerta central revisa estado del tenant y del usuario en rutas web/API; los repositorios repiten la validación en cada operación para cubrir circuitos Blazor persistentes. Auditoría, configuración fiscal y salud operativa siguen pendientes antes de producción.
+- **Alta de empresas**: el registro confirma correo, crea tenant aislado e inicializa almacén y terminal; el panel «Mi empresa» muestra estado del espacio, plan/prueba, cuenta administradora y checklist basada en productos, clientes, identidad comercial y ventas reales. El detalle del flujo y sus límites actuales está en `docs/alta-y-espacio-de-empresa.md`.
 
 ## Persistencia
 

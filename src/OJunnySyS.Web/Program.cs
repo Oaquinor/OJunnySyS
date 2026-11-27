@@ -105,6 +105,7 @@ builder.Services.AddScoped<StoreService>();
 builder.Services.AddScoped<CrmService>();
 builder.Services.AddScoped<PlatformManagementService>();
 builder.Services.AddScoped<TenantSettingsService>();
+builder.Services.AddScoped<TenantWorkspaceService>();
 builder.Services.AddScoped<TenantUserService>();
 builder.Services.AddScoped<CustomerTagService>();
 builder.Services.AddScoped<CustomerSegmentService>();

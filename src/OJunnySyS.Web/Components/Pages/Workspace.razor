@@ -1,0 +1,113 @@
+@page "/app/workspace"
+@attribute [Authorize(Roles = "Administrator")]
+@using OJunnySyS.Domain.Tenancy
+@inject TenantWorkspaceService WorkspaceService
+@inject AuthenticationStateProvider AuthenticationState
+@inject ILogger<Workspace> Logger
+
+<PageTitle>Mi empresa · OJunnySyS</PageTitle>
+<PageHeader Eyebrow="ESPACIO DE TRABAJO" Title="Mi empresa" Description="Consulta el estado de tu espacio y completa la puesta en marcha del negocio.">
+    <Actions><a class="button button-secondary" href="/app/settings">Configurar empresa</a></Actions>
+</PageHeader>
+
+@if (_loading)
+{
+    <div class="loading-panel">Cargando el estado de tu empresa…</div>
+}
+else if (_workspace is not null)
+{
+    <section class="workspace-hero panel">
+        <div class="workspace-company-mark">@Initial(_workspace.CompanyName)</div>
+        <div class="workspace-company"><span class="eyebrow">ESPACIO ACTUAL</span><h2>@_workspace.CompanyName</h2><p><span class="mono">/@_workspace.Slug</span> · @_workspace.CurrencyCode · Responsable @_workspace.OwnerEmail</p></div>
+        <div class="workspace-state"><span class="status-pill @StatusClass"><i></i>@StatusLabel(_workspace.Status)</span><strong>@PlanLabel</strong><small>@PlanDetail</small></div>
+    </section>
+
+    <div class="workspace-metrics">
+        <article class="panel workspace-metric"><span>PLAN</span><strong>@PlanLabel</strong><small>@PlanDetail</small></article>
+        <article class="panel workspace-metric"><span>PERSONAS CON ACCESO</span><strong>@_workspace.UserCount</strong><small>En el espacio actual</small></article>
+        <article class="panel workspace-metric"><span>PRODUCTOS ACTIVOS</span><strong>@_workspace.ActiveProductCount</strong><small>En el catálogo</small></article>
+        <article class="panel workspace-metric"><span>VENTAS REGISTRADAS</span><strong>@_workspace.SaleCount</strong><small>Historial del negocio</small></article>
+    </div>
+
+    <div class="workspace-content-grid">
+        <section class="panel workspace-checklist">
+            <div class="panel-heading"><div><span class="eyebrow">PRIMEROS PASOS</span><h2>Prepara tu espacio</h2><p>El progreso refleja los datos que ya están guardados en tu empresa.</p></div><span class="workspace-progress-count">@_completedSteps de @_steps.Count</span></div>
+            <div class="workspace-progress-track" role="progressbar" aria-valuemin="0" aria-valuemax="@_steps.Count" aria-valuenow="@_completedSteps"><span style="width:@ProgressPercent%"></span></div>
+            <div class="workspace-step-list">
+                @foreach (var step in _steps)
+                {
+                    <article class="workspace-step @(step.Done ? "is-done" : "")">
+                        <span class="workspace-step-icon" aria-hidden="true">@(step.Done ? "✓" : step.Number.ToString("00"))</span>
+                        <div><strong>@step.Title</strong><p>@step.Description</p></div>
+                        @if (step.Done) { <span class="workspace-step-status">Listo</span> }
+                        else { <a class="text-link" href="@step.Href">@step.Action <span>→</span></a> }
+                    </article>
+                }
+            </div>
+        </section>
+
+        <aside class="panel workspace-access-card">
+            <span class="eyebrow">SESIÓN ACTUAL</span>
+            <h2>@_currentUser</h2>
+            <p>Acceso como <strong>Administrador</strong>. La cuenta administra este espacio y su configuración.</p>
+            <div class="workspace-detail-row"><span>Creado</span><strong>@TenantDate(_workspace.CreatedAtUtc)</strong></div>
+            <div class="workspace-detail-row"><span>Correo responsable</span><strong>@_workspace.OwnerEmail</strong></div>
+            <a class="button button-secondary workspace-settings-link" href="/app/settings">Empresa, impuestos e impresión</a>
+            <div class="workspace-plan-note"><strong>Sobre tu plan</strong><p>La prueba y el estado del espacio se controlan aquí. La contratación y el cobro de suscripciones en línea aún no están habilitados.</p></div>
+        </aside>
+    </div>
+}
+else
+{
+    <div class="inline-error">No se pudo cargar la información del espacio.</div>
+}
+
+@code {
+    private TenantWorkspaceDto? _workspace;
+    private bool _loading = true;
+    private string _currentUser = "Administrador";
+    private IReadOnlyList<SetupStep> _steps = [];
+    private int _completedSteps => _steps.Count(x => x.Done);
+    private int ProgressPercent => _steps.Count == 0 ? 0 : (int)Math.Round(_completedSteps * 100d / _steps.Count);
+    private string StatusClass => _workspace?.Status switch { TenantStatus.Trial => "workspace-trial", TenantStatus.Suspended or TenantStatus.Closed => "status-warning", _ => "workspace-active" };
+    private string PlanLabel => _workspace?.Status == TenantStatus.Trial ? "Prueba gratuita" : $"Plan {_workspace?.PlanCode}";
+    private string PlanDetail => _workspace is { Status: TenantStatus.Trial, TrialEndsAtUtc: { } end }
+        ? end > DateTimeOffset.UtcNow ? $"Termina el {TenantDate(end)} · {Math.Max(0, (int)Math.Ceiling((end - DateTimeOffset.UtcNow).TotalDays))} días restantes" : $"Finalizó el {TenantDate(end)}"
+        : _workspace?.Status == TenantStatus.Active ? "Espacio con acceso activo" : "Consulta el estado con soporte de OJunnySyS";
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            var auth = await AuthenticationState.GetAuthenticationStateAsync();
+            _currentUser = auth.User.Identity?.Name ?? "Administrador";
+            _workspace = await WorkspaceService.GetOverviewAsync();
+            _steps =
+            [
+                new(1, "Completa la identidad de tu empresa", "Agrega el nombre legal y RNC para identificar el negocio en sus comprobantes.", _workspace.BusinessIdentityComplete, "/app/settings", "Configurar"),
+                new(2, "Agrega tus productos", "Registra artículos y existencias iniciales para habilitar el catálogo y POS.", _workspace.ActiveProductCount > 0, "/app/products", "Crear producto"),
+                new(3, "Registra tu primer cliente", "Organiza contactos e historial comercial en el CRM.", _workspace.ActiveCustomerCount > 0, "/app/customers", "Agregar cliente"),
+                new(4, "Registra tu primera venta", "Abre el turno de caja del terminal y completa una venta en el POS.", _workspace.SaleCount > 0, "/app/pos", "Ir al POS")
+            ];
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "No se pudo cargar el panel del espacio de trabajo.");
+        }
+        finally { _loading = false; }
+    }
+
+    private static string StatusLabel(TenantStatus status) => status switch
+    {
+        TenantStatus.Trial => "En prueba", TenantStatus.Active => "Activo", TenantStatus.Suspended => "Suspendido", _ => "Cerrado"
+    };
+
+    private static string Initial(string name) => string.Concat(name.Split(' ', StringSplitOptions.RemoveEmptyEntries).Take(2).Select(x => char.ToUpperInvariant(x[0])));
+    private string TenantDate(DateTimeOffset value)
+    {
+        try { return TimeZoneInfo.ConvertTime(value, TimeZoneInfo.FindSystemTimeZoneById(_workspace?.TimeZoneId ?? "UTC")).ToString("dd MMM yyyy HH:mm"); }
+        catch (TimeZoneNotFoundException) { return value.UtcDateTime.ToString("dd MMM yyyy HH:mm 'UTC'"); }
+        catch (InvalidTimeZoneException) { return value.UtcDateTime.ToString("dd MMM yyyy HH:mm 'UTC'"); }
+    }
+    private sealed record SetupStep(int Number, string Title, string Description, bool Done, string Href, string Action);
+}

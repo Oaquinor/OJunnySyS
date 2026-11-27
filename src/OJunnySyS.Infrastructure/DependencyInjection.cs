@@ -15,6 +15,7 @@ public static class DependencyInjection
         services.AddScoped<ICrmRepository, EfCrmRepository>();
         services.AddScoped<IPlatformManagementRepository, EfPlatformManagementRepository>();
         services.AddScoped<ITenantSettingsRepository, EfTenantSettingsRepository>();
+        services.AddScoped<ITenantWorkspaceRepository, EfTenantWorkspaceRepository>();
         services.AddScoped<ITenantUserRepository, EfTenantUserRepository>();
         services.AddScoped<ICustomerTagRepository, EfCustomerTagRepository>();
         services.AddScoped<ICustomerSegmentRepository, EfCustomerSegmentRepository>();
