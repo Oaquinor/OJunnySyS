@@ -1,4 +1,4 @@
-const CACHE_NAME = "ojunnysy-shell-v1";
+const CACHE_NAME = "ojunnysy-shell-v2";
 const OFFLINE_URL = "/offline.html";
 const STATIC_EXTENSIONS = /\.(?:css|js|svg|png|webmanifest|woff2?)$/i;
 const PRECACHE_URLS = [OFFLINE_URL, "/manifest.webmanifest", "/icons/ojunnysy-icon.svg", "/features.css"];
@@ -28,10 +28,12 @@ self.addEventListener("fetch", event => {
 
   event.respondWith(caches.open(CACHE_NAME).then(async cache => {
     const cached = await cache.match(request);
-    const network = fetch(request).then(response => {
-      if (response.ok && response.type === "basic") cache.put(request, response.clone());
+    try {
+      const response = await fetch(request);
+      if (response.ok && response.type === "basic") await cache.put(request, response.clone());
       return response;
-    }).catch(() => cached);
-    return cached || network;
+    } catch {
+      return cached || Response.error();
+    }
   }));
 });
