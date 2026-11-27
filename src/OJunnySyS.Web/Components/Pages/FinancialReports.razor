@@ -29,20 +29,56 @@
             <MetricCard Label="UTILIDAD / PÉRDIDA" Value="@Money(_profit.NetIncome)" Icon="◈" Tone="blue" />
         </div>
         <div class="report-grid">
-            <StatementTable Title="Ingresos" Lines="_profit.Revenue" Total="_profit.TotalRevenue" CurrencyCode="_currencyCode" />
-            <StatementTable Title="Gastos" Lines="_profit.Expenses" Total="_profit.TotalExpenses" CurrencyCode="_currencyCode" />
+            <StatementTable Title="Ingresos" Lines="_profit.Revenue" Total="_profit.TotalRevenue" BaseAmount="_profit.TotalRevenue" CurrencyCode="_currencyCode" />
+            <StatementTable Title="Gastos" Lines="_profit.Expenses" Total="_profit.TotalExpenses" BaseAmount="_profit.TotalRevenue" CurrencyCode="_currencyCode" />
         </div>
+        @if (_comparisonProfit is not null)
+        {
+            <section class="financial-comparison" aria-label="Comparación de resultados con el período anterior">
+                <div class="panel-heading"><div><span class="eyebrow">COMPARATIVO</span><h3>Contra el período anterior</h3><p>@_comparisonProfit.From.ToString("dd/MM/yyyy") — @_comparisonProfit.To.ToString("dd/MM/yyyy")</p></div></div>
+                @foreach (var metric in ProfitComparisonMetrics())
+                {
+                    <div class="comparison-row">
+                        <strong>@metric.Label</strong>
+                        <div class="comparison-bars" role="img" aria-label="@metric.Label: actual @Money(metric.Current), anterior @Money(metric.Previous)">
+                            <span class="comparison-bar current" style="width:@BarWidth(metric.Current, metric.Previous)%"></span>
+                            <span class="comparison-bar previous" style="width:@BarWidth(metric.Previous, metric.Current)%"></span>
+                        </div>
+                        <span>@Money(metric.Current)</span><small>Anterior: @Money(metric.Previous)</small><b class="@ProfitChangeTone(metric)">@ChangeText(metric.Current, metric.Previous)</b>
+                    </div>
+                }
+                <div class="comparison-legend"><span><i class="legend-current"></i>Período actual</span><span><i class="legend-previous"></i>Período anterior</span></div>
+            </section>
+        }
     </section>
     <section class="panel accounting-section" id="situacion">
         <div class="panel-heading"><div><span class="eyebrow">AL @(_position.AsOfDate.ToString("dd/MM/yyyy"))</span><h2>Estado de situación financiera</h2><p>Activos = pasivos + patrimonio, incluido el resultado acumulado de las cuentas de ingreso y gasto.</p></div></div>
         <div class="report-grid">
-            <StatementTable Title="Activos" Lines="_position.Assets" Total="_position.TotalAssets" CurrencyCode="_currencyCode" />
-            <StatementTable Title="Pasivos" Lines="_position.Liabilities" Total="_position.TotalLiabilities" CurrencyCode="_currencyCode" />
-            <StatementTable Title="Patrimonio" Lines="_position.Equity" Total="_position.TotalEquity" CurrencyCode="_currencyCode" />
+            <StatementTable Title="Activos" Lines="_position.Assets" Total="_position.TotalAssets" BaseAmount="_position.TotalAssets" CurrencyCode="_currencyCode" />
+            <StatementTable Title="Pasivos" Lines="_position.Liabilities" Total="_position.TotalLiabilities" BaseAmount="_position.TotalAssets" CurrencyCode="_currencyCode" />
+            <StatementTable Title="Patrimonio" Lines="_position.Equity" Total="_position.TotalEquity" BaseAmount="_position.TotalAssets" CurrencyCode="_currencyCode" />
         </div>
         <div class="report-row"><div><strong>Resultado acumulado</strong><small>Ingresos menos gastos contabilizados al corte</small></div><strong>@Money(_position.CurrentAndAccumulatedResult)</strong></div>
         <div class="report-row"><div><strong>Pasivos + patrimonio</strong><small>Debe cuadrar con el total de activos</small></div><strong>@Money(_position.TotalLiabilities + _position.TotalEquity)</strong></div>
         <div class="account-entry-actions"><span class="@(_position.TotalAssets == _position.TotalLiabilities + _position.TotalEquity ? "balanced" : "unbalanced")">@(_position.TotalAssets == _position.TotalLiabilities + _position.TotalEquity ? "Estado cuadrado" : "El estado presenta una diferencia; revisa el libro y las cuentas")</span></div>
+        @if (_comparisonPosition is not null)
+        {
+            <section class="financial-comparison" aria-label="Comparación de situación financiera con el año anterior">
+                <div class="panel-heading"><div><span class="eyebrow">COMPARATIVO ANUAL</span><h3>Contra el mismo corte del año anterior</h3><p>Al @_comparisonPosition.AsOfDate.ToString("dd/MM/yyyy")</p></div></div>
+                @foreach (var metric in PositionComparisonMetrics())
+                {
+                    <div class="comparison-row">
+                        <strong>@metric.Label</strong>
+                        <div class="comparison-bars" role="img" aria-label="@metric.Label: actual @Money(metric.Current), año anterior @Money(metric.Previous)">
+                            <span class="comparison-bar current" style="width:@BarWidth(metric.Current, metric.Previous)%"></span>
+                            <span class="comparison-bar previous" style="width:@BarWidth(metric.Previous, metric.Current)%"></span>
+                        </div>
+                        <span>@Money(metric.Current)</span><small>Año anterior: @Money(metric.Previous)</small><b class="comparison-neutral">@ChangeText(metric.Current, metric.Previous)</b>
+                    </div>
+                }
+                <div class="comparison-legend"><span><i class="legend-current"></i>Corte actual</span><span><i class="legend-previous"></i>Corte anterior</span></div>
+            </section>
+        }
     </section>
 }
 
@@ -53,6 +89,8 @@
     private bool _loading;
     private ProfitAndLossDto? _profit;
     private FinancialPositionDto? _position;
+    private ProfitAndLossDto? _comparisonProfit;
+    private FinancialPositionDto? _comparisonPosition;
 
     protected override async Task OnInitializedAsync()
     {
@@ -70,10 +108,41 @@
         {
             _profit = await Accounting.GetProfitAndLossAsync(_from, _to);
             _position = await Accounting.GetFinancialPositionAsync(_to);
+            var periodDays = _to.DayNumber - _from.DayNumber + 1;
+            var previousTo = _from.AddDays(-1);
+            var previousFrom = previousTo.AddDays(-(periodDays - 1));
+            _comparisonProfit = await Accounting.GetProfitAndLossAsync(previousFrom, previousTo);
+            _comparisonPosition = await Accounting.GetFinancialPositionAsync(_to.AddYears(-1));
         }
-        catch (DomainException ex) { _profit = null; _position = null; _error = ex.Message; }
+        catch (DomainException ex) { _profit = null; _position = null; _comparisonProfit = null; _comparisonPosition = null; _error = ex.Message; }
         finally { _loading = false; }
     }
 
+    private IEnumerable<(string Label, decimal Current, decimal Previous)> ProfitComparisonMetrics()
+    {
+        if (_profit is null || _comparisonProfit is null) yield break;
+        yield return ("Ingresos", _profit.TotalRevenue, _comparisonProfit.TotalRevenue);
+        yield return ("Gastos", _profit.TotalExpenses, _comparisonProfit.TotalExpenses);
+        yield return ("Utilidad / pérdida", _profit.NetIncome, _comparisonProfit.NetIncome);
+    }
+
+    private IEnumerable<(string Label, decimal Current, decimal Previous)> PositionComparisonMetrics()
+    {
+        if (_position is null || _comparisonPosition is null) yield break;
+        yield return ("Activos", _position.TotalAssets, _comparisonPosition.TotalAssets);
+        yield return ("Pasivos", _position.TotalLiabilities, _comparisonPosition.TotalLiabilities);
+        yield return ("Patrimonio", _position.TotalEquity, _comparisonPosition.TotalEquity);
+    }
+
+    private static decimal BarWidth(decimal value, decimal other)
+        => FinancialStatementAnalysisBuilder.ComparisonBarWidth(value, other);
+
+    private static string ChangeText(decimal current, decimal previous) =>
+        FinancialStatementAnalysisBuilder.FormatPercentageChange(current, previous);
+
+    private static string ChangeTone(decimal current, decimal previous, bool lowerIsBetter = false) =>
+        (lowerIsBetter ? current <= previous : current >= previous) ? "comparison-up" : "comparison-down";
+    private static string ProfitChangeTone((string Label, decimal Current, decimal Previous) metric) =>
+        ChangeTone(metric.Current, metric.Previous, metric.Label == "Gastos");
     private string Money(decimal value) => DisplayFormat.Money(value, _currencyCode);
 }

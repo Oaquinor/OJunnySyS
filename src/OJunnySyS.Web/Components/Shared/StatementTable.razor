@@ -6,9 +6,9 @@
     }
     else
     {
-        <div class="table-wrap"><table><thead><tr><th>CÓDIGO</th><th>CUENTA</th><th class="align-right">SALDO</th></tr></thead><tbody>
-            @foreach (var line in Lines) { <tr><td class="mono">@line.Code</td><td>@line.Name</td><td class="align-right amount">@Money(line.Amount)</td></tr> }
-        </tbody><tfoot><tr><th colspan="2">TOTAL @Title.ToUpperInvariant()</th><th class="align-right">@Money(Total)</th></tr></tfoot></table></div>
+        <div class="table-wrap"><table><thead><tr><th>CÓDIGO</th><th>CUENTA</th><th class="align-right">ANÁLISIS VERTICAL</th><th class="align-right">SALDO</th></tr></thead><tbody>
+            @foreach (var line in Lines) { <tr><td class="mono">@line.Code</td><td>@line.Name</td><td class="vertical-cell"><span>@FinancialStatementAnalysisBuilder.VerticalPercent(line.Amount, BaseAmount).ToString("0.0") %</span><span class="vertical-track" aria-hidden="true"><i style="width:@VerticalWidth(line.Amount)%"></i></span></td><td class="align-right amount">@Money(line.Amount)</td></tr> }
+        </tbody><tfoot><tr><th colspan="2">TOTAL @Title.ToUpperInvariant()</th><th></th><th class="align-right">@Money(Total)</th></tr></tfoot></table></div>
     }
 </section>
 
@@ -16,6 +16,8 @@
     [Parameter, EditorRequired] public string Title { get; set; } = "";
     [Parameter, EditorRequired] public IReadOnlyList<FinancialStatementLineDto> Lines { get; set; } = [];
     [Parameter] public decimal Total { get; set; }
+    [Parameter] public decimal BaseAmount { get; set; }
     [Parameter] public string CurrencyCode { get; set; } = "DOP";
+    private decimal VerticalWidth(decimal amount) => Math.Min(100, Math.Abs(FinancialStatementAnalysisBuilder.VerticalPercent(amount, BaseAmount)));
     private string Money(decimal value) => DisplayFormat.Money(value, CurrencyCode);
 }

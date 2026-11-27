@@ -20,6 +20,7 @@ OJunnySyS se desarrolla en C#, ASP.NET Core .NET 10, Blazor Server interactivo, 
 - [x] Almacenes por empresa, asignación de terminal/compra, saldos por ubicación, transferencias auditables y checkout limitado al stock de la sucursal.
 - [x] Proveedores, compras, recepciones parciales y completas, cuentas por pagar y antigüedad de saldos.
 - [x] Reportes por empresa y vendedor, con exportación autorizada.
+- [x] Estados financieros con comparación del período/corte anterior, análisis vertical por cuenta y vistas gráficas basadas en asientos publicados.
 - [x] Administración inicial de tenants, planes, límites y facturación manual.
 - [x] Configuración por empresa de zona horaria, moneda y tasa general de impuesto, aplicada en servidor y guardada como snapshot en la venta.
 - [x] API versionada para los flujos que requieren integración externa.
