@@ -40,7 +40,7 @@ Configura `.env` a partir de `.env.example`; no copies credenciales reales al re
 
 Lee [`docs/architecture.md`](docs/architecture.md) y [`docs/roadmap.md`](docs/roadmap.md). Domain no depende de frameworks; Application coordina casos de uso y contratos; Infrastructure implementa persistencia MySQL; Blazor presenta los flujos.
 
-`tools/New-OjunnyFeature.ps1` prepara un scaffold inicial de funcionalidad. El generador de clases basado en el estándar de OJunnySyS está documentado en [`docs/generador-de-clases.md`](docs/generador-de-clases.md) y todavía está pendiente de implementación.
+`tools/New-OjunnyFeature.ps1` prepara un scaffold inicial de funcionalidad. El generador de clases C# para esquemas MySQL ya está implementado en `tools/OJunnySyS.ClassGenerator`; consulta [`docs/generador-de-clases.md`](docs/generador-de-clases.md) para el preview por capas, los requisitos de conexión de solo lectura y la salida que no sobrescribe archivos existentes.
 
 ## Ejecución y garantías
 
