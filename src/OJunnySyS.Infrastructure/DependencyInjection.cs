@@ -22,6 +22,7 @@ public static class DependencyInjection
         services.AddScoped<ICustomerTagRepository, EfCustomerTagRepository>();
         services.AddScoped<ICustomerSegmentRepository, EfCustomerSegmentRepository>();
         services.AddScoped<IPosRegisterRepository, EfPosRegisterRepository>();
+        services.AddScoped<IPosOfflineDeviceRepository, EfPosOfflineDeviceRepository>();
         services.AddScoped<IWarehouseRepository, EfWarehouseRepository>();
         services.AddScoped<IPosPaymentMethodRepository, EfPosPaymentMethodRepository>();
         services.AddScoped<ITaxProfileRepository, EfTaxProfileRepository>();

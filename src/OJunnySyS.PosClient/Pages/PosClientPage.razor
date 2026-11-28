@@ -16,6 +16,16 @@
     @if (!string.IsNullOrWhiteSpace(_error)) { <div role="alert" class="rounded-xl border border-rose-200 bg-rose-50 p-3 text-sm text-rose-800">@_error</div> }
     @if (!string.IsNullOrWhiteSpace(_notice)) { <div role="status" class="rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-900">@_notice</div> }
     @if (_lastSaleId is { } saleId) { <a class="w-fit rounded-lg font-semibold text-brand-700 underline underline-offset-4" href="/app/receipts/@saleId">Abrir e imprimir el recibo</a> }
+    @if (_offlineModule is not null)
+    {
+        <section class="grid gap-3 rounded-2xl border border-slate-200 bg-white p-4 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
+            <div class="grid gap-1"><h2 class="font-display text-base font-bold text-ink">Dispositivo de trabajo offline</h2><p class="text-sm text-slate-600">Inscribe este navegador para firmar borradores y permitir la sincronización segura cuando vuelva la conexión. Se conserva solo una clave privada no exportable en este dispositivo.</p>
+                @if (_offlineDevices.Count > 0) { <div class="grid gap-2 pt-2">@foreach (var device in _offlineDevices) { <div class="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-slate-50 px-3 py-2 text-xs"><span><strong>@device.Label</strong> · @(device.IsActive ? "Activo" : "Revocado") · @device.Fingerprint[..Math.Min(12, device.Fingerprint.Length)]</span>@if (device.IsActive) { <button type="button" class="font-semibold text-rose-700 underline" @onclick="() => RevokeOfflineDeviceAsync(device)" disabled="@_busy">Revocar</button> }</div> }</div> }
+                @if (_offlineDevice is null) { <p class="text-xs font-semibold text-amber-800">Inscribe este dispositivo antes de confirmar una orden que se guardó localmente.</p> }
+            </div>
+            <div class="flex flex-wrap items-center gap-2"><input aria-label="Nombre del dispositivo POS" class="min-h-10 min-w-48 rounded-xl border border-slate-200 px-3 text-sm" @bind="_deviceLabel" maxlength="80" disabled="@(!_online || _busy)" /><button type="button" class="min-h-10 rounded-xl bg-brand-600 px-4 text-sm font-bold text-white disabled:opacity-50" @onclick="EnrollOfflineDeviceAsync" disabled="@(!_online || _busy || _offlineDevice is not null)">@(_offlineDevice is null ? "Inscribir dispositivo" : "Dispositivo inscrito")</button></div>
+        </section>
+    }
     <div class="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950"><span><strong>@(_online ? "Conectado" : "Sin conexión")</strong> · Las ventas solo se registran cuando el servidor confirma la transacción.@if (_cart.Count > 0 && _offlineDraftSaved) { <span class="font-semibold"> Borrador cifrado guardado en este dispositivo; pendiente de revisión y confirmación.</span> }</span><a class="font-semibold underline" href="/app/pos">Abrir POS actual</a></div>
     @if (!string.IsNullOrWhiteSpace(_offlineStorageError)) { <div role="status" class="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">@_offlineStorageError</div> }
     @if (_parkedSaleId is not null) { <div class="rounded-xl border border-sky-200 bg-sky-50 p-3 text-sm text-sky-900"><strong>Venta retomada</strong> · Sus artículos y descuentos están protegidos hasta cobrar o cancelar esta espera.</div> }
@@ -135,6 +145,11 @@
     private IJSObjectReference? _shortcutsModule;
     private IJSObjectReference? _offlineModule;
     private OfflineDraft? _offlineDraft;
+    private IReadOnlyList<PosOfflineDeviceDto> _offlineDevices = [];
+    private PosOfflineDeviceDto? _offlineDevice;
+    private Guid? _localDeviceId;
+    private Guid _tenantId, _userId;
+    private string _deviceLabel = "POS · navegador actual";
     private bool _offlineDraftSaved;
     private string? _offlineStorageError;
     private string _currencyCode = "DOP";
@@ -157,7 +172,7 @@
     });
     private decimal EstimatedTotal => NetSubtotal + TaxTotal;
     private decimal TenderBalance => decimal.Round(EstimatedTotal - _tenders.Sum(x => x.Amount), 2, MidpointRounding.AwayFromZero);
-    private bool CanCheckout => !_busy && _online && _cart.Count > 0 && _cartProducts.Count == _cart.Count && !string.IsNullOrWhiteSpace(_registerCode) &&
+    private bool CanCheckout => !_busy && _online && (_offlineModule is null || _offlineDevice is not null) && _cart.Count > 0 && _cartProducts.Count == _cart.Count && !string.IsNullOrWhiteSpace(_registerCode) &&
         (_isCredit ? _customerId is not null && _dueDate is not null : _cashSession?.Status == CashSessionStatus.Open && _tenders.Count > 0 &&
             _tenders.All(x => x.PaymentMethodId != Guid.Empty && x.Amount > 0m) && _tenders.Select(x => x.PaymentMethodId).Distinct().Count() == _tenders.Count && TenderBalance == 0m);
 
@@ -176,8 +191,12 @@
                 var tenantId = principal.FindFirst("tenant_id")?.Value;
                 if (!string.IsNullOrWhiteSpace(userId) && !string.IsNullOrWhiteSpace(tenantId))
                 {
+                Guid.TryParse(userId, out _userId);
+                Guid.TryParse(tenantId, out _tenantId);
                     _offlineModule = await JS.InvokeAsync<IJSObjectReference>("import", "./js/pos-offline-drafts.js");
                     await _offlineModule.InvokeVoidAsync("initialize", userId, tenantId);
+                    var localIdentity = await _offlineModule.InvokeAsync<LocalDeviceIdentity?>("getDeviceIdentity");
+                    _localDeviceId = localIdentity?.DeviceId;
                     _offlineDraft = await _offlineModule.InvokeAsync<OfflineDraft?>("loadDraft");
                     if (_offlineDraft is not null && _offlineDraft.SavedAtUtc < DateTimeOffset.UtcNow.AddDays(-7))
                     {
@@ -197,7 +216,7 @@
                 }
                 else _offlineStorageError = "No se guardará una orden sin asociarla a la empresa y usuario de la sesión.";
             }
-            catch (JSException) { _offlineStorageError = "El navegador no habilitó el almacenamiento cifrado del borrador. La orden solo permanecerá en esta pantalla."; }
+            catch (JSException) { _offlineModule = null; _offlineStorageError = "El navegador no habilitó el almacenamiento cifrado del borrador. La venta en línea puede continuar sin guardar borradores locales."; }
             var registersTask = PosApi.GetRegistersAsync();
             var methodsTask = PosApi.GetPaymentOptionsAsync();
             var sellersTask = PosApi.GetSellersAsync();
@@ -209,6 +228,15 @@
             _sellers = await sellersTask;
             _settings = await settingsTask;
             _customers = await customersTask;
+            if (_offlineModule is not null)
+            {
+                try
+                {
+                    _offlineDevices = await PosApi.GetOfflineDevicesAsync();
+                    _offlineDevice = _localDeviceId is null ? null : _offlineDevices.FirstOrDefault(x => x.DeviceId == _localDeviceId && x.IsActive);
+                }
+                catch { _offlineDevices = []; _offlineDevice = null; }
+            }
             if (_paymentOptions.FirstOrDefault(x => x.Type == PaymentMethodType.Cash) is { } cashMethod)
                 _tenders.Add(new TenderForm(cashMethod.Id, 0m));
             else if (_paymentOptions.FirstOrDefault() is { } firstMethod)
@@ -386,7 +414,14 @@
                 _cart.Select(item => new CheckoutLine(item.Key, item.Value, DiscountPercent(item.Key))).ToArray(), _checkoutKey, _registerCode,
                 _isCredit ? [] : _tenders.Select(x => new CheckoutPaymentLine(x.PaymentMethodId, decimal.Round(x.Amount, 2, MidpointRounding.AwayFromZero))).ToArray(),
                 _sellerId, _isCredit ? _dueDate : null, ParkedSaleId: _parkedSaleId);
-            var sale = await PosApi.CheckoutAsync(request);
+            SaleDto sale;
+            if (_offlineModule is not null && _offlineDevice is { } device)
+            {
+                var payload = PosOfflineCheckoutPayload.Create(_tenantId, _userId, device.DeviceId, request);
+                var signature = await _offlineModule.InvokeAsync<string>("signOfflinePayload", payload);
+                sale = await PosApi.CheckoutOfflineDraftAsync(new OfflineCheckoutRequest(request, device.DeviceId, payload, signature));
+            }
+            else sale = await PosApi.CheckoutAsync(request);
             _notice = _isCredit
                 ? $"Cuenta {sale.Number} creada · vence {sale.DueDate:dd/MM/yyyy} · {Money(sale.Total)}"
                 : $"Venta {sale.Number} confirmada por el servidor · {Money(sale.Total)}";
@@ -413,6 +448,52 @@
                 _ => PaymentMethod.Other
             };
         }
+    }
+
+    private async Task EnrollOfflineDeviceAsync()
+    {
+        if (!_online || _busy || _offlineModule is null) return;
+        _busy = true; _error = null;
+        try
+        {
+            await RefreshOfflineDevicesAsync();
+            var identity = await _offlineModule.InvokeAsync<LocalDeviceIdentity>("enrollDeviceIdentity");
+            if (_offlineDevices.Any(x => x.DeviceId == identity.DeviceId && !x.IsActive))
+                identity = await _offlineModule.InvokeAsync<LocalDeviceIdentity>("rotateDeviceIdentity");
+            _localDeviceId = identity.DeviceId;
+            _offlineDevice = await PosApi.RegisterOfflineDeviceAsync(new RegisterPosOfflineDeviceRequest(identity.DeviceId, _deviceLabel, identity.PublicKey));
+            await RefreshOfflineDevicesAsync();
+            _notice = "Dispositivo inscrito. Los borradores de este navegador se firmarán al sincronizarlos.";
+        }
+        catch (Exception ex) { _error = ex.Message; }
+        finally { _busy = false; }
+    }
+
+    private async Task RevokeOfflineDeviceAsync(PosOfflineDeviceDto device)
+    {
+        if (_busy) return;
+        _busy = true; _error = null;
+        try
+        {
+            await PosApi.RevokeOfflineDeviceAsync(device.DeviceId, device.Revision);
+            if (_offlineDevice?.DeviceId == device.DeviceId)
+            {
+                await _offlineModule!.InvokeVoidAsync("clearDeviceIdentity");
+                _offlineDevice = null; _localDeviceId = null; _offlineDraft = null; _offlineDraftSaved = false;
+            }
+            await RefreshOfflineDevicesAsync();
+            _notice = "Acceso del dispositivo revocado. El servidor rechazará cualquier borrador posterior de esa clave.";
+        }
+        catch (Exception ex) { _error = ex.Message; }
+        finally { _busy = false; }
+    }
+
+    private async Task RefreshOfflineDevicesAsync()
+    {
+        _offlineDevices = await PosApi.GetOfflineDevicesAsync();
+        var identity = _offlineModule is null ? null : await _offlineModule.InvokeAsync<LocalDeviceIdentity?>("getDeviceIdentity");
+        _localDeviceId = identity?.DeviceId;
+        _offlineDevice = identity is null ? null : _offlineDevices.FirstOrDefault(x => x.DeviceId == identity.DeviceId && x.IsActive);
     }
 
     private IEnumerable<TenantPaymentMethodDto> AvailableMethods(TenderForm tender) =>
@@ -503,6 +584,7 @@
                 var customersTask = PosApi.SearchCustomersAsync();
                 await Task.WhenAll(methodsTask, sellersTask, settingsTask, customersTask);
                 _paymentOptions = await methodsTask; _sellers = await sellersTask; _settings = await settingsTask; _customers = await customersTask;
+                if (_offlineModule is not null) await RefreshOfflineDevicesAsync();
                 if (_tenders.Count == 0 && _paymentOptions.FirstOrDefault(x => x.Type == PaymentMethodType.Cash) is { } cashMethod)
                     _tenders.Add(new TenderForm(cashMethod.Id, 0m));
                 await LoadRegisterAsync();
@@ -554,7 +636,7 @@
 
     private async Task PersistOfflineDraftAsync()
     {
-        if (_offlineModule is null) return;
+        if (_offlineModule is null || _localDeviceId is null) return;
         if (_cart.Count == 0 || _parkedSaleId is not null) { await ClearOfflineDraftAsync(); return; }
         try
         {
@@ -578,4 +660,5 @@
     private sealed record OfflineDraft(string RegisterCode, IReadOnlyList<OfflineDraftLine> Lines, DateTimeOffset SavedAtUtc);
     private sealed record OfflineDraftLine(ProductDto Product, int Quantity, decimal DiscountPercent);
     private sealed record OfflineCatalog(PosRegisterDto Register, IReadOnlyList<ProductDto> Products, string CurrencyCode, decimal DefaultTaxRate);
+    private sealed record LocalDeviceIdentity(Guid DeviceId, string PublicKey);
 }

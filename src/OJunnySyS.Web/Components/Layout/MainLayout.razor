@@ -1,6 +1,7 @@
 @inherits LayoutComponentBase
 @inject AuthenticationStateProvider AuthenticationStateProvider
 @inject TenantContext TenantScope
+@inject NavigationManager Navigation
 <div class="flex min-h-screen flex-col md:flex-row">
     <aside class="flex w-full shrink-0 flex-col border-b border-line bg-white px-4 py-4 md:min-h-screen md:w-64 md:border-b-0 md:border-r md:px-4 md:py-6">
         <NavMenu />
@@ -11,8 +12,17 @@
                 <span class="text-xs font-bold tracking-[0.12em] text-muted">ESPACIO DE TRABAJO</span>
                 <strong class="text-sm font-semibold">OJunnySyS</strong>
             </div>
-            <div class="flex items-center gap-2 text-xs text-muted"><span class="size-2 rounded-full bg-emerald-500 ring-4 ring-emerald-50"></span>Conectado</div>
+            <div class="flex items-center gap-3"><button type="button" class="flex min-h-10 items-center gap-2 rounded-xl border border-line bg-white px-3 text-sm font-semibold text-ink transition hover:border-brand-500 hover:text-brand-600" @onclick="() => _showModuleMenu = !_showModuleMenu" aria-expanded="@_showModuleMenu" aria-controls="module-switcher"><span aria-hidden="true">▦</span><span>Módulos</span><span aria-hidden="true">⌄</span></button><div class="flex items-center gap-2 text-xs text-muted"><span class="size-2 rounded-full bg-emerald-500 ring-4 ring-emerald-50"></span>Conectado</div></div>
         </header>
+        @if (_showModuleMenu)
+        {
+            <section id="module-switcher" class="grid gap-3 border-b border-line bg-slate-50 px-4 py-4 sm:grid-cols-2 sm:px-6 xl:px-10" aria-label="Cambiar de módulo">
+                <NavLink href="/app" @onclick="CloseModuleMenu" class="flex min-w-0 items-center gap-3 rounded-2xl border border-line bg-white p-4 transition hover:border-brand-500 hover:shadow-sm"><span class="grid size-11 shrink-0 place-items-center rounded-xl bg-brand-50 text-xl text-brand-600">⌂</span><span class="grid min-w-0 gap-1"><strong class="text-sm">OJunnySyS Gestión</strong><small class="text-xs text-muted">Resumen, CRM, clientes e inventario</small></span>@if (Navigation.Uri.TrimEnd('/').EndsWith("/app", StringComparison.OrdinalIgnoreCase)) { <span class="ml-auto text-xs font-bold text-brand-600">ACTUAL</span> }</NavLink>
+                <AuthorizeView Roles="Administrator,Manager,Cashier"><NavLink href="/app/pos" @onclick="CloseModuleMenu" class="flex min-w-0 items-center gap-3 rounded-2xl border border-line bg-white p-4 transition hover:border-brand-500 hover:shadow-sm"><span class="grid size-11 shrink-0 place-items-center rounded-xl bg-emerald-50 text-xl text-emerald-700">▣</span><span class="grid min-w-0 gap-1"><strong class="text-sm">Punto de venta</strong><small class="text-xs text-muted">Caja, turnos y ventas</small></span>@if (Navigation.Uri.Contains("/app/pos", StringComparison.OrdinalIgnoreCase)) { <span class="ml-auto text-xs font-bold text-brand-600">ACTUAL</span> }</NavLink></AuthorizeView>
+                <AuthorizeView Roles="Administrator,Manager"><NavLink href="/app/accounting" @onclick="CloseModuleMenu" class="flex min-w-0 items-center gap-3 rounded-2xl border border-line bg-white p-4 transition hover:border-brand-500 hover:shadow-sm"><span class="grid size-11 shrink-0 place-items-center rounded-xl bg-sky-50 text-xl text-sky-700">▤</span><span class="grid min-w-0 gap-1"><strong class="text-sm">Contabilidad</strong><small class="text-xs text-muted">Catálogo, asientos y balances</small></span>@if (Navigation.Uri.Contains("/app/accounting", StringComparison.OrdinalIgnoreCase)) { <span class="ml-auto text-xs font-bold text-brand-600">ACTUAL</span> }</NavLink></AuthorizeView>
+                <AuthorizeView Roles="Administrator,Manager"><NavLink href="/app/reports" @onclick="CloseModuleMenu" class="flex min-w-0 items-center gap-3 rounded-2xl border border-line bg-white p-4 transition hover:border-brand-500 hover:shadow-sm"><span class="grid size-11 shrink-0 place-items-center rounded-xl bg-violet-50 text-xl text-violet-700">▥</span><span class="grid min-w-0 gap-1"><strong class="text-sm">Reportes</strong><small class="text-xs text-muted">Análisis comercial y financiero</small></span></NavLink></AuthorizeView>
+            </section>
+        }
         <section class="mx-auto w-full max-w-[98rem] px-4 py-7 sm:px-6 xl:px-10">@Body</section>
     </main>
 </div>
@@ -22,6 +32,8 @@
 </div>
 
 @code {
+    private bool _showModuleMenu;
+    private void CloseModuleMenu() => _showModuleMenu = false;
     protected override async Task OnInitializedAsync()
     {
         var authenticationState = await AuthenticationStateProvider.GetAuthenticationStateAsync();

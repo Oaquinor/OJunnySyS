@@ -28,20 +28,21 @@ else if (!string.IsNullOrWhiteSpace(_loadError))
 else
 {
 @if (!string.IsNullOrWhiteSpace(_notice)) { <div class="success-banner">✓ @_notice @if (_lastSaleId is { } saleId) { <a class="receipt-quick-link" href="/app/receipts/@saleId">Ver recibo</a> }<button @onclick="() => _notice = null">×</button></div> }
-@if (!CashOpen && !string.IsNullOrEmpty(_registerCode)) { <div class="inline-error cash-error">Abre el turno de @_registers.FirstOrDefault(x => x.Code == _registerCode)?.Name antes de cobrar. <a href="/app/cash">Ir a caja y arqueo →</a></div> }
+@if (!CashOpen && !string.IsNullOrEmpty(_registerCode)) { <div class="cash-opening-prompt"><span class="cash-prompt-icon">◷</span><div><strong>El turno se abrirá al cobrar</strong><p>Indica el efectivo inicial de @_registers.FirstOrDefault(x => x.Code == _registerCode)?.Name. Tu orden se conservará.</p></div><button type="button" class="button button-secondary button-small" @onclick="() => _showOpeningPrompt = true">Abrir turno</button></div> }
 @if (_registers.Count == 0) { <div class="inline-error cash-error">No hay terminales POS activos. Pide al administrador que configure uno en <a href="/app/pos/registers">Terminales POS</a>.</div> }
 <AuthorizeView Roles="Administrator,Manager"><Authorized><details class="pos-configuration"><summary><span><strong>Configuración del punto de venta</strong><small>Productos, almacenes, terminales, pagos y recibos</small></span><span class="pos-configuration-toggle">Abrir <b>⌄</b></span></summary><nav aria-label="Configuración del punto de venta"><a href="/app/products"><strong>Productos</strong><small>Catálogo, precios e impuestos</small></a><a href="/app/inventory/warehouses"><strong>Almacenes</strong><small>Existencias y traslados</small></a><a href="/app/pos/registers"><strong>Terminales y cajas</strong><small>Asignar cada caja a un almacén</small></a><a href="/app/payment-methods"><strong>Medios de pago</strong><small>Efectivo, tarjetas y transferencias</small></a><a href="/app/settings"><strong>Empresa e impresión</strong><small>Datos fiscales y formato del recibo</small></a></nav></details></Authorized></AuthorizeView>
 <div class="pos-layout">
     <section class="pos-catalog">
         <div class="pos-search-row"><SearchField @bind-Value="_search" @bind-Value:after="LoadProductsAsync" InputId="pos-search" CssClass="search-box pos-search" Placeholder="Buscar producto o escanear código…" /><span class="result-count">@_filteredProducts.Count() productos</span></div>
-        <div class="category-tabs"><button class="@CategoryClass(null)" @onclick="() => _category = null">Todos</button>@foreach (var category in _categories) { <button class="@CategoryClass(category)" @onclick="() => _category = category">@category</button> }</div>
+        <div class="category-tabs" aria-label="Grupos de artículos"><button class="@CategoryClass(null)" @onclick="() => { _category = null; _subcategory = null; }">Todos los grupos</button>@foreach (var category in _categories) { <button class="@CategoryClass(category)" @onclick="() => SelectGroup(category)">@category</button> }</div>
+        @if (_category is not null && _subcategories.Count > 0) { <div class="category-tabs" aria-label="Subgrupos de @_category"><button class="@SubcategoryClass(null)" @onclick="() => _subcategory = null">Todos en @_category</button>@foreach (var subgroup in _subcategories) { <button class="@SubcategoryClass(subgroup)" @onclick="() => _subcategory = subgroup">@subgroup</button> }</div> }
         <div class="pos-product-grid">
             @foreach (var product in _filteredProducts)
             {
                 var inCart = _cart.GetValueOrDefault(product.Id);
         <button class="pos-product-card" @onclick="() => Add(product)" disabled="@(inCart >= product.StockOnHand || _parkedSaleId is not null)">
                     <span class="pos-product-art @ArtClass(product.Category)">@if (!string.IsNullOrWhiteSpace(product.ImageUrl)) { <img class="product-photo" src="@product.ImageUrl" alt="" loading="lazy" /> } else { @ProductIcon(product.Category) }<span class="add-product">＋</span></span>
-                    <span class="pos-product-info"><strong>@product.Name</strong><small>@product.Category · @_cart.GetValueOrDefault(product.Id) en orden · @TaxLabel(product)</small><b>@Money(product.UnitPrice)</b></span>
+                    <span class="pos-product-info"><strong>@product.Name</strong><small>@ProductGroup(product.Category)@if (ProductSubgroup(product.Category) is { Length: > 0 } subgroup) { <span> · @subgroup</span> } · @_cart.GetValueOrDefault(product.Id) en orden · @TaxLabel(product)</small><b>@Money(product.UnitPrice)</b></span>
                     @if (product.StockOnHand <= 5) { <span class="stock-hint">Quedan @product.StockOnHand</span> }
                 </button>
             }
@@ -81,12 +82,13 @@ else
             <small class="tender-balance">@if (TenderBalance == 0) { <span>Pago completo</span> } else if (TenderBalance > 0) { <span>Falta @Money(TenderBalance)</span> } else { <span>Exceso @Money(-TenderBalance)</span> }</small> }
         </div>
         <div class="flex flex-wrap items-center gap-2 border-t border-line pt-3 text-xs text-slate-500" aria-label="Atajos de teclado"><span class="font-semibold">Atajos:</span><span><kbd class="rounded-md border border-slate-200 bg-slate-50 px-1.5 py-0.5 font-sans text-xs">F2</kbd> Buscar</span><span><kbd class="rounded-md border border-slate-200 bg-slate-50 px-1.5 py-0.5 font-sans text-xs">F3</kbd> Cliente</span><span><kbd class="rounded-md border border-slate-200 bg-slate-50 px-1.5 py-0.5 font-sans text-xs">F4</kbd> Vendedor</span><span><kbd class="rounded-md border border-slate-200 bg-slate-50 px-1.5 py-0.5 font-sans text-xs">F6</kbd> Pago</span><span><kbd class="rounded-md border border-slate-200 bg-slate-50 px-1.5 py-0.5 font-sans text-xs">F9</kbd> Cobrar</span></div>
-        <button id="pos-checkout" class="button button-primary checkout-button" @onclick="CheckoutAsync" disabled="@(_cart.Count == 0 || _saving || (!_isCredit && !CashOpen) || (_isCredit ? (_customerId is null || _dueDate is null) : (_paymentMethods.Count == 0 || TenderBalance != 0 || _tenders.Any(x => x.Amount <= 0))))">@(_saving ? "Procesando…" : _isCredit ? "Crear cuenta · " + Money(Total) : "Cobrar · " + Money(Total)) <span>→</span></button>
+        <button id="pos-checkout" class="button button-primary checkout-button" @onclick="BeginCheckoutAsync" disabled="@(_cart.Count == 0 || _saving || (_isCredit ? (_customerId is null || _dueDate is null) : (_paymentMethods.Count == 0 || TenderBalance != 0 || _tenders.Any(x => x.Amount <= 0))))">@(_saving ? "Procesando…" : _isCredit ? "Crear cuenta · " + Money(Total) : CashOpen ? "Cobrar · " + Money(Total) : "Abrir turno y cobrar · " + Money(Total)) <span>→</span></button>
         @if (!string.IsNullOrWhiteSpace(_error)) { <div class="inline-error">@_error</div> }
         <div class="secure-note">▣ Transacción registrada de forma segura</div>
     </aside>
 </div>
 }
+@if (_showOpeningPrompt) { <div class="modal-backdrop" @onclick="() => _showOpeningPrompt = false"><section class="modal-card cash-opening-modal" role="dialog" aria-modal="true" aria-labelledby="cash-opening-title" @onclick:stopPropagation="true"><div class="modal-heading"><div><span class="eyebrow">PUNTO DE VENTA · APERTURA</span><h2 id="cash-opening-title">Abre el turno para cobrar</h2><p>Terminal: @_registers.FirstOrDefault(x => x.Code == _registerCode)?.Name. El efectivo inicial se usará para el arqueo de caja.</p></div><button type="button" class="icon-button" @onclick="() => _showOpeningPrompt = false" aria-label="Cerrar">×</button></div><label class="cash-opening-amount">Efectivo inicial<NumericInput @bind-Value="_openingFloat" min="0" step="0.01" /></label>@if (!string.IsNullOrWhiteSpace(_openingError)) { <div class="inline-error" role="alert">@_openingError</div> }<div class="modal-actions"><button type="button" class="button button-secondary" @onclick="() => _showOpeningPrompt = false">Volver a la venta</button><button type="button" class="button button-primary" disabled="@_saving" @onclick="OpenShiftAndCheckoutAsync">@(_saving ? "Abriendo turno…" : "Abrir turno y cobrar")</button></div></section></div> }
 
 @code {
     private List<ProductDto> _products = [];
@@ -103,7 +105,7 @@ else
     private readonly Dictionary<Guid, int> _cart = [];
     private readonly Dictionary<Guid, CartDiscountForm> _discounts = [];
     private string _search = "";
-    private string? _category, _error, _notice;
+    private string? _category, _subcategory, _error, _notice;
     private Guid? _customerId;
     private bool _isCredit;
     private bool _canApplyDiscount;
@@ -114,13 +116,17 @@ else
     private IReadOnlyList<TenantPaymentMethodDto> _paymentMethods = [];
     private readonly List<TenderForm> _tenders = [];
     private bool _saving, _loading = true;
+    private bool _showOpeningPrompt;
+    private decimal _openingFloat;
+    private string? _openingError;
     private string? _loadError;
     private Guid _checkoutKey = Guid.NewGuid();
     private Guid _parkKey = Guid.NewGuid();
     private decimal _taxRate = 0.18m;
     private IJSObjectReference? _shortcutsModule;
-    private IReadOnlyList<string> _categories => _products.Select(x => x.Category).Distinct().Order().ToArray();
-    private IEnumerable<ProductDto> _filteredProducts => _products.Where(x => (_category is null || x.Category == _category) && x.StockOnHand > 0);
+    private IReadOnlyList<string> _categories => _products.Select(x => ProductGroup(x.Category)).Distinct(StringComparer.OrdinalIgnoreCase).Order().ToArray();
+    private IReadOnlyList<string> _subcategories => _category is null ? [] : _products.Select(x => x.Category).Where(x => ProductGroup(x).Equals(_category, StringComparison.OrdinalIgnoreCase)).Select(ProductSubgroup).Where(x => x.Length > 0).Distinct(StringComparer.OrdinalIgnoreCase).Order().ToArray();
+    private IEnumerable<ProductDto> _filteredProducts => _products.Where(x => (_category is null || ProductGroup(x.Category).Equals(_category, StringComparison.OrdinalIgnoreCase)) && (_subcategory is null || ProductSubgroup(x.Category).Equals(_subcategory, StringComparison.OrdinalIgnoreCase)) && x.StockOnHand > 0);
     private IEnumerable<(ProductDto Product, int Quantity)> CartLines => _cart.Select(x => (_products.FirstOrDefault(p => p.Id == x.Key), x.Value)).Where(x => x.Item1 is not null).Select(x => (x.Item1!, x.Value));
     private decimal GrossSubtotal => CartLines.Sum(x => decimal.Round(x.Product.UnitPrice * x.Quantity, 2, MidpointRounding.AwayFromZero));
     private decimal DiscountTotal => CartLines.Sum(x => LineDiscount(x.Product, x.Quantity));
@@ -278,6 +284,32 @@ else
         catch (Exception ex) { Logger.LogError(ex, "No se pudo cancelar la venta en espera."); _error = "No se pudo cancelar la venta. Actualiza la lista e inténtalo de nuevo."; }
         finally { _saving = false; }
     }
+    private Task BeginCheckoutAsync()
+    {
+        if (!_isCredit && !CashOpen)
+        {
+            _openingError = null;
+            _showOpeningPrompt = true;
+            return Task.CompletedTask;
+        }
+        return CheckoutAsync();
+    }
+    private async Task OpenShiftAndCheckoutAsync()
+    {
+        if (_openingFloat < 0) { _openingError = "El efectivo inicial no puede ser negativo."; return; }
+        _saving = true;
+        _openingError = null;
+        try
+        {
+            _cashSession = await Store.OpenCashSessionAsync(_cashierUserId, new OpenCashSessionRequest(_registerCode, _openingFloat));
+            _showOpeningPrompt = false;
+            _openingFloat = 0;
+            await CheckoutAsync();
+        }
+        catch (DomainException ex) { _openingError = ex.Message; }
+        catch (Exception ex) { Logger.LogError(ex, "No se pudo abrir el turno desde el punto de venta."); _openingError = "No se pudo abrir el turno. Actualiza el estado de caja e inténtalo de nuevo."; }
+        finally { _saving = false; }
+    }
     private void OnDiscountChanged(Guid productId) { if (!_canApplyDiscount) _discounts[productId].Percent = 0m; ResetCheckoutKey(); }
     private decimal DiscountPercent(Guid productId) => _discounts.GetValueOrDefault(productId)?.Percent ?? 0m;
     private decimal LineDiscount(ProductDto product, int quantity) => decimal.Round(decimal.Round(product.UnitPrice * quantity, 2, MidpointRounding.AwayFromZero) * DiscountPercent(product.Id) / 100m, 2, MidpointRounding.AwayFromZero);
@@ -287,7 +319,11 @@ else
     private void OnSaleModeChanged() { if (!_isCredit && _tenders.Count == 0 && _paymentMethods.FirstOrDefault(x => x.Type == PaymentMethodType.Cash) is { } cash) _tenders.Add(new(cash.Id, Total)); ResetCheckoutKey(); }
     private sealed class TenderForm(Guid paymentMethodId, decimal amount) { public Guid PaymentMethodId { get; set; } = paymentMethodId; public decimal Amount { get; set; } = amount; public string? Reference { get; set; } }
     private sealed class CartDiscountForm { public decimal Percent { get; set; } }
+    private void SelectGroup(string group) { _category = group; _subcategory = null; }
     private string CategoryClass(string? value) => _category == value ? "category-tab active" : "category-tab";
+    private string SubcategoryClass(string? value) => _subcategory == value ? "category-tab active" : "category-tab";
+    private static string ProductGroup(string category) => category.Split(" / ", 2)[0];
+    private static string ProductSubgroup(string category) { var parts = category.Split(" / ", 2); return parts.Length > 1 ? parts[1] : ""; }
     private static string Money(decimal amount) => DisplayFormat.Money(amount, showCents: true);
     private string TaxLabel(ProductDto product) => product.TaxRateOverride is { } rate ? rate == 0 ? "Exento" : $"Impuesto {rate * 100m:0.##}%" : $"Impuesto general {_taxRate * 100m:0.##}%";
     private static string ProductIcon(string category) => category.Contains("Café", StringComparison.OrdinalIgnoreCase) ? "☕" : category.Contains("Bebida", StringComparison.OrdinalIgnoreCase) ? "◉" : category.Contains("Accesorio", StringComparison.OrdinalIgnoreCase) ? "◌" : "✳";

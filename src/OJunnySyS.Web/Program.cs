@@ -30,6 +30,15 @@ builder.Services.AddRateLimiter(options =>
             QueueLimit = 0,
             AutoReplenishment = true
         }));
+    options.AddPolicy("pos-device-registration", context => RateLimitPartition.GetFixedWindowLimiter(
+        context.User.FindFirstValue(ClaimTypes.NameIdentifier) ?? context.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+        _ => new FixedWindowRateLimiterOptions
+        {
+            PermitLimit = 10,
+            Window = TimeSpan.FromMinutes(15),
+            QueueLimit = 0,
+            AutoReplenishment = true
+        }));
 });
 builder.Services.AddIdentity<ApplicationUser, IdentityRole<Guid>>(options =>
 {
@@ -108,6 +117,7 @@ var connectionString = builder.Configuration.GetConnectionString("OjunnySyS")
 var businessTimeZone = builder.Configuration["BusinessTimeZone"] ?? "America/Santo_Domingo";
 builder.Services.AddInfrastructure(connectionString, businessTimeZone);
 builder.Services.AddScoped<StoreService>();
+builder.Services.AddScoped<PosOfflineDeviceService>();
 builder.Services.AddScoped<ParkedSaleService>();
 builder.Services.AddScoped<SalesQuoteService>();
 builder.Services.AddScoped<CrmService>();
@@ -206,6 +216,24 @@ posClientApi.MapGet("/sellers", async (TenantUserService service, CancellationTo
     Results.Ok(await service.GetActiveSalespeopleAsync(ct)));
 posClientApi.MapGet("/business-settings", async (TenantSettingsService service, CancellationToken ct) =>
     Results.Ok(await service.GetAsync(ct)));
+posClientApi.MapGet("/devices", async (PosOfflineDeviceService service, CancellationToken ct) =>
+    Results.Ok(await service.GetMineAsync(ct)));
+posClientApi.MapPost("/devices", async (RegisterPosOfflineDeviceRequest request, PosOfflineDeviceService service, CancellationToken ct) =>
+{
+    try { var device = await service.RegisterAsync(request, ct); return Results.Created($"/api/v1/pos/client/devices/{device.DeviceId:D}", device); }
+    catch (DomainException ex) { return Results.ValidationProblem(new Dictionary<string, string[]> { ["device"] = [ex.Message] }); }
+}).RequireRateLimiting("pos-device-registration");
+posClientApi.MapPost("/devices/{deviceId:guid}/revoke", async (Guid deviceId, RevokePosOfflineDeviceRequest request, PosOfflineDeviceService service, CancellationToken ct) =>
+{
+    try { await service.RevokeAsync(deviceId, request, ct); return Results.NoContent(); }
+    catch (ConcurrencyConflictException ex) { return Results.Conflict(new { error = ex.Message }); }
+    catch (DomainException ex) { return Results.ValidationProblem(new Dictionary<string, string[]> { ["device"] = [ex.Message] }); }
+});
+posClientApi.MapPost("/offline-checkout", async (OfflineCheckoutRequest request, PosOfflineDeviceService service, StoreService store, CancellationToken ct) =>
+{
+    try { return Results.Ok(await service.CheckoutAsync(request, store, ct)); }
+    catch (DomainException ex) { return Results.ValidationProblem(new Dictionary<string, string[]> { ["checkout"] = [ex.Message] }); }
+});
 posClientApi.MapGet("/warehouses/{warehouseId:guid}/products", async (Guid warehouseId, string? search, StoreService service, CancellationToken ct) =>
     Results.Ok(await service.SearchProductsInWarehouseAsync(search, warehouseId, ct)));
 var tenantUsers = api.MapGroup("/users").RequireAuthorization("TenantUserManagement");
@@ -486,6 +514,7 @@ api.MapPatch("/products/{id:guid}/activation", async (Guid id, SetProductActiveR
 }).RequireAuthorization("CatalogWrite");
 api.MapPost("/pos/checkout", async (CheckoutRequest request, ClaimsPrincipal user, StoreService store, CancellationToken ct) =>
 {
+    if (request.OfflineDeviceId is not null) return Results.ValidationProblem(new Dictionary<string, string[]> { ["offlineDeviceId"] = ["Este campo solo se admite en el endpoint de checkout con firma del dispositivo."] });
     try { return Results.Ok(await store.CheckoutAsync(request, CurrentActorId(user), ct)); }
     catch (DomainException ex) { return Results.ValidationProblem(new Dictionary<string, string[]> { ["checkout"] = [ex.Message] }); }
 }).RequireAuthorization("Checkout");

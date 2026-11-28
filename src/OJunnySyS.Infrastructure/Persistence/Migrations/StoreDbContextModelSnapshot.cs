@@ -1240,6 +1240,71 @@ namespace OJunnySyS.Infrastructure.Persistence.Migrations
                     b.ToTable("WarehouseStocks");
                 });
 
+            modelBuilder.Entity("OJunnySyS.Domain.Pos.PosOfflineDevice", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("char(36)");
+
+                    b.Property<DateTimeOffset>("CreatedAtUtc")
+                        .HasColumnType("datetime");
+
+                    b.Property<Guid>("DeviceId")
+                        .HasColumnType("char(36)");
+
+                    b.Property<string>("Fingerprint")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("varchar(64)");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("tinyint(1)");
+
+                    b.Property<string>("Label")
+                        .IsRequired()
+                        .HasMaxLength(80)
+                        .HasColumnType("varchar(80)");
+
+                    b.Property<DateTimeOffset?>("LastUsedAtUtc")
+                        .HasColumnType("datetime");
+
+                    b.Property<string>("PublicKey")
+                        .IsRequired()
+                        .HasMaxLength(1024)
+                        .HasColumnType("varchar(1024)");
+
+                    b.Property<long>("Revision")
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint")
+                        .HasDefaultValue(1L);
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("char(36)");
+
+                    b.Property<DateTimeOffset?>("UpdatedAtUtc")
+                        .HasColumnType("datetime");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("char(36)");
+
+                    b.HasKey("Id");
+
+                    b.HasAlternateKey("TenantId", "Id");
+
+                    b.HasIndex("UserId");
+
+                    b.HasIndex("TenantId", "DeviceId")
+                        .IsUnique();
+
+                    b.HasIndex("TenantId", "UserId", "Fingerprint")
+                        .IsUnique();
+
+                    b.HasIndex("TenantId", "UserId", "IsActive");
+
+                    b.ToTable("PosOfflineDevices");
+                });
+
             modelBuilder.Entity("OJunnySyS.Domain.Pos.PosRegister", b =>
                 {
                     b.Property<Guid>("Id")
@@ -3061,6 +3126,21 @@ namespace OJunnySyS.Infrastructure.Persistence.Migrations
                         .WithMany()
                         .HasForeignKey("TenantId", "WarehouseId")
                         .HasPrincipalKey("TenantId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("OJunnySyS.Domain.Pos.PosOfflineDevice", b =>
+                {
+                    b.HasOne("OJunnySyS.Domain.Tenancy.Tenant", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("OJunnySyS.Infrastructure.Identity.ApplicationUser", null)
+                        .WithMany()
+                        .HasForeignKey("UserId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
                 });

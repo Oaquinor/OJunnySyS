@@ -41,7 +41,7 @@
   }
 
   select {
-    @apply min-h-10 rounded-xl border border-slate-200 bg-white px-3 pr-10 text-sm text-slate-700 outline-none transition;
+    @apply min-h-11 rounded-xl border border-slate-200 bg-white px-3 py-2 pr-10 text-sm leading-normal text-slate-700 outline-none transition;
     appearance: none;
     background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%2365756a' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
     background-repeat: no-repeat;
@@ -67,6 +67,34 @@
 }
 
 @layer components {
+  .cash-opening-prompt {
+    @apply my-4 flex flex-wrap items-center gap-4 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-amber-950;
+  }
+
+  .cash-opening-prompt > div {
+    @apply min-w-0 flex-1;
+  }
+
+  .cash-opening-prompt strong {
+    @apply text-sm font-bold;
+  }
+
+  .cash-opening-prompt p {
+    @apply mt-1 text-sm leading-6 text-amber-900;
+  }
+
+  .cash-prompt-icon {
+    @apply grid size-10 shrink-0 place-items-center rounded-xl bg-amber-100 text-lg text-amber-800;
+  }
+
+  .cash-opening-modal {
+    @apply grid w-full max-w-xl gap-5 p-6;
+  }
+
+  .cash-opening-amount {
+    @apply grid gap-2 text-sm font-semibold text-slate-700;
+  }
+
   .settings-form {
     @apply grid gap-6 px-6 pb-6;
   }

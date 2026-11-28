@@ -33,6 +33,18 @@ public sealed class PosApiClient(HttpClient http)
     public Task<CashSessionDto?> GetCashSessionAsync(string registerCode, CancellationToken ct = default) =>
         GetAsync<CashSessionDto?>($"api/v1/cash/session?registerCode={Uri.EscapeDataString(registerCode)}", ct);
 
+    public Task<IReadOnlyList<PosOfflineDeviceDto>> GetOfflineDevicesAsync(CancellationToken ct = default) =>
+        GetAsync<IReadOnlyList<PosOfflineDeviceDto>>("api/v1/pos/client/devices", ct);
+
+    public async Task<PosOfflineDeviceDto> RegisterOfflineDeviceAsync(RegisterPosOfflineDeviceRequest request, CancellationToken ct = default) =>
+        await PostAsync<PosOfflineDeviceDto>("api/v1/pos/client/devices", request, ct);
+
+    public async Task RevokeOfflineDeviceAsync(Guid deviceId, long revision, CancellationToken ct = default)
+    {
+        using var response = await http.PostAsJsonAsync($"api/v1/pos/client/devices/{deviceId:D}/revoke", new RevokePosOfflineDeviceRequest(revision), ct);
+        await EnsureSuccessAsync(response, ct);
+    }
+
     public Task<IReadOnlyList<ParkedSaleDto>> GetParkedSalesAsync(string registerCode, CancellationToken ct = default) =>
         GetAsync<IReadOnlyList<ParkedSaleDto>>($"api/v1/pos/parked-sales/?registerCode={Uri.EscapeDataString(registerCode)}", ct);
 
@@ -46,6 +58,9 @@ public sealed class PosApiClient(HttpClient http)
     {
         return await PostAsync<SaleDto>("api/v1/pos/checkout", request, ct);
     }
+
+    public async Task<SaleDto> CheckoutOfflineDraftAsync(OfflineCheckoutRequest request, CancellationToken ct = default) =>
+        await PostAsync<SaleDto>("api/v1/pos/client/offline-checkout", request, ct);
 
     private async Task<T> PostAsync<T>(string path, object request, CancellationToken ct)
     {

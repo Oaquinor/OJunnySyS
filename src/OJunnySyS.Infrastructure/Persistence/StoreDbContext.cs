@@ -51,6 +51,7 @@ public sealed class StoreDbContext(DbContextOptions<StoreDbContext> options)
     public DbSet<CrmActivity> CrmActivities => Set<CrmActivity>();
     public DbSet<SupplierPayment> SupplierPayments => Set<SupplierPayment>();
     public DbSet<PosRegister> PosRegisters => Set<PosRegister>();
+    public DbSet<PosOfflineDevice> PosOfflineDevices => Set<PosOfflineDevice>();
     public DbSet<Warehouse> Warehouses => Set<Warehouse>();
     public DbSet<WarehouseStock> WarehouseStocks => Set<WarehouseStock>();
     public DbSet<InventoryAdjustment> InventoryAdjustments => Set<InventoryAdjustment>();
@@ -534,6 +535,22 @@ public sealed class StoreDbContext(DbContextOptions<StoreDbContext> options)
             entity.Property(x => x.Code).HasMaxLength(40).IsRequired();
             entity.Property(x => x.Name).HasMaxLength(120).IsRequired();
             entity.Property(x => x.Revision).IsConcurrencyToken().HasDefaultValue(0L);
+        });
+
+        modelBuilder.Entity<PosOfflineDevice>(entity =>
+        {
+            entity.HasKey(x => x.Id);
+            entity.HasAlternateKey(x => new { x.TenantId, x.Id });
+            entity.HasIndex(x => new { x.TenantId, x.DeviceId }).IsUnique();
+            entity.HasIndex(x => new { x.TenantId, x.UserId, x.IsActive });
+            entity.HasIndex(x => new { x.TenantId, x.UserId, x.Fingerprint }).IsUnique();
+            entity.HasOne<Tenant>().WithMany().HasForeignKey(x => x.TenantId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne<ApplicationUser>().WithMany().HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasQueryFilter(x => CurrentTenantId != null && x.TenantId == CurrentTenantId);
+            entity.Property(x => x.Label).HasMaxLength(80).IsRequired();
+            entity.Property(x => x.PublicKey).HasMaxLength(1024).IsRequired();
+            entity.Property(x => x.Fingerprint).HasMaxLength(64).IsRequired();
+            entity.Property(x => x.Revision).IsConcurrencyToken().HasDefaultValue(1L);
         });
 
         modelBuilder.Entity<Warehouse>(entity =>

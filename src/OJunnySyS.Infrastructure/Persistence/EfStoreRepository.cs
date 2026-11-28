@@ -432,6 +432,12 @@ public sealed class EfStoreRepository(IDbContextFactory<StoreDbContext> contextF
         var tenantId = tenantContext.GetRequiredTenantId();
         await using var db = await CreateDbContextAsync(cancellationToken);
         await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
+        if (request.OfflineDeviceId is { } offlineDeviceId)
+        {
+            var offlineDevice = await db.PosOfflineDevices.FromSqlInterpolated($"SELECT * FROM PosOfflineDevices WHERE TenantId = {tenantId} AND UserId = {cashierUserId} AND DeviceId = {offlineDeviceId} FOR UPDATE")
+                .SingleOrDefaultAsync(cancellationToken) ?? throw new DomainException("El dispositivo POS offline no existe o fue revocado.");
+            offlineDevice.RecordUse(DateTimeOffset.UtcNow);
+        }
         SalesQuote? salesQuote = null;
         if (request.SalesQuoteId is { } quoteId)
         {

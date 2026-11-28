@@ -79,6 +79,54 @@ async function decrypt(record) {
     return JSON.parse(new TextDecoder().decode(plainText));
 }
 
+async function generateSigningIdentity() {
+    const generated = await crypto.subtle.generateKey({ name: "ECDSA", namedCurve: "P-256" }, true, ["sign", "verify"]);
+    const publicKey = new Uint8Array(await crypto.subtle.exportKey("spki", generated.publicKey));
+    const privateBytes = await crypto.subtle.exportKey("pkcs8", generated.privateKey);
+    const privateKey = await crypto.subtle.importKey("pkcs8", privateBytes, { name: "ECDSA", namedCurve: "P-256" }, false, ["sign"]);
+    const device = {
+        deviceId: crypto.randomUUID(),
+        privateKey,
+        publicKey: btoa(String.fromCharCode(...publicKey)),
+    };
+    await write("keys", `${currentScope}:signing`, device);
+    return { deviceId: device.deviceId, publicKey: device.publicKey };
+}
+
+export async function getDeviceIdentity() {
+    if (!currentScope) throw new Error("El almacenamiento POS no está asociado a la sesión actual.");
+    const device = await read("keys", `${currentScope}:signing`);
+    return device ? { deviceId: device.deviceId, publicKey: device.publicKey } : null;
+}
+
+export async function enrollDeviceIdentity() {
+    if (!currentScope) throw new Error("El almacenamiento POS no está asociado a la sesión actual.");
+    return (await getDeviceIdentity()) ?? await generateSigningIdentity();
+}
+
+export async function rotateDeviceIdentity() {
+    if (!currentScope) throw new Error("El almacenamiento POS no está asociado a la sesión actual.");
+    return generateSigningIdentity();
+}
+
+export async function signOfflinePayload(payload) {
+    if (!currentScope || typeof payload !== "string") throw new Error("No se pudo preparar la firma del borrador POS.");
+    const device = await read("keys", `${currentScope}:signing`);
+    if (!device?.privateKey) throw new Error("Este navegador no tiene una clave de dispositivo inscrita.");
+    const signature = await crypto.subtle.sign({ name: "ECDSA", hash: "SHA-256" }, device.privateKey, new TextEncoder().encode(payload));
+    return btoa(String.fromCharCode(...new Uint8Array(signature)));
+}
+
+export async function clearDeviceIdentity() {
+    if (!currentScope) return;
+    await remove("keys", `${currentScope}:signing`);
+    await remove("keys", currentScope);
+    await clearDraft();
+    await remove("catalogs", currentScope);
+    const key = await crypto.subtle.generateKey({ name: "AES-GCM", length: 256 }, false, ["encrypt", "decrypt"]);
+    await write("keys", currentScope, key);
+}
+
 export async function saveDraft(draft) {
     if (!draft?.lines?.length) return clearDraft();
     await write("drafts", currentScope, await encrypt(draft));
