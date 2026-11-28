@@ -12,7 +12,7 @@
 @if (!string.IsNullOrWhiteSpace(_error)) { <div class="inline-error" role="alert">@_error</div> }
 @if (!string.IsNullOrWhiteSpace(_notice)) { <div class="success-banner" role="status">@_notice</div> }
 
-<div class="accounting-shortcuts" aria-label="Secciones de contabilidad">
+<div class="my-4 mb-5 flex flex-wrap gap-2" aria-label="Secciones de contabilidad">
     <a class="button button-secondary" href="#catalogo">Catálogo de cuentas</a>
     <a class="button button-secondary" href="#asiento">Nuevo asiento</a>
     <a class="button button-secondary" href="#diario">Libro diario</a>
@@ -20,13 +20,13 @@
     <a class="button button-secondary" href="/app/reports/financial-statements">Estados financieros</a>
 </div>
 
-<section class="panel accounting-section" id="catalogo">
-    <div class="panel-heading"><div><span class="eyebrow">PLAN CONTABLE</span><h2>Catálogo de cuentas</h2><p>Cuentas base de la empresa y cuentas creadas por el equipo.</p></div><span class="result-count">@_accounts.Count cuentas</span></div>
-    <EditForm Model="_newAccount" OnValidSubmit="CreateAccountAsync" class="account-form">
+<section class="panel mb-5 scroll-mt-5 p-4 sm:p-6" id="catalogo">
+    <div class="mb-5 flex flex-wrap items-start justify-between gap-3"><div><span class="eyebrow">PLAN CONTABLE</span><h2 class="mt-1 font-display text-xl font-bold text-ink">Catálogo de cuentas</h2><p class="mt-1 text-sm text-muted">Cuentas base de la empresa y cuentas creadas por el equipo.</p></div><span class="result-count">@_accounts.Count cuentas</span></div>
+    <EditForm Model="_newAccount" OnValidSubmit="CreateAccountAsync" class="mb-5 grid grid-cols-1 items-end gap-3 sm:grid-cols-2 xl:grid-cols-[minmax(7rem,.7fr)_minmax(14rem,1.6fr)_minmax(10rem,1fr)_auto]">
         <DataAnnotationsValidator />
-        <label>Código<InputText @bind-Value="_newAccount.Code" maxlength="20" placeholder="Ej. 4100" /></label>
-        <label>Nombre<InputText @bind-Value="_newAccount.Name" maxlength="120" placeholder="Ej. Ingresos por servicios" /></label>
-        <label>Tipo<InputSelect @bind-Value="_newAccount.Type"><option value="Asset">Activo</option><option value="Liability">Pasivo</option><option value="Equity">Patrimonio</option><option value="Revenue">Ingreso</option><option value="Expense">Gasto</option></InputSelect></label>
+        <label class="grid gap-1.5 text-xs font-semibold text-slate-600">Código<InputText class="w-full" @bind-Value="_newAccount.Code" maxlength="20" placeholder="Ej. 4100" /></label>
+        <label class="grid gap-1.5 text-xs font-semibold text-slate-600">Nombre<InputText class="w-full" @bind-Value="_newAccount.Name" maxlength="120" placeholder="Ej. Ingresos por servicios" /></label>
+        <label class="grid gap-1.5 text-xs font-semibold text-slate-600">Tipo<InputSelect class="w-full" @bind-Value="_newAccount.Type"><option value="Asset">Activo</option><option value="Liability">Pasivo</option><option value="Equity">Patrimonio</option><option value="Revenue">Ingreso</option><option value="Expense">Gasto</option></InputSelect></label>
         <button class="button button-primary" type="submit" disabled="@_saving">Agregar cuenta</button>
     </EditForm>
     <div class="table-wrap"><table><thead><tr><th>CÓDIGO</th><th>CUENTA</th><th>TIPO</th><th>ESTADO</th><th class="align-right">DÉBITOS</th><th class="align-right">CRÉDITOS</th></tr></thead><tbody>
@@ -37,39 +37,39 @@
     </tbody></table></div>
 </section>
 
-<section class="panel accounting-section" id="asiento">
-    <div class="panel-heading"><div><span class="eyebrow">PARTIDA DOBLE</span><h2>Registrar asiento</h2><p>El asiento se publica solo cuando los débitos y créditos cuadran.</p></div></div>
+<section class="panel mb-5 scroll-mt-5 p-4 sm:p-6" id="asiento">
+    <div class="mb-5"><span class="eyebrow">PARTIDA DOBLE</span><h2 class="mt-1 font-display text-xl font-bold text-ink">Registrar asiento</h2><p class="mt-1 text-sm text-muted">El asiento se publica solo cuando los débitos y créditos cuadran.</p></div>
     <EditForm Model="_entry" OnValidSubmit="CreateEntryAsync">
-        <div class="account-entry-head">
-            <label>Fecha<InputDate @bind-Value="_entry.EntryDate" /></label>
-            <label class="description-field">Descripción<InputText @bind-Value="_entry.Description" maxlength="240" placeholder="Describe el motivo del asiento" /></label>
+        <div class="mb-4 grid grid-cols-1 gap-3 sm:grid-cols-[minmax(9rem,.65fr)_minmax(16rem,2fr)]">
+            <label class="grid gap-1.5 text-xs font-semibold text-slate-600">Fecha<InputDate @bind-Value="_entry.EntryDate" /></label>
+            <label class="grid gap-1.5 text-xs font-semibold text-slate-600">Descripción<InputText @bind-Value="_entry.Description" maxlength="240" placeholder="Describe el motivo del asiento" /></label>
         </div>
         <div class="table-wrap"><table><thead><tr><th>CUENTA</th><th>DETALLE</th><th class="align-right">DÉBITO</th><th class="align-right">CRÉDITO</th><th></th></tr></thead><tbody>
             @foreach (var line in _entry.Lines)
             {
-                <tr><td><InputSelect @bind-Value="line.AccountId"><option value="@Guid.Empty">Seleccionar cuenta</option>@foreach (var account in _activeAccounts) { <option value="@account.Id">@account.Code · @account.Name</option> }</InputSelect></td><td><InputText @bind-Value="line.Memo" maxlength="160" placeholder="Opcional" /></td><td><NumericInput @bind-Value="line.Debit" min="0" step="0.01" /></td><td><NumericInput @bind-Value="line.Credit" min="0" step="0.01" /></td><td><button class="icon-button" type="button" aria-label="Eliminar línea" @onclick="() => RemoveLine(line)" disabled="@(_entry.Lines.Count <= 2)">×</button></td></tr>
+                <tr><td><InputSelect class="min-w-28" @bind-Value="line.AccountId"><option value="@Guid.Empty">Seleccionar cuenta</option>@foreach (var account in _activeAccounts) { <option value="@account.Id">@account.Code · @account.Name</option> }</InputSelect></td><td><InputText class="min-w-28" @bind-Value="line.Memo" maxlength="160" placeholder="Opcional" /></td><td><NumericInput @bind-Value="line.Debit" min="0" step="0.01" /></td><td><NumericInput @bind-Value="line.Credit" min="0" step="0.01" /></td><td><button class="grid size-9 place-items-center rounded-xl bg-slate-100 text-xl text-rose-700 disabled:opacity-40" type="button" aria-label="Eliminar línea" @onclick="() => RemoveLine(line)" disabled="@(_entry.Lines.Count <= 2)">×</button></td></tr>
             }
         </tbody></table></div>
-        <div class="account-entry-actions"><button class="button button-secondary" type="button" @onclick="AddLine" disabled="@(_entry.Lines.Count >= 200)">＋ Agregar línea</button><div class="entry-totals"><span>Débitos <strong>@Money(_entry.Lines.Sum(x => x.Debit))</strong></span><span>Créditos <strong>@Money(_entry.Lines.Sum(x => x.Credit))</strong></span><span class="@(EntryBalanced ? "balanced" : "unbalanced")">@(EntryBalanced ? "Cuadrado" : "Diferencia: " + Money(Math.Abs(_entry.Lines.Sum(x => x.Debit) - _entry.Lines.Sum(x => x.Credit))))</span></div><button class="button button-primary" type="submit" disabled="@(_saving || !_accounts.Any(x => x.IsActive))">Publicar asiento</button></div>
+        <div class="mt-4 flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between"><button class="button button-secondary" type="button" @onclick="AddLine" disabled="@(_entry.Lines.Count >= 200)">＋ Agregar línea</button><div class="flex flex-wrap items-center gap-4 text-sm text-slate-600"><span>Débitos <strong class="text-ink">@Money(_entry.Lines.Sum(x => x.Debit))</strong></span><span>Créditos <strong class="text-ink">@Money(_entry.Lines.Sum(x => x.Credit))</strong></span><span class="font-bold @(EntryBalanced ? "text-emerald-700" : "text-rose-700")">@(EntryBalanced ? "Cuadrado" : "Diferencia: " + Money(Math.Abs(_entry.Lines.Sum(x => x.Debit) - _entry.Lines.Sum(x => x.Credit))))</span></div><button class="button button-primary" type="submit" disabled="@(_saving || !_accounts.Any(x => x.IsActive))">Publicar asiento</button></div>
     </EditForm>
 </section>
 
-<section class="panel accounting-section" id="diario">
-    <div class="panel-heading"><div><span class="eyebrow">TRAZABILIDAD</span><h2>Libro diario</h2><p>Asientos publicados, ordenados por fecha y con líneas consultables.</p></div><span class="result-count">@_entries.Count registros</span></div>
+<section class="panel mb-5 scroll-mt-5 p-4 sm:p-6" id="diario">
+    <div class="mb-4 flex flex-wrap items-start justify-between gap-3"><div><span class="eyebrow">TRAZABILIDAD</span><h2 class="mt-1 font-display text-xl font-bold text-ink">Libro diario</h2><p class="mt-1 text-sm text-muted">Asientos publicados, ordenados por fecha y con líneas consultables.</p></div><span class="result-count">@_entries.Count registros</span></div>
     @if (_entries.Count == 0) { <EmptyState Icon="▤" Title="Aún no hay asientos" Description="El catálogo ya está listo. Publica el primer asiento cuando registres una operación contable." /> }
     else
     {
         @foreach (var entry in _entries)
         {
-            <details class="journal-entry"><summary><span class="mono">@entry.Number</span><span>@entry.EntryDate.ToString("dd/MM/yyyy") · @entry.Description</span><strong>@Money(entry.TotalDebit)</strong></summary><div class="table-wrap"><table><thead><tr><th>CUENTA</th><th>DETALLE</th><th class="align-right">DÉBITO</th><th class="align-right">CRÉDITO</th></tr></thead><tbody>@foreach (var line in entry.Lines) { <tr><td>@line.AccountCode · @line.AccountName</td><td>@(line.Memo ?? "—")</td><td class="align-right">@Money(line.Debit)</td><td class="align-right">@Money(line.Credit)</td></tr> }</tbody></table></div></details>
+            <details class="group my-2 overflow-hidden rounded-xl border border-slate-200"><summary class="grid cursor-pointer list-none grid-cols-[minmax(0,1fr)_auto] items-center gap-2 p-4 sm:grid-cols-[12rem_minmax(0,1fr)_auto_auto]"><span class="mono">@entry.Number</span><span>@entry.EntryDate.ToString("dd/MM/yyyy") · @entry.Description</span><strong>@Money(entry.TotalDebit)</strong><span class="text-muted transition group-open:rotate-180" aria-hidden="true">⌄</span></summary><div class="table-wrap px-3 pb-3"><table class="min-w-[40rem]"><thead><tr><th>CUENTA</th><th>DETALLE</th><th class="align-right">DÉBITO</th><th class="align-right">CRÉDITO</th></tr></thead><tbody>@foreach (var line in entry.Lines) { <tr><td>@line.AccountCode · @line.AccountName</td><td>@(line.Memo ?? "—")</td><td class="align-right">@Money(line.Debit)</td><td class="align-right">@Money(line.Credit)</td></tr> }</tbody></table></div></details>
         }
     }
 </section>
 
-<section class="panel accounting-section" id="balance">
-    <div class="panel-heading"><div><span class="eyebrow">CONTROL CONTABLE</span><h2>Balance de comprobación</h2><p>Saldo de cada cuenta al día indicado.</p></div><label>Al corte<InputDate @bind-Value="_balanceDate" /></label></div>
-    <div class="table-wrap"><table><thead><tr><th>CÓDIGO</th><th>CUENTA</th><th>TIPO</th><th class="align-right">DÉBITO</th><th class="align-right">CRÉDITO</th></tr></thead><tbody>@foreach (var line in _trialBalance?.Lines ?? []) { <tr><td class="mono">@line.Code</td><td>@line.Name</td><td>@AccountTypeLabel(line.Type)</td><td class="align-right">@Money(line.Debit)</td><td class="align-right">@Money(line.Credit)</td></tr> }</tbody><tfoot><tr><th colspan="3">TOTALES</th><th class="align-right">@Money(_trialBalance?.TotalDebit ?? 0)</th><th class="align-right">@Money(_trialBalance?.TotalCredit ?? 0)</th></tr></tfoot></table></div>
-    <div class="account-entry-actions"><span class="@(TrialBalanceBalanced ? "balanced" : "unbalanced")">@(TrialBalanceBalanced ? "Balance cuadrado" : "Hay una diferencia entre débitos y créditos")</span><button class="button button-secondary" type="button" @onclick="LoadBalanceAsync" disabled="@_loading">Actualizar balance</button></div>
+<section class="panel mb-5 scroll-mt-5 p-4 sm:p-6" id="balance">
+    <div class="mb-4 flex flex-wrap items-end justify-between gap-3 max-sm:flex-col max-sm:items-stretch"><div><span class="eyebrow">CONTROL CONTABLE</span><h2 class="mt-1 font-display text-xl font-bold text-ink">Balance de comprobación</h2><p class="mt-1 text-sm text-muted">Saldo de cada cuenta al día indicado.</p></div><label class="grid min-w-44 gap-1.5 text-xs font-semibold text-slate-600 max-sm:w-full">Al corte<InputDate @bind-Value="_balanceDate" /></label></div>
+    <div class="table-wrap"><table class="min-w-[45rem]"><thead><tr><th>CÓDIGO</th><th>CUENTA</th><th>TIPO</th><th class="align-right">DÉBITO</th><th class="align-right">CRÉDITO</th></tr></thead><tbody>@foreach (var line in _trialBalance?.Lines ?? []) { <tr><td class="mono">@line.Code</td><td>@line.Name</td><td>@AccountTypeLabel(line.Type)</td><td class="align-right">@Money(line.Debit)</td><td class="align-right">@Money(line.Credit)</td></tr> }</tbody><tfoot class="bg-slate-50 font-bold"><tr><th colspan="3">TOTALES</th><th class="align-right">@Money(_trialBalance?.TotalDebit ?? 0)</th><th class="align-right">@Money(_trialBalance?.TotalCredit ?? 0)</th></tr></tfoot></table></div>
+    <div class="mt-4 flex flex-wrap items-center justify-between gap-3"><span class="font-bold @(TrialBalanceBalanced ? "text-emerald-700" : "text-rose-700")">@(TrialBalanceBalanced ? "Balance cuadrado" : "Hay una diferencia entre débitos y créditos")</span><button class="button button-secondary" type="button" @onclick="LoadBalanceAsync" disabled="@_loading">Actualizar balance</button></div>
 </section>
 
 @code {

@@ -8,7 +8,7 @@
 <PageTitle>Estados financieros · OJunnySyS</PageTitle>
 <PageHeader Eyebrow="ANÁLISIS / CONTABILIDAD" Title="Estados financieros" Description="Consulta resultados por período y la situación financiera al corte desde los asientos publicados." />
 
-<div class="accounting-shortcuts" aria-label="Estados financieros">
+<div class="my-4 mb-5 flex flex-wrap gap-2" aria-label="Estados financieros">
     <a class="button button-secondary" href="#resultados">Estado de resultados</a>
     <a class="button button-secondary" href="#situacion">Estado de situación financiera</a>
     <a class="button button-secondary" href="/app/accounting#balance">Balance de comprobación</a>
@@ -22,8 +22,8 @@
 @if (_error is not null) { <div class="inline-error" role="alert">@_error</div> }
 @if (_profit is not null && _position is not null)
 {
-    <section class="panel accounting-section" id="resultados">
-        <div class="panel-heading"><div><span class="eyebrow">@_profit.From.ToString("dd/MM/yyyy") — @_profit.To.ToString("dd/MM/yyyy")</span><h2>Estado de resultados</h2><p>Ingresos y gastos netos contabilizados dentro del período.</p></div></div>
+    <section class="panel mb-5 scroll-mt-5 p-4 sm:p-6" id="resultados">
+        <div class="mb-4"><span class="eyebrow">@_profit.From.ToString("dd/MM/yyyy") — @_profit.To.ToString("dd/MM/yyyy")</span><h2 class="mt-1 font-display text-xl font-bold text-ink">Estado de resultados</h2><p class="mt-1 text-sm text-muted">Ingresos y gastos netos contabilizados dentro del período.</p></div>
         <div class="stats-grid report-stats">
             <MetricCard Label="INGRESOS" Value="@Money(_profit.TotalRevenue)" Icon="↗" Tone="green" />
             <MetricCard Label="GASTOS" Value="@Money(_profit.TotalExpenses)" Icon="↘" Tone="amber" />
@@ -35,25 +35,25 @@
         </div>
         @if (_comparisonProfit is not null)
         {
-            <section class="financial-comparison" aria-label="Comparación de resultados con el período anterior">
-                <div class="panel-heading"><div><span class="eyebrow">COMPARATIVO</span><h3>Contra el período anterior</h3><p>@_comparisonProfit.From.ToString("dd/MM/yyyy") — @_comparisonProfit.To.ToString("dd/MM/yyyy")</p></div></div>
+            <section class="mt-6 border-t border-slate-200 pt-5" aria-label="Comparación de resultados con el período anterior">
+                <div class="mb-3"><span class="eyebrow">COMPARATIVO</span><h3 class="mt-1 font-display text-lg font-bold text-ink">Contra el período anterior</h3><p class="mt-1 text-sm text-muted">@_comparisonProfit.From.ToString("dd/MM/yyyy") — @_comparisonProfit.To.ToString("dd/MM/yyyy")</p></div>
                 @foreach (var metric in ProfitComparisonMetrics())
                 {
-                    <div class="comparison-row">
+                    <div class="grid grid-cols-1 items-center gap-3 border-b border-slate-100 py-3 sm:grid-cols-[minmax(7rem,.7fr)_minmax(7rem,2fr)_auto_auto_auto]">
                         <strong>@metric.Label</strong>
-                        <div class="comparison-bars" role="img" aria-label="@metric.Label: actual @Money(metric.Current), anterior @Money(metric.Previous)">
-                            <span class="comparison-bar current" style="width:@BarWidth(metric.Current, metric.Previous)%"></span>
-                            <span class="comparison-bar previous" style="width:@BarWidth(metric.Previous, metric.Current)%"></span>
+                        <div class="grid gap-1" role="img" aria-label="@metric.Label: actual @Money(metric.Current), anterior @Money(metric.Previous)">
+                            <span class="block h-2 min-w-0 rounded-full bg-emerald-600" style="width:@BarWidth(metric.Current, metric.Previous)%"></span>
+                            <span class="block h-2 min-w-0 rounded-full bg-slate-300" style="width:@BarWidth(metric.Previous, metric.Current)%"></span>
                         </div>
-                        <span>@Money(metric.Current)</span><small>Anterior: @Money(metric.Previous)</small><b class="@ProfitChangeTone(metric)">@ChangeText(metric.Current, metric.Previous)</b>
+                        <span class="text-right tabular-nums">@Money(metric.Current)</span><small class="text-right text-muted">Anterior: @Money(metric.Previous)</small><b class="text-right @ProfitChangeTone(metric)">@ChangeText(metric.Current, metric.Previous)</b>
                     </div>
                 }
-                <div class="comparison-legend"><span><i class="legend-current"></i>Período actual</span><span><i class="legend-previous"></i>Período anterior</span></div>
+                <div class="mt-3 flex flex-wrap gap-4 text-xs text-muted"><span class="flex items-center gap-2"><i class="size-2.5 rounded-full bg-emerald-600"></i>Período actual</span><span class="flex items-center gap-2"><i class="size-2.5 rounded-full bg-slate-300"></i>Período anterior</span></div>
             </section>
         }
     </section>
-    <section class="panel accounting-section" id="situacion">
-        <div class="panel-heading"><div><span class="eyebrow">AL @(_position.AsOfDate.ToString("dd/MM/yyyy"))</span><h2>Estado de situación financiera</h2><p>Activos = pasivos + patrimonio, incluido el resultado acumulado de las cuentas de ingreso y gasto.</p></div></div>
+    <section class="panel mb-5 scroll-mt-5 p-4 sm:p-6" id="situacion">
+        <div class="mb-4"><span class="eyebrow">AL @(_position.AsOfDate.ToString("dd/MM/yyyy"))</span><h2 class="mt-1 font-display text-xl font-bold text-ink">Estado de situación financiera</h2><p class="mt-1 text-sm text-muted">Activos = pasivos + patrimonio, incluido el resultado acumulado de las cuentas de ingreso y gasto.</p></div>
         <div class="report-grid">
             <StatementTable Title="Activos" Lines="_position.Assets" Total="_position.TotalAssets" BaseAmount="_position.TotalAssets" CurrencyCode="_currencyCode" />
             <StatementTable Title="Pasivos" Lines="_position.Liabilities" Total="_position.TotalLiabilities" BaseAmount="_position.TotalAssets" CurrencyCode="_currencyCode" />
@@ -61,23 +61,23 @@
         </div>
         <div class="report-row"><div><strong>Resultado acumulado</strong><small>Ingresos menos gastos contabilizados al corte</small></div><strong>@Money(_position.CurrentAndAccumulatedResult)</strong></div>
         <div class="report-row"><div><strong>Pasivos + patrimonio</strong><small>Debe cuadrar con el total de activos</small></div><strong>@Money(_position.TotalLiabilities + _position.TotalEquity)</strong></div>
-        <div class="account-entry-actions"><span class="@(_position.TotalAssets == _position.TotalLiabilities + _position.TotalEquity ? "balanced" : "unbalanced")">@(_position.TotalAssets == _position.TotalLiabilities + _position.TotalEquity ? "Estado cuadrado" : "El estado presenta una diferencia; revisa el libro y las cuentas")</span></div>
+        <div class="mt-4"><span class="font-bold @(_position.TotalAssets == _position.TotalLiabilities + _position.TotalEquity ? "text-emerald-700" : "text-rose-700")">@(_position.TotalAssets == _position.TotalLiabilities + _position.TotalEquity ? "Estado cuadrado" : "El estado presenta una diferencia; revisa el libro y las cuentas")</span></div>
         @if (_comparisonPosition is not null)
         {
-            <section class="financial-comparison" aria-label="Comparación de situación financiera con el año anterior">
-                <div class="panel-heading"><div><span class="eyebrow">COMPARATIVO ANUAL</span><h3>Contra el mismo corte del año anterior</h3><p>Al @_comparisonPosition.AsOfDate.ToString("dd/MM/yyyy")</p></div></div>
+            <section class="mt-6 border-t border-slate-200 pt-5" aria-label="Comparación de situación financiera con el año anterior">
+                <div class="mb-3"><span class="eyebrow">COMPARATIVO ANUAL</span><h3 class="mt-1 font-display text-lg font-bold text-ink">Contra el mismo corte del año anterior</h3><p class="mt-1 text-sm text-muted">Al @_comparisonPosition.AsOfDate.ToString("dd/MM/yyyy")</p></div>
                 @foreach (var metric in PositionComparisonMetrics())
                 {
-                    <div class="comparison-row">
+                    <div class="grid grid-cols-1 items-center gap-3 border-b border-slate-100 py-3 sm:grid-cols-[minmax(7rem,.7fr)_minmax(7rem,2fr)_auto_auto_auto]">
                         <strong>@metric.Label</strong>
-                        <div class="comparison-bars" role="img" aria-label="@metric.Label: actual @Money(metric.Current), año anterior @Money(metric.Previous)">
-                            <span class="comparison-bar current" style="width:@BarWidth(metric.Current, metric.Previous)%"></span>
-                            <span class="comparison-bar previous" style="width:@BarWidth(metric.Previous, metric.Current)%"></span>
+                        <div class="grid gap-1" role="img" aria-label="@metric.Label: actual @Money(metric.Current), año anterior @Money(metric.Previous)">
+                            <span class="block h-2 min-w-0 rounded-full bg-emerald-600" style="width:@BarWidth(metric.Current, metric.Previous)%"></span>
+                            <span class="block h-2 min-w-0 rounded-full bg-slate-300" style="width:@BarWidth(metric.Previous, metric.Current)%"></span>
                         </div>
-                        <span>@Money(metric.Current)</span><small>Año anterior: @Money(metric.Previous)</small><b class="comparison-neutral">@ChangeText(metric.Current, metric.Previous)</b>
+                        <span class="text-right tabular-nums">@Money(metric.Current)</span><small class="text-right text-muted">Año anterior: @Money(metric.Previous)</small><b class="text-right text-slate-600">@ChangeText(metric.Current, metric.Previous)</b>
                     </div>
                 }
-                <div class="comparison-legend"><span><i class="legend-current"></i>Corte actual</span><span><i class="legend-previous"></i>Corte anterior</span></div>
+                <div class="mt-3 flex flex-wrap gap-4 text-xs text-muted"><span class="flex items-center gap-2"><i class="size-2.5 rounded-full bg-emerald-600"></i>Corte actual</span><span class="flex items-center gap-2"><i class="size-2.5 rounded-full bg-slate-300"></i>Corte anterior</span></div>
             </section>
         }
     </section>
@@ -142,7 +142,7 @@
         FinancialStatementAnalysisBuilder.FormatPercentageChange(current, previous);
 
     private static string ChangeTone(decimal current, decimal previous, bool lowerIsBetter = false) =>
-        (lowerIsBetter ? current <= previous : current >= previous) ? "comparison-up" : "comparison-down";
+        (lowerIsBetter ? current <= previous : current >= previous) ? "text-emerald-700" : "text-rose-700";
     private static string ProfitChangeTone((string Label, decimal Current, decimal Previous) metric) =>
         ChangeTone(metric.Current, metric.Previous, metric.Label == "Gastos");
     private string Money(decimal value) => DisplayFormat.Money(value, _currencyCode);
