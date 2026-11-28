@@ -1,6 +1,7 @@
 **/bin/
 **/obj/
 **/artifacts/
+src/OJunnySyS.PosClient/wwwroot/
 .vs/
 .idea/
 .vscode/

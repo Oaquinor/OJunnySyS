@@ -5,9 +5,11 @@
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
       <PrivateAssets>all</PrivateAssets>
     </PackageReference>
+    <PackageReference Include="Microsoft.AspNetCore.Components.WebAssembly.Server" />
     <ProjectReference Include="..\OJunnySyS.Application\OJunnySyS.Application.csproj" />
     <ProjectReference Include="..\OJunnySyS.Infrastructure\OJunnySyS.Infrastructure.csproj" />
     <ProjectReference Include="..\OJunnySyS.Domain\OJunnySyS.Domain.csproj" />
+    <ProjectReference Include="..\OJunnySyS.PosClient\OJunnySyS.PosClient.csproj" />
   </ItemGroup>
 
   <PropertyGroup>

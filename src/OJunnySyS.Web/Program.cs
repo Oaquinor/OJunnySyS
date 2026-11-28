@@ -15,7 +15,7 @@ using OJunnySyS.Web.Presentation;
 
 var builder = WebApplication.CreateBuilder(args);
 
-builder.Services.AddRazorComponents().AddInteractiveServerComponents();
+builder.Services.AddRazorComponents().AddInteractiveServerComponents().AddInteractiveWebAssemblyComponents().AddAuthenticationStateSerialization();
 builder.Services.AddCascadingAuthenticationState();
 builder.Services.AddControllersWithViews();
 builder.Services.AddRateLimiter(options =>
@@ -553,7 +553,9 @@ await IdentityInitializer.InitializeAsync(app.Services, app.Configuration);
 
 app.MapStaticAssets();
 app.MapRazorComponents<App>()
-    .AddInteractiveServerRenderMode();
+    .AddInteractiveServerRenderMode()
+    .AddInteractiveWebAssemblyRenderMode()
+    .AddAdditionalAssemblies(typeof(OJunnySyS.PosClient.Pages.PosClientPage).Assembly);
 
 app.Run();
 

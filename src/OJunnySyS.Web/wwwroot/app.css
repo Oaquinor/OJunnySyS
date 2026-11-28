@@ -9,14 +9,14 @@
 @media(max-width:430px){.topbar>div:first-child strong{font-size:0.875rem}.stat-top{font-size:0.75rem}.stat-icon{width:24px;height:24px}.stat-foot{font-size:0.75rem}.sparkline{display:none}.page-heading>.button{height:35px}.page-heading h1{font-size:1.25rem}.category-tabs{margin-right:-7px}.pos-search-row .result-count{display:none}.pos-product-art{height:80px}.register-status{gap:7px}.register-status strong{font-size:0.75rem}.register-status small{font-size:0.75rem}}
 .settings-section-title { margin:28px 0 14px; font-size:1rem; }
 .settings-form { display:grid; gap:1.25rem; padding:0 1.5rem 1.5rem; }
-.settings-form .form-grid { gap:1rem 1.25rem; }
+.settings-form .form-grid { gap:1.125rem 1.5rem; }
 .settings-form .settings-base-grid { grid-template-columns:repeat(2,minmax(0,1fr)); }
 .settings-form label,.tax-profile-form .form-grid label { min-width:0; gap:.5rem; line-height:1.45; }
-.settings-form input,.settings-form select,.tax-profile-form input,.tax-profile-form select { width:100%; min-width:0; min-height:2.75rem; padding-inline:.875rem; border-radius:.75rem; }
+.settings-form input,.settings-form select,.tax-profile-form input,.tax-profile-form select { width:100%; min-width:0; min-height:2.875rem; padding-inline:1rem; border-radius:.875rem; }
 .settings-form .receipt-options { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:.75rem 1rem; }
 .settings-form .receipt-options label { display:flex; flex-direction:row; align-items:center; gap:.625rem; }
-.tax-profile-form { display:grid; gap:1rem; padding:0 1.25rem 1.25rem; }
-.tax-profile-form .form-grid { grid-template-columns:repeat(2,minmax(0,1fr)); gap:1rem 1.25rem; }
+.tax-profile-form { display:grid; gap:1.125rem; padding:0 1.5rem 1.5rem; }
+.tax-profile-form .form-grid { grid-template-columns:repeat(2,minmax(0,1fr)); gap:1.125rem 1.5rem; }
 .tax-profile-form .form-grid label:last-child { grid-column:1/-1; }
 .tax-profile-form .report-filter-note { line-height:1.6; }
 .tax-profile-form .supplier-form-actions { display:flex; flex-wrap:wrap; gap:.625rem; margin:0; }

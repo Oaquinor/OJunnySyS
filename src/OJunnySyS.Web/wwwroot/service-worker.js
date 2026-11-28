@@ -1,6 +1,6 @@
 const CACHE_NAME = "ojunnysy-shell-v2";
 const OFFLINE_URL = "/offline.html";
-const STATIC_EXTENSIONS = /\.(?:css|js|svg|png|webmanifest|woff2?)$/i;
+const STATIC_EXTENSIONS = /\.(?:css|js|mjs|dll|wasm|json|blat|dat|svg|png|webmanifest|woff2?)$/i;
 const PRECACHE_URLS = [OFFLINE_URL, "/manifest.webmanifest", "/icons/ojunnysy-icon.svg", "/features.css"];
 
 self.addEventListener("install", event => {

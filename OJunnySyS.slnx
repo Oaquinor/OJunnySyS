@@ -3,6 +3,7 @@
     <Project Path="src/OJunnySyS.Application/OJunnySyS.Application.csproj" />
     <Project Path="src/OJunnySyS.Domain/OJunnySyS.Domain.csproj" />
     <Project Path="src/OJunnySyS.Infrastructure/OJunnySyS.Infrastructure.csproj" />
+    <Project Path="src/OJunnySyS.PosClient/OJunnySyS.PosClient.csproj" />
     <Project Path="src/OJunnySyS.Web/OJunnySyS.Web.csproj" />
   </Folder>
   <Folder Name="/tests/">

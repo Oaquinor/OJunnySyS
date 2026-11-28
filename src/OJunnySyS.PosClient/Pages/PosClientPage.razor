@@ -1,0 +1,210 @@
+@page "/app/pos/client"
+@attribute [Authorize(Roles = "Administrator,Manager,Cashier")]
+@rendermode @(new InteractiveWebAssemblyRenderMode(prerender: false))
+@implements IAsyncDisposable
+@inject PosApiClient PosApi
+@inject IJSRuntime JS
+
+<PageTitle>POS cliente · OJunnySyS</PageTitle>
+<main class="grid gap-5">
+    <header class="flex flex-wrap items-end justify-between gap-4">
+        <div class="grid gap-1"><span class="text-xs font-bold tracking-[.14em] text-brand-600">PUNTO DE VENTA · CLIENTE WEBASSEMBLY</span><h1 class="font-display text-3xl font-bold tracking-tight text-ink">POS de respuesta rápida</h1><p class="text-sm text-slate-600">Esta pantalla corre en el navegador y usa la API protegida de OJunnySyS.</p></div>
+        <label class="grid min-w-52 gap-1.5 text-sm font-semibold text-slate-700">Terminal<select class="min-h-11 rounded-xl border border-slate-200 bg-white px-3" value="@_registerCode" @onchange="ChangeRegisterAsync"><option value="">Selecciona una terminal</option>@foreach (var register in _registers) { <option value="@register.Code">@register.Name</option> }</select></label>
+    </header>
+
+    @if (!string.IsNullOrWhiteSpace(_error)) { <div role="alert" class="rounded-xl border border-rose-200 bg-rose-50 p-3 text-sm text-rose-800">@_error</div> }
+    @if (!string.IsNullOrWhiteSpace(_notice)) { <div role="status" class="rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-900">@_notice</div> }
+    <div class="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950"><span><strong>@(_online ? "Conectado" : "Sin conexión")</strong> · Las ventas solo se registran cuando el servidor confirma la transacción.</span><a class="font-semibold underline" href="/app/pos">Abrir POS actual</a></div>
+
+    @if (_loading)
+    {
+        <div class="rounded-2xl border border-slate-200 bg-white p-8 text-sm text-slate-500" role="status">Cargando productos, terminales y caja…</div>
+    }
+    else
+    {
+        <div class="grid min-w-0 gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(20rem,24rem)]">
+            <section class="grid min-w-0 gap-4">
+                <form class="flex flex-wrap gap-2" @onsubmit="SearchAsync" @onsubmit:preventDefault>
+                    <input class="min-h-11 min-w-48 flex-1 rounded-xl border border-slate-200 px-3 text-sm" @bind="_search" placeholder="Buscar por nombre, SKU o código de barras" aria-label="Buscar productos" />
+                    <button class="min-h-11 rounded-xl bg-brand-600 px-4 text-sm font-bold text-white disabled:opacity-50" type="submit" disabled="@_busy">Buscar</button>
+                </form>
+                @if (_registers.Count == 0) { <div class="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">No hay terminales activas configuradas para esta empresa.</div> }
+                else if (_products.Count == 0) { <div class="rounded-xl border border-dashed border-slate-300 bg-white p-8 text-center text-sm text-slate-500">No encontramos productos disponibles para esta terminal.</div> }
+                else
+                {
+                    <div class="grid grid-cols-1 gap-3 sm:grid-cols-2 2xl:grid-cols-3">
+                        @foreach (var product in _products)
+                        {
+                            var quantity = _cart.GetValueOrDefault(product.Id);
+                            <button type="button" class="grid min-h-32 content-between gap-3 rounded-2xl border border-slate-200 bg-white p-4 text-left shadow-sm transition hover:border-brand-300 hover:shadow-md disabled:cursor-not-allowed disabled:opacity-50" @onclick="() => Add(product)" disabled="@(!_online || quantity >= product.StockOnHand || _busy)">
+                                <span class="grid gap-1"><strong class="text-sm text-ink">@product.Name</strong><small class="text-xs text-slate-500">@product.Sku · @_cart.GetValueOrDefault(product.Id) en orden</small></span>
+                                <span class="flex items-end justify-between gap-3"><strong class="text-lg font-bold text-brand-700">@Money(product.UnitPrice)</strong><small class="text-xs text-slate-500">Disponible: @product.StockOnHand</small></span>
+                            </button>
+                        }
+                    </div>
+                }
+            </section>
+
+            <aside class="grid h-fit gap-4 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+                <div class="flex items-center justify-between gap-3"><div><span class="text-xs font-bold tracking-widest text-slate-400">VENTA ACTUAL</span><h2 class="font-display text-xl font-bold text-ink">Orden</h2></div><span class="rounded-full bg-brand-50 px-3 py-1 text-sm font-bold text-brand-700">@_cart.Values.Sum()</span></div>
+                @if (_cart.Count == 0) { <p class="rounded-xl bg-slate-50 p-4 text-sm text-slate-500">Agrega productos para iniciar una venta.</p> }
+                else
+                {
+                    <div class="grid gap-2">
+                        @foreach (var entry in _cart.ToArray())
+                        {
+                            var product = _products.FirstOrDefault(x => x.Id == entry.Key);
+                            if (product is null) { continue; }
+                            <div class="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2 border-b border-slate-100 py-2"><span class="grid min-w-0"><strong class="truncate text-sm text-ink">@product.Name</strong><small class="text-xs text-slate-500">@entry.Value × @Money(product.UnitPrice)</small></span><span class="flex items-center gap-1"><button type="button" class="grid size-8 place-items-center rounded-lg border border-slate-200" @onclick="() => ChangeQuantity(product, -1)" aria-label="Quitar uno">−</button><strong class="w-6 text-center text-sm">@entry.Value</strong><button type="button" class="grid size-8 place-items-center rounded-lg border border-slate-200" @onclick="() => ChangeQuantity(product, 1)" aria-label="Agregar uno">+</button></span></div>
+                        }
+                    </div>
+                }
+                <label class="grid gap-1.5 text-sm font-semibold text-slate-700">Cliente<select class="min-h-11 rounded-xl border border-slate-200 bg-white px-3" @bind="_customerId"><option value="">Consumidor final</option>@foreach (var customer in _customers) { <option value="@customer.Id">@customer.Name</option> }</select></label>
+                <label class="grid gap-1.5 text-sm font-semibold text-slate-700">Vendedor<select class="min-h-11 rounded-xl border border-slate-200 bg-white px-3" @bind="_sellerId"><option value="">Sin asignar</option>@foreach (var seller in _sellers) { <option value="@seller.Id">@seller.DisplayName</option> }</select></label>
+                <label class="grid gap-1.5 text-sm font-semibold text-slate-700">Método de pago<select class="min-h-11 rounded-xl border border-slate-200 bg-white px-3" @bind="_paymentMethodId"><option value="">Selecciona un método</option>@foreach (var method in _paymentOptions) { <option value="@method.Id">@method.Name</option> }</select></label>
+                <div class="flex items-center justify-between border-t border-slate-200 pt-4"><span class="text-sm font-semibold text-slate-600">Total estimado</span><strong class="text-2xl font-bold text-ink">@Money(EstimatedTotal)</strong></div>
+                <small class="text-xs leading-5 text-slate-500">El servidor vuelve a calcular precios, impuestos y existencias antes de guardar. Este POS cliente aún no admite completar cobros sin conexión.</small>
+                <div class="flex gap-2"><button type="button" class="min-h-11 flex-1 rounded-xl bg-brand-600 px-4 text-sm font-bold text-white disabled:cursor-not-allowed disabled:opacity-50" @onclick="CheckoutAsync" disabled="@(!CanCheckout)">@(_busy ? "Procesando…" : "Completar venta")</button><button type="button" class="min-h-11 rounded-xl border border-slate-200 px-4 text-sm font-semibold text-slate-600 disabled:opacity-50" @onclick="ClearCart" disabled="@(_cart.Count == 0 || _busy)">Vaciar</button></div>
+            </aside>
+        </div>
+    }
+</main>
+
+@code {
+    private IReadOnlyList<PosRegisterDto> _registers = [];
+    private IReadOnlyList<ProductDto> _products = [];
+    private IReadOnlyList<CustomerDto> _customers = [];
+    private IReadOnlyList<TenantMemberDto> _sellers = [];
+    private IReadOnlyList<TenantPaymentMethodDto> _paymentOptions = [];
+    private TenantBusinessSettingsDto? _settings;
+    private CashSessionDto? _cashSession;
+    private readonly Dictionary<Guid, int> _cart = [];
+    private string _registerCode = string.Empty, _search = string.Empty;
+    private Guid? _customerId, _sellerId, _paymentMethodId;
+    private bool _loading = true, _busy, _online = true;
+    private string? _error, _notice;
+    private Guid _checkoutKey = Guid.NewGuid();
+    private DotNetObjectReference<PosClientPage>? _self;
+    private IJSObjectReference? _networkModule;
+
+    private decimal EstimatedTotal => _cart.Sum(item =>
+    {
+        var product = _products.FirstOrDefault(x => x.Id == item.Key);
+        if (product is null) return 0m;
+        var rate = product.TaxProfileRate ?? product.TaxRateOverride ?? _settings?.DefaultTaxRate ?? 0m;
+        var subtotal = product.UnitPrice * item.Value;
+        return subtotal + decimal.Round(subtotal * rate, 2, MidpointRounding.AwayFromZero);
+    });
+    private bool CanCheckout => !_busy && _online && _cart.Count > 0 && _paymentMethodId is not null &&
+        !string.IsNullOrWhiteSpace(_registerCode) && _cashSession?.Status == CashSessionStatus.Open;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            var registersTask = PosApi.GetRegistersAsync();
+            var methodsTask = PosApi.GetPaymentOptionsAsync();
+            var sellersTask = PosApi.GetSellersAsync();
+            var settingsTask = PosApi.GetBusinessSettingsAsync();
+            var customersTask = PosApi.SearchCustomersAsync();
+            await Task.WhenAll(registersTask, methodsTask, sellersTask, settingsTask, customersTask);
+            _registers = await registersTask;
+            _paymentOptions = await methodsTask;
+            _sellers = await sellersTask;
+            _settings = await settingsTask;
+            _customers = await customersTask;
+            _registerCode = _registers.FirstOrDefault()?.Code ?? string.Empty;
+            _paymentMethodId = _paymentOptions.FirstOrDefault()?.Id;
+            await LoadRegisterAsync();
+        }
+        catch (Exception ex) { _error = ex.Message; }
+        finally { _loading = false; }
+
+        _self = DotNetObjectReference.Create(this);
+        _networkModule = await JS.InvokeAsync<IJSObjectReference>("import", "./js/pos-network-status.js");
+        await _networkModule.InvokeVoidAsync("watch", _self);
+    }
+
+    private async Task ChangeRegisterAsync(ChangeEventArgs args)
+    {
+        _registerCode = args.Value?.ToString() ?? string.Empty;
+        _cart.Clear(); _checkoutKey = Guid.NewGuid(); _error = null;
+        await LoadRegisterAsync();
+    }
+
+    private async Task LoadRegisterAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_registerCode)) { _products = []; _cashSession = null; return; }
+        var register = _registers.First(x => x.Code == _registerCode);
+        var productsTask = PosApi.SearchProductsAsync(register.WarehouseId, _search);
+        var cashTask = PosApi.GetCashSessionAsync(_registerCode);
+        await Task.WhenAll(productsTask, cashTask);
+        _products = await productsTask;
+        _cashSession = await cashTask;
+    }
+
+    private async Task SearchAsync()
+    {
+        _error = null;
+        try { await LoadRegisterAsync(); }
+        catch (Exception ex) { _error = ex.Message; }
+    }
+
+    private void Add(ProductDto product)
+    {
+        if (!_online || _cart.GetValueOrDefault(product.Id) >= product.StockOnHand) return;
+        _cart[product.Id] = _cart.GetValueOrDefault(product.Id) + 1;
+        _checkoutKey = Guid.NewGuid(); _error = null;
+    }
+
+    private void ChangeQuantity(ProductDto product, int delta)
+    {
+        var quantity = _cart.GetValueOrDefault(product.Id) + delta;
+        if (quantity <= 0) _cart.Remove(product.Id);
+        else if (quantity <= product.StockOnHand) _cart[product.Id] = quantity;
+        _checkoutKey = Guid.NewGuid();
+    }
+
+    private async Task CheckoutAsync()
+    {
+        if (!CanCheckout) return;
+        var selected = _paymentOptions.FirstOrDefault(x => x.Id == _paymentMethodId);
+        if (selected is null) { _error = "Selecciona un método de pago activo."; return; }
+        _busy = true; _error = null; _notice = null;
+        try
+        {
+            var paymentType = selected.Type switch
+            {
+                PaymentMethodType.Cash => PaymentMethod.Cash,
+                PaymentMethodType.Card => PaymentMethod.Card,
+                PaymentMethodType.Transfer => PaymentMethod.Transfer,
+                _ => PaymentMethod.Other
+            };
+            var request = new CheckoutRequest(_customerId, paymentType,
+                _cart.Select(item => new CheckoutLine(item.Key, item.Value)).ToArray(), _checkoutKey, _registerCode,
+                [new CheckoutPaymentLine(selected.Id, EstimatedTotal)], _sellerId);
+            var sale = await PosApi.CheckoutAsync(request);
+            _notice = $"Venta {sale.Number} confirmada por el servidor · {Money(sale.Total)}";
+            _cart.Clear(); _checkoutKey = Guid.NewGuid();
+            await LoadRegisterAsync();
+        }
+        catch (Exception ex) { _error = ex.Message; try { await LoadRegisterAsync(); } catch { } }
+        finally { _busy = false; }
+    }
+
+    private void ClearCart() { _cart.Clear(); _checkoutKey = Guid.NewGuid(); _error = null; }
+    private string Money(decimal amount) => string.Format(System.Globalization.CultureInfo.GetCultureInfo("es-DO"), "{0} {1:N2}", _settings?.CurrencyCode ?? "DOP", amount);
+
+    [JSInvokable]
+    public Task SetOnline(bool online) { _online = online; if (!online) _error = null; return InvokeAsync(StateHasChanged); }
+
+    public async ValueTask DisposeAsync()
+    {
+        _self?.Dispose();
+        if (_networkModule is not null)
+        {
+            try { await _networkModule.InvokeVoidAsync("unwatch"); await _networkModule.DisposeAsync(); }
+            catch (JSDisconnectedException) { }
+        }
+    }
+}

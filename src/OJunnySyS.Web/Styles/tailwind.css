@@ -2,6 +2,7 @@
 
 @source "../Components";
 @source "../Views";
+@source "../../OJunnySyS.PosClient/**/*.razor";
 
 @theme {
   --font-sans: "DM Sans", ui-sans-serif, system-ui, sans-serif;
