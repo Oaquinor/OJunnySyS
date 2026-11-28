@@ -1,0 +1,112 @@
+@page "/app/sales/quotes/{QuoteId:guid}/print"
+@attribute [Authorize(Roles = "Administrator,Manager,Salesperson")]
+@inject SalesQuoteService Quotes
+@inject TenantSettingsService Settings
+@inject OJunnySyS.Application.Abstractions.IBusinessClock Clock
+@inject IJSRuntime JS
+@inject ILogger<SalesQuotePrint> Logger
+
+<PageTitle>@(_quote is null ? "Cotización" : $"{_quote.Number} · Cotización") · OJunnySyS</PageTitle>
+
+@if (_loading)
+{
+    <div class="panel quote-print-loading">Cargando documento…</div>
+}
+else if (_quote is null || _settings is null)
+{
+    <EmptyState Icon="◇" Title="No encontramos esta cotización" Description="El documento no existe o no pertenece a tu empresa." />
+}
+else
+{
+    <div class="quote-print-toolbar no-print">
+        <a class="button button-secondary" href="/app/sales/quotes">← Volver a cotizaciones</a>
+        <span>Vista para cliente · puedes imprimir o guardar como PDF desde el navegador.</span>
+        <button type="button" class="button button-primary" @onclick="PrintAsync">Imprimir / guardar PDF</button>
+    </div>
+    <article class="quote-printable">
+        <header class="quote-print-header">
+            <div class="quote-print-brand"><span class="quote-print-mark">O<span>.</span></span><div>
+                <strong>@(!string.IsNullOrWhiteSpace(_settings.LegalName) ? _settings.LegalName : _settings.Name)</strong>
+                @if (!string.IsNullOrWhiteSpace(_settings.TaxIdentifier)) { <span>RNC: @_settings.TaxIdentifier</span> }
+                @if (!string.IsNullOrWhiteSpace(_settings.BusinessAddress)) { <span>@_settings.BusinessAddress</span> }
+                @if (!string.IsNullOrWhiteSpace(_settings.BusinessPhone)) { <span>@_settings.BusinessPhone</span> }
+            </div></div>
+            <div class="quote-print-title"><span>COTIZACIÓN</span><strong>@_quote.Number</strong><small>@StatusLabel(_quote.Status)</small></div>
+        </header>
+
+        <section class="quote-print-meta">
+            <div><span>PREPARADA PARA</span><strong>@_quote.CustomerName</strong></div>
+            <div><span>FECHA</span><strong>@Clock.ToBusinessTime(_quote.CreatedAtUtc).ToString("dd/MM/yyyy")</strong></div>
+            <div><span>VÁLIDA HASTA</span><strong>@_quote.ValidUntil.ToString("dd/MM/yyyy")</strong></div>
+        </section>
+
+        <div class="quote-print-table-wrap"><table class="quote-print-table">
+            <thead><tr><th>ARTÍCULO / DESCRIPCIÓN</th><th class="align-right">CANT.</th><th class="align-right">PRECIO</th><th class="align-right">IMPUESTO</th><th class="align-right">IMPORTE</th></tr></thead>
+            <tbody>
+            @foreach (var line in _quote.Lines)
+            {
+                <tr><td><strong>@line.ProductName</strong><small>@line.Sku · impuesto @($"{line.TaxRate * 100m:0.##}%")</small></td><td class="align-right">@line.Quantity</td><td class="align-right">@Money(line.UnitPrice)</td><td class="align-right">@Money(line.TaxAmount)</td><td class="align-right">@Money(line.LineTotal + line.TaxAmount)</td></tr>
+            }
+            </tbody>
+        </table></div>
+
+        <section class="quote-print-summary">
+            <div><span>Subtotal</span><strong>@Money(_quote.Subtotal)</strong></div>
+            @foreach (var tax in _quote.Lines.GroupBy(x => x.TaxRate).OrderBy(x => x.Key))
+            {
+                <div><span>Impuesto (@($"{tax.Key * 100m:0.##}%"))</span><strong>@Money(tax.Sum(x => x.TaxAmount))</strong></div>
+            }
+            <div class="quote-print-total"><span>Total cotizado</span><strong>@Money(_quote.Total)</strong></div>
+        </section>
+
+        @if (!string.IsNullOrWhiteSpace(_quote.Notes))
+        {
+            <section class="quote-print-notes"><span>CONDICIONES / NOTAS</span><p>@_quote.Notes</p></section>
+        }
+
+        <footer class="quote-print-footer">
+            <strong>Oferta comercial · no constituye factura ni comprobante fiscal.</strong>
+            <span>Los precios e impuestos reflejan esta cotización y su vigencia. La disponibilidad de inventario no queda reservada.</span>
+            <small>Documento generado por OJunnySyS</small>
+        </footer>
+    </article>
+}
+
+@code {
+    [Parameter] public Guid QuoteId { get; set; }
+    private SalesQuoteDto? _quote;
+    private TenantBusinessSettingsDto? _settings;
+    private bool _loading = true;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        _loading = true;
+        try
+        {
+            var quoteTask = Quotes.GetByIdAsync(QuoteId);
+            var settingsTask = Settings.GetAsync();
+            await Task.WhenAll(quoteTask, settingsTask);
+            _quote = await quoteTask;
+            _settings = await settingsTask;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "No se pudo cargar la cotización imprimible {QuoteId}.", QuoteId);
+            _quote = null;
+            _settings = null;
+        }
+        finally { _loading = false; }
+    }
+
+    private Task PrintAsync() => JS.InvokeVoidAsync("window.print").AsTask();
+    private string Money(decimal amount) => DisplayFormat.Money(amount, showCents: true);
+    private static string StatusLabel(SalesQuoteStatus status) => status switch
+    {
+        SalesQuoteStatus.Draft => "Borrador",
+        SalesQuoteStatus.Sent => "Enviada",
+        SalesQuoteStatus.Accepted => "Aceptada",
+        SalesQuoteStatus.Rejected => "Rechazada",
+        SalesQuoteStatus.Converted => "Convertida en venta",
+        _ => "Cancelada"
+    };
+}

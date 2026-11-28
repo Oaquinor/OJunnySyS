@@ -6,6 +6,7 @@ namespace OJunnySyS.Application.Abstractions;
 public interface ISalesQuoteRepository
 {
     Task<IReadOnlyList<SalesQuote>> GetAsync(CancellationToken cancellationToken = default);
+    Task<SalesQuote?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default);
     Task<SalesQuote> CreateAsync(CreateSalesQuoteRequest request, DateOnly today, CancellationToken cancellationToken = default);
     Task<SalesQuote> UpdateAsync(Guid id, UpdateSalesQuoteRequest request, DateOnly today, CancellationToken cancellationToken = default);
     Task<SalesQuote> MarkSentAsync(Guid id, SalesQuoteStatusRequest request, DateOnly today, CancellationToken cancellationToken = default);

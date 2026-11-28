@@ -318,6 +318,8 @@ api.MapPost("/crm/activities/{id:guid}/complete", async (Guid id, CrmService crm
 }).RequireAuthorization("CrmWrite");
 var salesQuotes = api.MapGroup("/sales/quotes").RequireAuthorization("SalesQuoteManage");
 salesQuotes.MapGet("/", async (SalesQuoteService service, CancellationToken ct) => Results.Ok(await service.GetAsync(ct)));
+salesQuotes.MapGet("/{id:guid}", async (Guid id, SalesQuoteService service, CancellationToken ct) =>
+    await service.GetByIdAsync(id, ct) is { } quote ? Results.Ok(quote) : Results.NotFound());
 salesQuotes.MapPost("/", async (CreateSalesQuoteRequest request, SalesQuoteService service, CancellationToken ct) =>
 {
     try { var quote = await service.CreateAsync(request, ct); return Results.Created($"/api/v1/sales/quotes/{quote.Id}", quote); }

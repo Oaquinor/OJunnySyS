@@ -65,6 +65,8 @@ public sealed class PurchaseAccountingIntegrationTests
         var quotes = new EfSalesQuoteRepository(factory, context, access, store);
         var quote = await quotes.CreateAsync(new CreateSalesQuoteRequest(customer.Id, today.AddDays(15), "Precio válido por quince días",
             [new SalesQuoteLineRequest(product.Id, 2, 90m)]), today);
+        Assert.AreEqual(quote.Number, (await quotes.GetByIdAsync(quote.Id))?.Number);
+        Assert.IsNull(await quotes.GetByIdAsync(Guid.NewGuid()), "La consulta de impresión no debe filtrar documentos inexistentes de otro ámbito.");
         Assert.AreEqual(SalesQuoteStatus.Draft, quote.Status);
         Assert.AreEqual(212.40m, quote.Total);
         quote = await quotes.MarkSentAsync(quote.Id, new SalesQuoteStatusRequest(quote.Revision), today);

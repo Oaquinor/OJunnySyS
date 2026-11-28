@@ -20,6 +20,14 @@ public sealed class EfSalesQuoteRepository(
                 .OrderByDescending(x => x.CreatedAtUtc).Take(500).ToListAsync(cancellationToken);
     }
 
+    public async Task<SalesQuote?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default)
+    {
+        var db = await OpenTenantContextAsync(cancellationToken);
+        await using (db)
+            return await db.SalesQuotes.AsNoTracking().AsSplitQuery().Include(x => x.Lines)
+                .SingleOrDefaultAsync(x => x.Id == id, cancellationToken);
+    }
+
     public async Task<SalesQuote> CreateAsync(CreateSalesQuoteRequest request, DateOnly today, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(request);

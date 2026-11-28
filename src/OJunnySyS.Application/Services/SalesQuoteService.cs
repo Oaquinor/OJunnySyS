@@ -9,6 +9,12 @@ public sealed class SalesQuoteService(ISalesQuoteRepository repository, IBusines
     public async Task<IReadOnlyList<SalesQuoteDto>> GetAsync(CancellationToken ct = default) =>
         (await repository.GetAsync(ct)).Select(Map).ToArray();
 
+    public async Task<SalesQuoteDto?> GetByIdAsync(Guid id, CancellationToken ct = default)
+    {
+        var quote = await repository.GetByIdAsync(id, ct);
+        return quote is null ? null : Map(quote);
+    }
+
     public async Task<SalesQuoteDto> CreateAsync(CreateSalesQuoteRequest request, CancellationToken ct = default) =>
         Map(await repository.CreateAsync(request, Today(), ct));
 
