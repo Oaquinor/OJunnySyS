@@ -6,7 +6,7 @@ Base path: `/api/v1`. Todas las rutas requieren sesión autenticada. Las respues
 |---|---|---|---|
 | GET | `/products?search=&includeInactive=true` | Usuario autenticado | Buscar productos activos; solo Administrador/Gerente pueden incluir inactivos |
 | GET | `/users` | Administrador de la empresa | Listar únicamente usuarios del tenant activo |
-| POST | `/users` | Administrador de la empresa | Crear una cuenta y devolver su contraseña temporal una sola vez |
+| POST | `/users` | Administrador de la empresa | Invitar un miembro por correo; devuelve si se entregó el mensaje sin exponer tokens |
 | POST | `/users/{id}/activation` | Administrador de la empresa | Activar/desactivar usuario del tenant; impide auto-desactivación y conservar cero administradores |
 | POST | `/products` | Administrador, Gerente | Crear producto |
 | PUT | `/products/{id}` | Administrador, Gerente | Editar SKU, descripción, precio y código con `expectedRevision`; el stock se cambia exclusivamente mediante movimientos |

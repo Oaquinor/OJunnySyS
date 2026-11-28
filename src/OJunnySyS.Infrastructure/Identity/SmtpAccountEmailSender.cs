@@ -20,6 +20,10 @@ public sealed class SmtpAccountEmailSender(IConfiguration configuration, ILogger
         => await SendAsync(email, "Restablece tu contraseña de OJunnySyS",
             $"Recibimos una solicitud para cambiar la contraseña de tu cuenta: {resetUrl}\r\n\r\nSi no solicitaste este cambio, ignora este mensaje. La contraseña actual seguirá funcionando.", cancellationToken);
 
+    public async Task SendInvitationAsync(string email, string invitationUrl, CancellationToken cancellationToken = default)
+        => await SendAsync(email, "Invitación a un espacio de OJunnySyS",
+            $"Te invitaron a colaborar en una empresa que utiliza OJunnySyS. Abre este enlace para confirmar tu correo y crear tu contraseña: {invitationUrl}\r\n\r\nSi no esperabas esta invitación, ignora este mensaje.", cancellationToken);
+
     private async Task SendAsync(string email, string subject, string body, CancellationToken cancellationToken)
     {
         if (!IsConfigured) throw new InvalidOperationException("Configura el envío de correo SMTP antes de enviar mensajes de cuenta.");

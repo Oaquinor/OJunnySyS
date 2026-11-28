@@ -201,7 +201,7 @@ public sealed class AccountController(
     {
         if (userId == Guid.Empty || string.IsNullOrWhiteSpace(token))
             return PasswordResetInvalid();
-        return View(new ResetPasswordInput { UserId = userId, Token = token });
+        return View("ResetPassword", new ResetPasswordInput { UserId = userId, Token = token });
     }
 
     [AllowAnonymous]
@@ -210,7 +210,7 @@ public sealed class AccountController(
     [EnableRateLimiting("registration")]
     public async Task<IActionResult> ResetPassword(ResetPasswordInput input)
     {
-        if (!ModelState.IsValid) return View(input);
+        if (!ModelState.IsValid) return View("ResetPassword", input);
         try
         {
             var decodedToken = Encoding.UTF8.GetString(WebEncoders.Base64UrlDecode(input.Token));
@@ -221,7 +221,40 @@ public sealed class AccountController(
             if (!result.Succeeded)
             {
                 foreach (var error in result.Errors) ModelState.AddModelError(string.Empty, error.Description);
-                return View(input);
+                return View("ResetPassword", input);
+            }
+            return View("PasswordResetCompleted");
+        }
+        catch (FormatException) { return PasswordResetInvalid(); }
+    }
+
+    [AllowAnonymous]
+    [HttpGet("accept-invitation")]
+    public IActionResult AcceptInvitation(Guid userId, string? token)
+    {
+        if (userId == Guid.Empty || string.IsNullOrWhiteSpace(token)) return PasswordResetInvalid();
+        return View("ResetPassword", new ResetPasswordInput { UserId = userId, Token = token, IsInvitation = true });
+    }
+
+    [AllowAnonymous]
+    [HttpPost("accept-invitation")]
+    [ValidateAntiForgeryToken]
+    [EnableRateLimiting("registration")]
+    public async Task<IActionResult> AcceptInvitation(ResetPasswordInput input)
+    {
+        if (!ModelState.IsValid) return View("ResetPassword", input);
+        try
+        {
+            var decodedToken = Encoding.UTF8.GetString(WebEncoders.Base64UrlDecode(input.Token));
+            var user = await userManager.FindByIdAsync(input.UserId.ToString());
+            if (user is null || user.TenantId is null || user.EmailConfirmed) return PasswordResetInvalid();
+            user.EmailConfirmed = true;
+            user.MustChangePassword = false;
+            var result = await userManager.ResetPasswordAsync(user, decodedToken, input.Password);
+            if (!result.Succeeded)
+            {
+                foreach (var error in result.Errors) ModelState.AddModelError(string.Empty, error.Description);
+                return View("ResetPassword", input);
             }
             return View("PasswordResetCompleted");
         }
@@ -341,6 +374,7 @@ public sealed class ResetPasswordInput
     public Guid UserId { get; set; }
     [System.ComponentModel.DataAnnotations.Required]
     public string Token { get; set; } = string.Empty;
+    public bool IsInvitation { get; set; }
     [System.ComponentModel.DataAnnotations.Required, System.ComponentModel.DataAnnotations.StringLength(128, MinimumLength = 12), System.ComponentModel.DataAnnotations.DataType(System.ComponentModel.DataAnnotations.DataType.Password)]
     public string Password { get; set; } = string.Empty;
     [System.ComponentModel.DataAnnotations.Required, System.ComponentModel.DataAnnotations.Compare(nameof(Password)), System.ComponentModel.DataAnnotations.DataType(System.ComponentModel.DataAnnotations.DataType.Password)]

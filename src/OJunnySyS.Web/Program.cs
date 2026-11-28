@@ -190,9 +190,9 @@ taxProfiles.MapPatch("/{id:guid}/activation", async (Guid id, SetTaxProfileActiv
 var api = app.MapGroup("/api/v1").RequireAuthorization();
 var tenantUsers = api.MapGroup("/users").RequireAuthorization("TenantUserManagement");
 tenantUsers.MapGet("", async (TenantUserService service, CancellationToken ct) => Results.Ok(await service.GetUsersAsync(ct)));
-tenantUsers.MapPost("", async (CreateTenantUserRequest request, TenantUserService service, CancellationToken ct) =>
+tenantUsers.MapPost("", async (CreateTenantUserRequest request, HttpRequest httpRequest, TenantUserService service, CancellationToken ct) =>
 {
-    try { return Results.Created("/api/v1/users", await service.CreateAsync(request, ct)); }
+    try { return Results.Created("/api/v1/users", await service.InviteAsync(request, $"{httpRequest.Scheme}://{httpRequest.Host}", allowLocalLink: false, ct: ct)); }
     catch (ArgumentException ex) { return Results.BadRequest(new { error = ex.Message }); }
     catch (InvalidOperationException ex) { return Results.Conflict(new { error = ex.Message }); }
 });

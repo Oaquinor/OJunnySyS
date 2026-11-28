@@ -1,9 +1,10 @@
 namespace OJunnySyS.Application.Contracts;
 
-public sealed record TenantUserDto(Guid Id, string DisplayName, string Email, string Role, bool IsActive, bool MustChangePassword, DateTimeOffset? LockoutEnd);
+public sealed record TenantUserDto(Guid Id, string DisplayName, string Email, string Role, bool IsActive, bool MustChangePassword, bool EmailConfirmed, DateTimeOffset? LockoutEnd);
 public sealed record TenantMemberDto(Guid Id, string DisplayName);
 public sealed record CreateTenantUserRequest(string DisplayName, string Email, string Role);
-public sealed record ProvisionedTenantUserDto(TenantUserDto User, string TemporaryPassword);
+public sealed record TenantInvitationTokenDto(TenantUserDto User, string Token);
+public sealed record TenantInvitationResult(TenantUserDto User, bool EmailSent, string? LocalInvitationUrl);
 public sealed record SetTenantUserActiveRequest(bool IsActive);
 
 public static class TenantUserRoles

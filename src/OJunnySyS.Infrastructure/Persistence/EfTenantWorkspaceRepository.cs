@@ -20,7 +20,8 @@ public sealed class EfTenantWorkspaceRepository(
         var tenant = await db.Tenants.AsNoTracking().SingleOrDefaultAsync(x => x.Id == tenantId, cancellationToken)
             ?? throw new DomainException("No se encontró el espacio de empresa activo.");
         var now = DateTimeOffset.UtcNow;
-        var userCount = await db.Users.CountAsync(x => x.TenantId == tenantId && (x.LockoutEnd == null || x.LockoutEnd <= now), cancellationToken);
+        var userCount = await db.Users.CountAsync(x => x.TenantId == tenantId && x.EmailConfirmed &&
+            (x.LockoutEnd == null || x.LockoutEnd <= now), cancellationToken);
         var productCount = await db.Products.CountAsync(x => x.IsActive, cancellationToken);
         var customerCount = await db.Customers.CountAsync(x => x.IsActive, cancellationToken);
         var saleCount = await db.Sales.CountAsync(cancellationToken);

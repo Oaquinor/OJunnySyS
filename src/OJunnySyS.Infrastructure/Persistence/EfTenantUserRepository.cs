@@ -36,7 +36,7 @@ public sealed class EfTenantUserRepository(
         return await (from user in db.Users.AsNoTracking()
                       join userRole in db.UserRoles on user.Id equals userRole.UserId
                       join role in db.Roles on userRole.RoleId equals role.Id
-                      where user.TenantId == tenantId && (user.LockoutEnd == null || user.LockoutEnd <= now) &&
+                      where user.TenantId == tenantId && user.EmailConfirmed && (user.LockoutEnd == null || user.LockoutEnd <= now) &&
                             role.Name != null && businessRoles.Contains(role.Name)
                       orderby user.DisplayName
                       select new TenantMemberDto(user.Id, user.DisplayName)).Distinct().ToListAsync(cancellationToken);
@@ -51,13 +51,13 @@ public sealed class EfTenantUserRepository(
         return await (from user in db.Users.AsNoTracking()
                       join userRole in db.UserRoles on user.Id equals userRole.UserId
                       join role in db.Roles on userRole.RoleId equals role.Id
-                      where user.TenantId == tenantId && (user.LockoutEnd == null || user.LockoutEnd <= now) &&
+                      where user.TenantId == tenantId && user.EmailConfirmed && (user.LockoutEnd == null || user.LockoutEnd <= now) &&
                             role.Name != null && sellerRoles.Contains(role.Name)
                       orderby user.DisplayName
                       select new TenantMemberDto(user.Id, user.DisplayName)).Distinct().ToListAsync(cancellationToken);
     }
 
-    public async Task<ProvisionedTenantUserDto> CreateAsync(CreateTenantUserRequest request, CancellationToken cancellationToken = default)
+    public async Task<TenantInvitationTokenDto> CreateInvitationAsync(CreateTenantUserRequest request, CancellationToken cancellationToken = default)
     {
         var tenantId = tenantContext.GetRequiredTenantId();
         await tenantAccess.EnsureCanOperateAsync(tenantId, tenantContext.CurrentUserId, cancellationToken);
@@ -65,14 +65,13 @@ public sealed class EfTenantUserRepository(
             throw new InvalidOperationException("Ya existe una cuenta con ese correo electrónico.");
 
         var role = await roles.FindByNameAsync(request.Role) ?? throw new InvalidOperationException("El rol solicitado no está configurado.");
-        var temporaryPassword = TemporaryPasswordGenerator.Generate();
         var user = new ApplicationUser
         {
             Id = Guid.NewGuid(), UserName = request.Email, Email = request.Email,
             DisplayName = request.DisplayName, TenantId = tenantId,
             EmailConfirmed = false, MustChangePassword = true, LockoutEnabled = true
         };
-        var create = await users.CreateAsync(user, temporaryPassword);
+        var create = await users.CreateAsync(user);
         if (!create.Succeeded) throw new InvalidOperationException(string.Join(" ", create.Errors.Select(x => x.Description)));
         var assign = await users.AddToRoleAsync(user, role.Name!);
         if (!assign.Succeeded)
@@ -80,7 +79,21 @@ public sealed class EfTenantUserRepository(
             await users.DeleteAsync(user);
             throw new InvalidOperationException("No se pudo asignar el rol seleccionado.");
         }
-        return new ProvisionedTenantUserDto(ToDto(user, role.Name!), temporaryPassword);
+        var token = await users.GeneratePasswordResetTokenAsync(user);
+        return new TenantInvitationTokenDto(ToDto(user, role.Name!), token);
+    }
+
+    public async Task<TenantInvitationTokenDto> GetInvitationTokenAsync(Guid userId, CancellationToken cancellationToken = default)
+    {
+        var tenantId = tenantContext.GetRequiredTenantId();
+        await tenantAccess.EnsureCanOperateAsync(tenantId, tenantContext.CurrentUserId, cancellationToken);
+        var user = await db.Users.SingleOrDefaultAsync(x => x.Id == userId && x.TenantId == tenantId, cancellationToken)
+            ?? throw new KeyNotFoundException("La cuenta no existe en esta empresa.");
+        if (user.EmailConfirmed) throw new InvalidOperationException("Esta cuenta ya confirmó su correo.");
+        var assigned = await users.GetRolesAsync(user);
+        var role = assigned.FirstOrDefault(TenantUserRoles.Assignable.Contains) ?? "Sin rol";
+        var token = await users.GeneratePasswordResetTokenAsync(user);
+        return new TenantInvitationTokenDto(ToDto(user, role), token);
     }
 
     public async Task<TenantUserDto> SetActiveAsync(Guid userId, Guid actorId, bool isActive, CancellationToken cancellationToken = default)
@@ -110,5 +123,7 @@ public sealed class EfTenantUserRepository(
     }
 
     private static TenantUserDto ToDto(ApplicationUser user, string role) =>
-        new(user.Id, user.DisplayName, user.Email ?? string.Empty, role, user.LockoutEnd is null || user.LockoutEnd <= DateTimeOffset.UtcNow, user.MustChangePassword, user.LockoutEnd);
+        new(user.Id, user.DisplayName, user.Email ?? string.Empty, role,
+            user.EmailConfirmed && (user.LockoutEnd is null || user.LockoutEnd <= DateTimeOffset.UtcNow),
+            user.MustChangePassword, user.EmailConfirmed, user.LockoutEnd);
 }

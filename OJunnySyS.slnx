@@ -6,6 +6,7 @@
     <Project Path="src/OJunnySyS.Web/OJunnySyS.Web.csproj" />
   </Folder>
   <Folder Name="/tests/">
+    <Project Path="tests/OJunnySyS.Application.Tests/OJunnySyS.Application.Tests.csproj" />
     <Project Path="tests/OJunnySyS.Domain.Tests/OJunnySyS.Domain.Tests.csproj" />
     <Project Path="tests/OJunnySyS.Infrastructure.IntegrationTests/OJunnySyS.Infrastructure.IntegrationTests.csproj" />
   </Folder>

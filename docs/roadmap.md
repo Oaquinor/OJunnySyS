@@ -35,7 +35,8 @@ OJunnySyS se desarrolla en C#, ASP.NET Core .NET 10, Blazor Server interactivo, 
 - [x] Generador de clases C# desde el esquema MySQL con preview y salida por capas sin sobrescribir archivos.
 - [x] Recorrido inicial por empresa con checklist basada en datos y panel de estado, prueba, plan y acceso administrador.
 - [x] Solicitud y restablecimiento de contraseña mediante tokens de ASP.NET Identity, respuesta que no revela si el correo existe, límites por IP, confirmación previa del email y entrega SMTP reutilizable; enlace local solo en Development si SMTP no está configurado.
-- [ ] Invitaciones de usuarios y verificación extremo a extremo del correo transaccional en el entorno local/producción.
+- [x] Invitaciones por empresa con enlace de aceptación, creación de contraseña personal, confirmación de correo, control por tenant, reenvío de invitación y enlace local Development; los miembros no confirmados no se ofrecen como responsables en CRM.
+- [ ] Verificación extremo a extremo del correo transaccional con SMTP real en el entorno local/producción.
 - [ ] Pasarela de suscripciones con checkout y webhooks firmados e idempotentes.
 - [ ] Integración y autorización de comprobantes electrónicos DGII/e-CF.
 - [x] Configuración de cuentas bancarias y conciliación de estados por CSV contra asientos publicados; control de diferencias, partidas pendientes, aislamiento por empresa e historial cerrado. Falta automatizar conciliación de pagos de tarjetas/transferencias y validar formatos de extracto de bancos locales.

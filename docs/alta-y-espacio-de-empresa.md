@@ -17,6 +17,6 @@ La administración central de tenants y suspensión/activación se mantiene en `
 
 - El plan y el período de prueba se controlan en el servidor; al vencer la prueba, el guard de tenant bloquea operaciones.
 - El cliente puede consultar su plan y vencimiento, pero aún no puede elegir ni pagar una suscripción online.
-- El conteo de usuarios considera cuentas no bloqueadas y se filtra por el `TenantId` del usuario actual.
+- El conteo de usuarios considera cuentas con correo confirmado, no bloqueadas y filtradas por el `TenantId` del usuario actual; invitaciones pendientes no cuentan como accesos habilitados.
 - El progreso comprueba datos existentes; abrir un enlace no marca el paso como completado.
 - La prueba local debe configurarse y renovarse desde la administración de plataforma; SMTP sigue siendo requisito operativo para confirmar correo fuera de Development.

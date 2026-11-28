@@ -21,4 +21,4 @@ La arquitectura de esta aplicación toma como referencia los retos observados al
 7. Versionar cambios de datos con migraciones y guardar operaciones POS en transacciones consistentes.
 8. Mantener SDK, dependencias y estilo de código definidos para permitir compilación repetible.
 
-La autenticación de usuarios, los permisos por rol y la configuración por empresa continúan pendientes; consulta la hoja de ruta.
+La autenticación, la confirmación de correo, la recuperación de contraseña y los permisos por rol están implementados con ASP.NET Identity y alcance por tenant. Las invitaciones crean cuentas pendientes sin compartir contraseñas temporales; la persona invitada confirma su correo y crea su propia contraseña mediante un token de un solo uso. La entrega SMTP real aún requiere validación en el entorno de despliegue; consulta la hoja de ruta.
