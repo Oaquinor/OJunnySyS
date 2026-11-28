@@ -149,6 +149,28 @@
     @apply grid min-w-0 gap-4 xl:grid-cols-[17rem_minmax(0,1fr)_17rem];
   }
 
+  .report-center { @apply grid min-w-0 gap-6; }
+  .report-center-heading { @apply flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-slate-200 bg-white p-6; }
+  .report-center-heading h2 { @apply mt-2 font-display text-2xl font-bold text-ink; }
+  .report-center-heading p { @apply mt-1 text-sm text-muted; }
+  .report-center-filters { @apply grid gap-3 sm:grid-cols-[minmax(0,1fr)_14rem]; }
+  .report-center-filters input,.report-center-filters select { @apply min-h-11 min-w-0 rounded-xl border border-slate-200 bg-white px-4 text-sm text-ink outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-100; }
+  .report-center-grid { @apply grid min-w-0 gap-4 md:grid-cols-2 2xl:grid-cols-3; }
+  .report-center-card { @apply grid min-w-0 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm; }
+  .report-center-preview { @apply grid min-h-48 content-start gap-2 border-b border-slate-200 bg-slate-50 p-6; }
+  .report-center-mark { @apply grid h-9 w-9 place-items-center rounded-xl bg-brand-600 font-display font-bold text-white; background: var(--report-accent); }
+  .report-center-preview strong { @apply mt-3 text-sm font-bold text-ink; }
+  .report-center-preview > span:not(.report-center-mark) { @apply text-sm text-slate-600; }
+  .report-center-preview small { @apply text-xs text-muted; }
+  .report-center-card-body { @apply grid gap-3 p-5; }
+  .report-center-card-body h3 { @apply mt-1 text-base font-bold text-ink; }
+  .report-center-card-body p { @apply mt-1 text-xs text-muted; }
+  .report-center-empty { @apply grid justify-items-center gap-3 rounded-2xl border border-dashed border-slate-300 bg-white p-10 text-center; }
+  .report-center-empty strong { @apply text-lg font-bold text-ink; }
+  .report-center-empty span { @apply max-w-xl text-sm text-muted; }
+  .report-designer-shape { @apply grid min-h-12 place-items-center rounded-xl border-2 border-dashed border-slate-300 bg-slate-50 p-3 text-center; }
+  .report-designer-watermark { @apply rounded-lg border border-dashed border-slate-200 p-3 text-center font-bold tracking-[0.2em] text-slate-300; }
+
   .report-designer-palette,
   .report-designer-inspector,
   .report-designer-workspace,
@@ -180,7 +202,7 @@
   .report-designer-field { @apply flex items-center justify-between gap-2 rounded-lg px-2 py-2 text-left text-xs hover:bg-slate-50; }
   .report-designer-toolbar { @apply flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white p-4; }
   .report-designer-canvas-area { @apply grid min-w-0 justify-items-center overflow-auto rounded-2xl border border-slate-200 bg-slate-100 p-5; }
-  .report-designer-page { @apply grid min-h-[70rem] w-full max-w-[50rem] content-start gap-7 rounded-lg bg-white p-10 text-slate-700 shadow-lg; color: #334155; }
+  .report-designer-page { @apply grid w-full content-start gap-7 rounded-lg bg-white text-slate-700 shadow-lg; width: min(100%, var(--paper-width)); min-height: var(--paper-min-height); padding: var(--page-padding); color: #334155; }
   .report-designer-page-heading { @apply flex items-start justify-between gap-5 border-b border-slate-200 pb-6; }
   .report-designer-brand { @apply flex items-center gap-3; }
   .report-designer-mark { @apply grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-brand-600 font-display text-lg font-bold text-white; background: var(--report-accent); }
@@ -347,4 +369,13 @@
       font-weight: 700;
     }
   }
+}
+
+@media print {
+  body:has(.report-designer-page) * { visibility: hidden; }
+  body:has(.report-designer-page) .report-designer-page,
+  body:has(.report-designer-page) .report-designer-page * { visibility: visible; }
+  body:has(.report-designer-page) .report-designer-page { width: 100%; max-width: none; min-height: 0; margin: 0 auto; padding: 0; border-radius: 0; box-shadow: none; }
+  body:has(.report-designer-page) .report-designer-element.selected { border-color: transparent; background: transparent; outline: none; }
+  @page { margin: 12mm; }
 }

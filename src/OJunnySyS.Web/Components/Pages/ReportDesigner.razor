@@ -10,7 +10,7 @@
 
 <PageTitle>Diseñador de reportes · OJunnySyS</PageTitle>
 <PageHeader Eyebrow="REPORTES / DISEÑADOR" Title="Diseñador de documentos" Description="Crea formatos reutilizables con los datos de tu empresa y tu catálogo.">
-    <Actions><a class="button button-secondary" href="/app/reports">Ver reportes</a><button class="button button-primary" @onclick="SaveAsync" disabled="@_saving">@(_saving ? "Guardando…" : "Guardar diseño")</button></Actions>
+    <Actions><a class="button button-secondary" href="/app/reports">Reportes operativos</a><button class="button button-secondary" @onclick="ToggleCenter">@(_showCenter ? "Volver al editor" : "Centro de reportes")</button>@if (!_showCenter) { <button class="button button-primary" @onclick="SaveAsync" disabled="@_saving">@(_saving ? "Guardando…" : "Guardar diseño")</button> }</Actions>
 </PageHeader>
 
 @if (_loading)
@@ -21,16 +21,40 @@ else
 {
     @if (_error is not null) { <div class="inline-error">@_error</div> }
     @if (_notice is not null) { <div class="success-banner">✓ @_notice</div> }
+    @if (_showCenter)
+    {
+        <section class="report-center">
+            <div class="report-center-heading"><div><span class="eyebrow">TU ESPACIO DE TRABAJO</span><h2>Centro de reportes</h2><p>Formatos y documentos de esta empresa, guardados con control de versiones.</p></div><button class="button button-primary" @onclick="NewDesign">＋ Crear reporte</button></div>
+            <div class="report-center-filters"><input aria-label="Buscar plantillas" placeholder="Buscar por nombre o tipo…" @bind="_search" @bind:event="oninput" /><select @bind="_centerFilter"><option>Todos los reportes</option><option>Favoritos</option></select></div>
+            @if (_templates.Count == 0)
+            {
+                <div class="report-center-empty"><strong>Aún no hay diseños guardados</strong><span>Crea una plantilla para facturas, cotizaciones, recibos o reportes de tu empresa.</span><button class="button button-primary" @onclick="NewDesign">Crear primer diseño</button></div>
+            }
+            else
+            {
+                <div class="report-center-grid">
+                    @foreach (var template in FilteredTemplates)
+                    {
+                        var metadata = ReadMetadata(template.DefinitionJson);
+                        <article class="report-center-card"><div class="report-center-preview" style="--report-accent:@SafeColor(metadata.Accent)"><span class="report-center-mark">O.</span><strong>@template.ReportType</strong><span>@template.Name</span><small>Plantilla activa · v@template.Revision</small></div><div class="report-center-card-body"><div><span class="eyebrow">@template.ReportType.ToUpperInvariant()</span><h3>@template.Name</h3><p>Actualizado @template.UpdatedAtUtc.ToLocalTime().ToString("dd MMM yyyy · HH:mm")</p></div><button type="button" class="button button-secondary" title="@(metadata.IsFavorite ? "Quitar de favoritos" : "Marcar favorito")" @onclick="() => ToggleFavoriteAsync(template.Id)">@(metadata.IsFavorite ? "★ Favorito" : "☆ Favorito")</button><button type="button" class="button button-secondary" @onclick="() => OpenTemplate(template.Id)">Editar diseño</button></div></article>
+                    }
+                </div>
+                @if (!FilteredTemplates.Any()) { <div class="report-center-empty"><strong>No hay resultados</strong><span>Ajusta la búsqueda o el filtro seleccionado.</span></div> }
+            }
+        </section>
+    }
+    else
+    {
     <div class="report-designer-shell">
         <aside class="panel report-designer-palette">
             <div class="panel-heading"><div><span class="eyebrow">DISEÑO</span><h2>Plantillas</h2><p>@_templates.Count guardadas en esta empresa</p></div></div>
             <div class="report-designer-palette-body">
-                <label>Documento<select value="@_reportType" @onchange="ChangeType"><option value="Factura de venta">Factura de venta</option><option value="Cotización">Cotización</option><option value="Reporte de ventas">Reporte de ventas</option><option value="Inventario">Inventario</option><option value="Recibo de pago">Recibo de pago</option></select></label>
+                <label>Documento<select value="@_reportType" @onchange="ChangeType"><option value="Factura de venta">Factura de venta</option><option value="Factura de servicios">Factura de servicios</option><option value="Cotización comercial">Cotización comercial</option><option value="Reporte de ventas">Reporte de ventas</option><option value="Estado de resultados">Estado de resultados</option><option value="Inventario general">Inventario general</option><option value="Recibo de pago">Recibo de pago</option></select></label>
                 <label>Nombre del diseño<input @bind="_name" @bind:after="MarkChanged" maxlength="120" /></label>
                 <label>Plantilla guardada<select value="@(_selectedTemplateId?.ToString() ?? "")" @onchange="SelectTemplate"><option value="">Diseño nuevo</option>@foreach (var item in _templates) { <option value="@item.Id">@item.Name · @item.ReportType</option> }</select></label>
                 <div class="report-designer-template-actions"><button type="button" class="button button-secondary" @onclick="NewDesign">＋ Nuevo diseño</button><a class="button button-secondary" href="/app/receivables">Cuentas por cobrar</a></div>
                 <div class="report-designer-divider"></div>
-                <div><span class="eyebrow">ELEMENTOS</span><div class="report-designer-component-grid">
+                <div><span class="eyebrow">COMPONENTES</span><div class="report-designer-component-grid">
                     @foreach (var item in Palette)
                     {
                         <button type="button" class="report-designer-component" @onclick="() => AddElement(item.Type, item.Label)"><span>@item.Icon</span><strong>@item.Label</strong></button>
@@ -47,15 +71,16 @@ else
         </aside>
 
         <main class="report-designer-workspace">
-            <div class="report-designer-toolbar"><div><strong>@_name</strong><span>@(_saved ? "Guardado" : "Cambios sin guardar") · @_document.Elements.Count elementos</span></div><div class="report-designer-toolbar-actions"><label>Tamaño<select @bind="_document.Paper" @bind:after="MarkChanged"><option>A4</option><option>Carta</option><option>Legal</option><option>Térmico 80 mm</option></select></label><label>Orientación<select @bind="_document.Orientation" @bind:after="MarkChanged"><option>Vertical</option><option>Horizontal</option></select></label><button type="button" class="button button-secondary" @onclick="PrintAsync">Vista de impresión</button></div></div>
+            <div class="report-designer-toolbar"><div><strong>@_name</strong><span>@(_saved ? "Guardado" : "Cambios sin guardar") · @_document.Elements.Count elementos</span></div><div class="report-designer-toolbar-actions"><label>Tamaño<select @bind="_document.Paper" @bind:after="MarkChanged"><option>A4</option><option>Carta</option><option>Legal</option><option>Térmico 80 mm</option></select></label><label>Orientación<select @bind="_document.Orientation" @bind:after="MarkChanged"><option>Vertical</option><option>Horizontal</option></select></label><label>Márgenes<select @bind="_document.Margin" @bind:after="MarkChanged"><option value="Compacto">Compactos</option><option value="Normal">Normales</option><option value="Amplio">Amplios</option></select></label><button type="button" class="button button-secondary" @onclick="TogglePreview">@(_previewMode ? "Volver al editor" : "Vista previa")</button><button type="button" class="button button-secondary" @onclick="PrintAsync">Imprimir</button></div></div>
+            @if (!_previewMode) { <div class="report-designer-toolbar"><div class="report-designer-toolbar-actions"><button type="button" class="button button-secondary" @onclick="Undo" disabled="@(_history.Count == 0)">↶ Deshacer</button><button type="button" class="button button-secondary" @onclick="Redo" disabled="@(_future.Count == 0)">↷ Rehacer</button><button type="button" class="button button-secondary" @onclick="DuplicateSelected" disabled="@(_selectedElement is null)">Duplicar</button><button type="button" class="button button-secondary" @onclick="ToggleLock" disabled="@(_selectedElement is null)">@(_selectedElement?.Locked == true ? "Desbloquear" : "Bloquear")</button><button type="button" class="button button-secondary" @onclick="ExportCsvAsync">Exportar CSV</button></div><span>Edición segura por empresa · guardado versionado</span></div> }
             <div class="report-designer-canvas-area">
-                <article class="report-designer-page" style="--report-accent:@SafeColor(_document.Accent);">
+                <article class="report-designer-page" style="--report-accent:@SafeColor(_document.Accent);--paper-width:@PaperWidth;--paper-min-height:@PaperMinHeight;--page-padding:@PagePadding;">
                     <header class="report-designer-page-heading"><div class="report-designer-brand"><span class="report-designer-mark">O.</span><div><strong>@BusinessName</strong><small>@(_settings?.TaxIdentifier is { Length: > 0 } ? "RNC " + _settings.TaxIdentifier : "GESTIÓN COMERCIAL")</small></div></div><div class="report-designer-document-title"><span>@_reportType.ToUpperInvariant()</span><strong>@(PreviewNumber)</strong><small>@DateTime.Today.ToString("dd MMM yyyy")</small></div></header>
                     <section class="report-designer-client"><div><small>EMPRESA</small><strong>@BusinessName</strong><span>@(_settings?.BusinessAddress ?? "Dirección comercial")</span></div><div><small>PERÍODO DE DATOS</small><strong>Información actual del sistema</strong><span>@_products.Count productos · @_salesCount ventas en 30 días</span></div></section>
                     <div class="report-designer-elements" aria-label="Elementos del diseño">
                         @foreach (var element in _document.Elements)
                         {
-                            <div @key="element.Id" class="report-designer-element @(element.Id == _selectedElementId ? "selected" : "")" draggable="true" @ondragstart="() => _dragId = element.Id" @ondragover:preventDefault="true" @ondrop="() => DropBefore(element.Id)" @onclick="() => _selectedElementId = element.Id" style="--element-width:@Math.Clamp(element.WidthPercent, 10, 100)%;--element-size:@Math.Clamp(element.FontSize, 8, 40)px;--element-color:@SafeColor(element.Color);">
+                            <div @key="element.Id" class="report-designer-element @(element.Id == _selectedElementId && !_previewMode ? "selected" : "")" draggable="@(!_previewMode && !element.Locked)" @ondragstart="() => _dragId = element.Id" @ondragover:preventDefault="true" @ondrop="() => DropBefore(element.Id)" @onclick="() => _selectedElementId = element.Id" style="--element-width:@Math.Clamp(element.WidthPercent, 10, 100)%;--element-size:@Math.Clamp(element.FontSize, 8, 40)px;--element-color:@SafeColor(element.Color);">
                                 @if (element.Type == "table")
                                 {
                                     <div class="report-designer-live-table"><div class="report-designer-live-table-heading"><strong>PRODUCTO / CONCEPTO</strong><strong class="text-right">PRECIO</strong><strong class="text-right">UNIDADES</strong></div>@foreach (var product in _products.Take(5)) { <div class="report-designer-live-table-row"><span>@product.Sku · @product.Name</span><span class="text-right">@Money(product.UnitPrice)</span><span class="text-right">@product.StockOnHand</span></div> }</div>
@@ -69,6 +94,9 @@ else
                                     <div class="report-designer-chart"><span class="eyebrow">VENTAS · ÚLTIMOS 30 DÍAS</span><div>@foreach (var day in _dailySales.TakeLast(10)) { <i title="@day.Date: @Money(day.Total)" style="--bar-height:@ChartHeight(day.Total)%"></i> }</div></div>
                                 }
                                 else if (element.Type == "line") { <hr /> }
+                                else if (element.Type == "shape") { <div class="report-designer-shape">@Resolve(element.Text)</div> }
+                                else if (element.Type == "watermark") { <div class="report-designer-watermark">@Resolve(element.Text)</div> }
+                                else if (element.Type == "number") { <span>@(element.Text.Length > 0 ? Resolve(element.Text) : PreviewNumber)</span> }
                                 else if (element.Type == "qr" || element.Type == "barcode") { <div class="report-designer-code">@(element.Type == "qr" ? "▦ ▦ ▦" : "┃┃│┃│┃┃│")<small>@Resolve(element.Text)</small></div> }
                                 else if (element.Type == "signature") { <div class="report-designer-signature"><span></span><small>@Resolve(element.Text)</small></div> }
                                 else { <span>@Resolve(element.Text)</span> }
@@ -84,29 +112,30 @@ else
         <aside class="panel report-designer-inspector">
             <div class="panel-heading"><div><span class="eyebrow">PROPIEDADES</span><h2>@(_selectedElement is null ? "Página" : "Elemento seleccionado")</h2><p>Los cambios se guardan en la plantilla de esta empresa.</p></div></div>
             <div class="report-designer-inspector-body">
-                <label>Color de marca<input type="color" @bind="_document.Accent" /></label>
+                <label>Color de marca<input type="color" @onfocus="RecordHistory" @bind="_document.Accent" @bind:after="MarkChanged" /></label>
                 @if (_selectedElement is { } selected)
                 {
-                    <label>Contenido<textarea rows="4" @bind="selected.Text" @bind:after="MarkChanged"></textarea></label>
-                    @if (selected.Type == "image") { <label>URL de imagen<input type="url" @bind="selected.Text" @bind:after="MarkChanged" placeholder="https://..." /></label> }
-                    <label>Ancho del elemento (%)<input type="range" min="10" max="100" @bind="selected.WidthPercent" @bind:after="MarkChanged" /><span>@selected.WidthPercent%</span></label>
-                    <label>Tamaño de letra<input type="range" min="8" max="40" @bind="selected.FontSize" @bind:after="MarkChanged" /><span>@selected.FontSize px</span></label>
-                    <label>Color del texto<input type="color" @bind="selected.Color" @bind:after="MarkChanged" /></label>
+                    <label>Contenido<textarea rows="4" @onfocus="RecordHistory" @bind="selected.Text" @bind:after="MarkChanged"></textarea></label>
+                    @if (selected.Type == "image") { <label>URL de imagen<input type="url" @onfocus="RecordHistory" @bind="selected.Text" @bind:after="MarkChanged" placeholder="https://..." /></label> }
+                    <label>Ancho del elemento (%)<input type="range" min="10" max="100" @onfocus="RecordHistory" @bind="selected.WidthPercent" @bind:after="MarkChanged" /><span>@selected.WidthPercent%</span></label>
+                    <label>Tamaño de letra<input type="range" min="8" max="40" @onfocus="RecordHistory" @bind="selected.FontSize" @bind:after="MarkChanged" /><span>@selected.FontSize px</span></label>
+                    <label>Color del texto<input type="color" @onfocus="RecordHistory" @bind="selected.Color" @bind:after="MarkChanged" /></label>
                     <div class="report-designer-reorder"><button type="button" class="button button-secondary" @onclick="() => Move(-1)" disabled="@(_document.Elements.IndexOf(selected) == 0)">↑ Subir</button><button type="button" class="button button-secondary" @onclick="() => Move(1)" disabled="@(_document.Elements.IndexOf(selected) == _document.Elements.Count - 1)">↓ Bajar</button><button type="button" class="button button-quiet-danger" @onclick="RemoveSelected">Eliminar</button></div>
                 }
                 else
                 {
-                    <div class="report-designer-hint"><strong>Diseño por empresa</strong><p>Arrastra para cambiar el orden. El catálogo y los indicadores del lienzo se alimentan de los datos reales de OJunnySyS.</p></div>
+                    <div class="report-designer-hint"><strong>Diseño por empresa</strong><p>Arrastra para cambiar el orden. Deshaz o rehace cambios, duplica elementos y bloquea los componentes que no quieras mover.</p></div>
                 }
                 <div class="report-designer-data-source"><strong>Fuentes conectadas</strong><span>Catálogo · @_products.Count productos</span><span>Ventas · @_salesCount en 30 días</span><a href="/app/settings">Empresa e impuestos</a></div>
             </div>
         </aside>
     </div>
+    }
 }
 
 @code {
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
-    private static readonly (string Type, string Label, string Icon)[] Palette = [("text", "Texto", "T"), ("image", "Imagen", "▧"), ("table", "Tabla", "▦"), ("line", "Línea", "—"), ("chart", "Gráfico", "▥"), ("signature", "Firma", "✍"), ("qr", "Código QR", "▦"), ("barcode", "Código de barras", "▥")];
+    private static readonly (string Type, string Label, string Icon)[] Palette = [("text", "Texto", "T"), ("image", "Imagen", "▧"), ("shape", "Logotipo / figura", "◈"), ("table", "Tabla", "▦"), ("line", "Línea", "—"), ("chart", "Gráfico", "▥"), ("signature", "Firma", "✍"), ("qr", "Código QR", "▦"), ("barcode", "Código de barras", "▥"), ("number", "Numeración", "№"), ("watermark", "Marca de agua", "◇")];
     private static readonly (string Key, string Label)[] Fields = [("empresa.nombre", "Empresa"), ("empresa.rnc", "RNC"), ("reporte.titulo", "Título"), ("reporte.fecha", "Fecha"), ("reporte.total", "Total del reporte")];
     private List<ReportTemplateDto> _templates = [];
     private List<ProductDto> _products = [];
@@ -115,14 +144,21 @@ else
     private DesignDocument _document = DesignDocument.CreateDefault();
     private string _name = "Factura de venta", _reportType = "Factura de venta";
     private Guid? _selectedTemplateId;
+    private readonly List<string> _history = [];
+    private readonly List<string> _future = [];
     private int? _selectedElementId, _dragId;
     private decimal _salesSubtotal, _salesTax, _salesTotal;
     private int _salesCount;
-    private bool _loading = true, _saving, _saved;
+    private bool _loading = true, _saving, _saved, _showCenter, _previewMode;
+    private string _search = "", _centerFilter = "Todos los reportes";
     private string? _error, _notice;
     private DesignElement? _selectedElement => _document.Elements.FirstOrDefault(x => x.Id == _selectedElementId);
     private string BusinessName => _settings?.LegalName is { Length: > 0 } ? _settings.LegalName : _settings?.Name ?? "Mi empresa";
     private string PreviewNumber => _reportType == "Inventario" ? "INVENTARIO" : _reportType == "Reporte de ventas" ? "RESUMEN" : "PREVISUALIZACIÓN";
+    private string PaperWidth => _document.Paper == "Térmico 80 mm" ? "20rem" : _document.Orientation == "Horizontal" ? "70rem" : _document.Paper == "Legal" ? "56rem" : _document.Paper == "Carta" ? "54rem" : "50rem";
+    private string PaperMinHeight => _document.Paper == "Térmico 80 mm" ? "40rem" : _document.Paper == "Legal" ? "90rem" : "70rem";
+    private string PagePadding => _document.Margin switch { "Compacto" => "1.5rem", "Amplio" => "3.5rem", _ => "2.5rem" };
+    private IEnumerable<ReportTemplateDto> FilteredTemplates => _templates.Where(x => x.Name.Contains(_search, StringComparison.OrdinalIgnoreCase) || x.ReportType.Contains(_search, StringComparison.OrdinalIgnoreCase)).Where(x => _centerFilter != "Favoritos" || ReadMetadata(x.DefinitionJson).IsFavorite);
 
     protected override async Task OnInitializedAsync()
     {
@@ -140,6 +176,8 @@ else
 
     private void AddElement(string type, string text)
     {
+        if (_previewMode) return;
+        RecordHistory();
         var element = new DesignElement { Id = _document.NextId++, Type = type, Text = text, WidthPercent = type == "table" || type == "chart" ? 100 : 70, FontSize = type == "text" ? 14 : 12, Color = _document.Accent };
         _document.Elements.Add(element); _selectedElementId = element.Id; MarkChanged();
     }
@@ -186,25 +224,91 @@ else
         finally { _saving = false; }
     }
 
-    private void NewDesign() { _document = DesignDocument.CreateDefault(); _name = "Nuevo diseño"; _reportType = "Factura de venta"; _selectedTemplateId = null; _selectedElementId = null; _error = _notice = null; _saved = false; }
+    private void NewDesign() { _document = DesignDocument.CreateDefault(); _name = "Nuevo diseño"; _reportType = "Factura de venta"; _selectedTemplateId = null; _selectedElementId = null; _error = _notice = null; _saved = false; _showCenter = false; _previewMode = false; _history.Clear(); _future.Clear(); }
     private void ChangeType(ChangeEventArgs args) { _reportType = args.Value?.ToString() ?? "Factura de venta"; MarkChanged(); }
     private void MarkChanged() { _saved = false; _notice = null; }
+    private void ToggleCenter() => _showCenter = !_showCenter;
+    private void TogglePreview() => _previewMode = !_previewMode;
+    private void OpenTemplate(Guid id)
+    {
+        var template = _templates.FirstOrDefault(x => x.Id == id);
+        if (template is null) return;
+        _showCenter = false;
+        _ = SelectTemplate(new ChangeEventArgs { Value = id.ToString() });
+    }
+    private async Task ToggleFavoriteAsync(Guid id)
+    {
+        var item = _templates.FirstOrDefault(x => x.Id == id);
+        if (item is null) return;
+        try
+        {
+            var document = JsonSerializer.Deserialize<DesignDocument>(item.DefinitionJson, JsonOptions) ?? DesignDocument.CreateDefault();
+            document.IsFavorite = !document.IsFavorite;
+            var updated = await Templates.UpdateAsync(id, new(item.Name, item.ReportType, JsonSerializer.Serialize(document, JsonOptions), item.Revision));
+            _templates[_templates.FindIndex(x => x.Id == id)] = updated;
+        }
+        catch (Exception ex) { Logger.LogError(ex, "No se pudo actualizar el favorito de la plantilla {TemplateId}.", id); _error = "No se pudo actualizar el favorito."; }
+    }
+    private void RecordHistory()
+    {
+        _history.Add(JsonSerializer.Serialize(_document, JsonOptions));
+        if (_history.Count > 50) _history.RemoveAt(0);
+        _future.Clear();
+    }
+    private void Undo()
+    {
+        if (_history.Count == 0) return;
+        _future.Add(JsonSerializer.Serialize(_document, JsonOptions));
+        _document = JsonSerializer.Deserialize<DesignDocument>(_history[^1], JsonOptions) ?? DesignDocument.CreateDefault();
+        _history.RemoveAt(_history.Count - 1); MarkChanged();
+    }
+    private void Redo()
+    {
+        if (_future.Count == 0) return;
+        _history.Add(JsonSerializer.Serialize(_document, JsonOptions));
+        _document = JsonSerializer.Deserialize<DesignDocument>(_future[^1], JsonOptions) ?? DesignDocument.CreateDefault();
+        _future.RemoveAt(_future.Count - 1); MarkChanged();
+    }
+    private void DuplicateSelected()
+    {
+        if (_selectedElement is not { } selected) return;
+        RecordHistory();
+        var copy = JsonSerializer.Deserialize<DesignElement>(JsonSerializer.Serialize(selected, JsonOptions), JsonOptions)!;
+        copy.Id = _document.NextId++; copy.Text += " (copia)"; _document.Elements.Add(copy); _selectedElementId = copy.Id; MarkChanged();
+    }
+    private void ToggleLock()
+    {
+        if (_selectedElement is not { } selected) return;
+        RecordHistory(); selected.Locked = !selected.Locked; MarkChanged();
+    }
+    private async Task ExportCsvAsync()
+    {
+        var rows = new List<string> { "Fecha,Total" };
+        rows.AddRange(_dailySales.Select(x => $"{x.Date:yyyy-MM-dd},{x.Total.ToString(System.Globalization.CultureInfo.InvariantCulture)}"));
+        var csv = "\uFEFF" + string.Join("\r\n", rows);
+        await JS.InvokeVoidAsync("ojunny.downloadText", $"{MakeCode(_name)}.csv", csv, "text/csv;charset=utf-8");
+    }
+    private static (string Accent, bool IsFavorite) ReadMetadata(string json)
+    {
+        try { var doc = JsonSerializer.Deserialize<DesignDocument>(json, JsonOptions) ?? new(); return (doc.Accent, doc.IsFavorite); }
+        catch (JsonException) { return ("#176c4a", false); }
+    }
     private Task PrintAsync() => JS.InvokeVoidAsync("window.print").AsTask();
     private void Move(int direction)
     {
         if (_selectedElementId is not { } id) return;
         var index = _document.Elements.FindIndex(x => x.Id == id); var target = index + direction;
         if (index < 0 || target < 0 || target >= _document.Elements.Count) return;
-        (_document.Elements[index], _document.Elements[target]) = (_document.Elements[target], _document.Elements[index]); MarkChanged();
+        RecordHistory(); (_document.Elements[index], _document.Elements[target]) = (_document.Elements[target], _document.Elements[index]); MarkChanged();
     }
     private void DropBefore(int targetId)
     {
         if (_dragId is not { } moving || moving == targetId) return;
         var from = _document.Elements.FindIndex(x => x.Id == moving); var to = _document.Elements.FindIndex(x => x.Id == targetId);
         if (from < 0 || to < 0) return;
-        var item = _document.Elements[from]; _document.Elements.RemoveAt(from); _document.Elements.Insert(Math.Min(to, _document.Elements.Count), item); _dragId = null; MarkChanged();
+        RecordHistory(); var item = _document.Elements[from]; _document.Elements.RemoveAt(from); _document.Elements.Insert(Math.Min(to, _document.Elements.Count), item); _dragId = null; MarkChanged();
     }
-    private void RemoveSelected() { if (_selectedElementId is { } id) _document.Elements.RemoveAll(x => x.Id == id); _selectedElementId = null; MarkChanged(); }
+    private void RemoveSelected() { if (_selectedElementId is { } id) { RecordHistory(); _document.Elements.RemoveAll(x => x.Id == id); } _selectedElementId = null; MarkChanged(); }
     private string Resolve(string value) => value.Replace("{{empresa.nombre}}", BusinessName, StringComparison.OrdinalIgnoreCase).Replace("{{empresa.rnc}}", _settings?.TaxIdentifier ?? "", StringComparison.OrdinalIgnoreCase).Replace("{{reporte.titulo}}", _reportType, StringComparison.OrdinalIgnoreCase).Replace("{{reporte.fecha}}", DateTime.Today.ToString("dd/MM/yyyy"), StringComparison.OrdinalIgnoreCase).Replace("{{reporte.total}}", Money(_salesTotal), StringComparison.OrdinalIgnoreCase);
     private decimal ChartHeight(decimal total) => _dailySales.Count == 0 || _dailySales.Max(x => x.Total) == 0 ? 6 : Math.Clamp(decimal.Round(total / _dailySales.Max(x => x.Total) * 100), 6, 100);
     private static string SafeColor(string? value) => System.Text.RegularExpressions.Regex.IsMatch(value ?? "", "^#[0-9a-fA-F]{6}$") ? value! : "#176c4a";
@@ -216,6 +320,8 @@ else
         public string Paper { get; set; } = "A4";
         public string Orientation { get; set; } = "Vertical";
         public string Accent { get; set; } = "#176c4a";
+        public string Margin { get; set; } = "Normal";
+        public bool IsFavorite { get; set; }
         public int NextId { get; set; } = 2;
         public List<DesignElement> Elements { get; set; } = [];
         public static DesignDocument CreateDefault() => new() { Elements = [new DesignElement { Id = 1, Type = "text", Text = "Gracias por su compra.", WidthPercent = 100, FontSize = 12, Color = "#64748b" }] };
@@ -229,5 +335,6 @@ else
         public int WidthPercent { get; set; } = 100;
         public int FontSize { get; set; } = 14;
         public string Color { get; set; } = "#334155";
+        public bool Locked { get; set; }
     }
 }

@@ -124,6 +124,7 @@ builder.Services.AddScoped<TaxProfileService>();
 builder.Services.AddScoped<AccountingService>();
 builder.Services.AddScoped<BankingService>();
 builder.Services.AddScoped<ReportTemplateService>();
+builder.Services.AddScoped<ProductImageStorage>();
 
 var app = builder.Build();
 
@@ -148,6 +149,11 @@ app.UseMiddleware<TenantAccessMiddleware>();
 app.UseAntiforgery();
 
 app.MapGet("/account/denied", () => Results.Content("<h1>Acceso denegado</h1><p>Tu cuenta no tiene permiso para esta sección.</p><a href='/'>Volver</a>", "text/html"));
+app.MapGet("/media/products/{fileName}", (string fileName, ProductImageStorage storage) =>
+    storage.TryResolve(fileName, out var path, out var contentType)
+        ? Results.File(path, contentType, enableRangeProcessing: false)
+        : Results.NotFound())
+    .RequireAuthorization("SalesRead");
 app.MapControllers();
 
 var paymentMethods = app.MapGroup("/api/v1/pos/payment-methods").RequireAuthorization("TenantUserManagement");

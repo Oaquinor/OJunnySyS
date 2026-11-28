@@ -26,7 +26,7 @@ OJunnySyS se desarrolla en C#, ASP.NET Core .NET 10, Blazor Server interactivo, 
 - [x] Contabilización de cada recepción de compra con inventario, impuesto acreditable y cuentas por pagar; abonos idempotentes reducen la cuenta por pagar y acreditan la cuenta de pago correspondiente.
 - [x] Recepciones de compra con clave idempotente por lote, huella de líneas, protección contra reenvíos y vínculo tenant del asiento contable.
 - [x] Reportes por empresa y vendedor, con exportación autorizada; detalle de ventas y notas de crédito por numeración, desglose de subtotales/impuestos/cobros/saldos y CSV coherente con filtros.
-- [x] Diseñador Blazor de documentos inspirado por la maqueta entregada: paleta de componentes/campos, edición de propiedades y orden, vista imprimible y plantillas versionadas por tenant en MySQL conectadas al catálogo y a los indicadores de ventas.
+- [x] Diseñador Blazor de documentos portado desde la maqueta entregada: centro de reportes con búsqueda/favoritos, paleta de componentes/campos, edición de propiedades y orden, deshacer/rehacer, duplicado/bloqueo, vista previa, impresión y exportación CSV; plantillas versionadas por empresa en MySQL conectadas al catálogo y a los indicadores de ventas.
 - [x] Estados financieros con comparación del período/corte anterior, análisis vertical por cuenta y vistas gráficas basadas en asientos publicados.
 - [x] Administración inicial de tenants, planes, límites y facturación manual.
 - [x] Configuración por empresa de zona horaria, moneda y tasa general de impuesto, aplicada en servidor y guardada como snapshot en la venta.
@@ -44,7 +44,7 @@ OJunnySyS se desarrolla en C#, ASP.NET Core .NET 10, Blazor Server interactivo, 
 - [x] Configuración de cuentas bancarias y conciliación de estados por CSV contra asientos publicados; control de diferencias, partidas pendientes, aislamiento por empresa e historial cerrado. Falta automatizar conciliación de pagos de tarjetas/transferencias y validar formatos de extracto de bancos locales.
 - [ ] Impresión térmica integrada y manejo de conectividad intermitente.
 - [x] Paridad operativa del cliente POS WebAssembly para ventas a crédito, vencimiento, pagos divididos, descuentos autorizados en servidor, estacionar/retomar/cancelar ventas, terminal/caja, atajos de teclado y recibo imprimible. Todos los cobros se envían online al mismo caso de uso transaccional del servidor; precios, impuestos e inventario son autoritativos en el servidor.
-- [x] Acceso rápido a ajustes funcionales de impresión desde el POS y el recibo; catálogo con foto HTTP/HTTPS visible en ambas experiencias POS y existencias iniciales asignables a almacenes activos.
+- [x] Acceso rápido a ajustes funcionales de impresión desde el POS y el recibo; catálogo con carga local segura PNG/JPEG/WebP por empresa o foto HTTP/HTTPS visible en ambas experiencias POS; existencias iniciales asignables a almacenes activos.
 - [ ] POS realmente offline: cliente ejecutable sin circuito Blazor Server, sesión/dispositivo autorizados, borradores locales cifrados, sincronización API idempotente y resolución auditable de conflictos. El service worker actual solo conserva recursos estáticos y la página de reconexión; no almacena ventas ni completa transacciones desconectadas. Ver ADR 0002.
 
 ## Operación y producción
