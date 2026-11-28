@@ -28,7 +28,7 @@ public static class DependencyInjection
         services.AddScoped<IAccountingRepository, EfAccountingRepository>();
         services.AddScoped<IBankingRepository, EfBankingRepository>();
         services.AddScoped<ITenantOnboardingService, TenantOnboardingService>();
-        services.AddScoped<IRegistrationEmailSender, SmtpRegistrationEmailSender>();
+        services.AddScoped<IAccountEmailSender, SmtpAccountEmailSender>();
         services.AddScoped<ITenantAccessGuard, TenantAccessGuard>();
         services.AddSingleton<IBusinessClock>(_ => new SystemBusinessClock(businessTimeZone));
         return services;

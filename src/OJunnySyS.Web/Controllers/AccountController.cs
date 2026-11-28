@@ -16,7 +16,7 @@ public sealed class AccountController(
     SignInManager<ApplicationUser> signInManager,
     UserManager<ApplicationUser> userManager,
     ITenantOnboardingService onboarding,
-    IRegistrationEmailSender emailSender,
+    IAccountEmailSender emailSender,
     IWebHostEnvironment environment,
     ILogger<AccountController> logger) : Controller
 {
@@ -156,6 +156,80 @@ public sealed class AccountController(
         return View(input);
     }
 
+    [AllowAnonymous]
+    [HttpGet("forgot-password")]
+    public IActionResult ForgotPassword() => View(new ForgotPasswordInput());
+
+    [AllowAnonymous]
+    [HttpPost("forgot-password")]
+    [ValidateAntiForgeryToken]
+    [EnableRateLimiting("registration")]
+    public async Task<IActionResult> ForgotPassword(ForgotPasswordInput input, CancellationToken cancellationToken)
+    {
+        if (!ModelState.IsValid) return View(input);
+
+        string? localResetUrl = null;
+        var user = await userManager.FindByEmailAsync(input.Email.Trim());
+        if (user is not null && await userManager.IsEmailConfirmedAsync(user) && emailSender.IsConfigured)
+        {
+            try
+            {
+                var rawToken = await userManager.GeneratePasswordResetTokenAsync(user);
+                var token = WebEncoders.Base64UrlEncode(Encoding.UTF8.GetBytes(rawToken));
+                var resetUrl = Url.Action(nameof(ResetPassword), "Account", new { userId = user.Id, token }, Request.Scheme)!;
+                await emailSender.SendPasswordResetAsync(user.Email!, resetUrl, cancellationToken);
+            }
+            catch (Exception ex) when (ex is InvalidOperationException or System.Net.Mail.SmtpException or IOException)
+            {
+                logger.LogError(ex, "No se pudo enviar el restablecimiento de contraseña.");
+            }
+        }
+        else if (user is not null && await userManager.IsEmailConfirmedAsync(user) && environment.IsDevelopment())
+        {
+            var rawToken = await userManager.GeneratePasswordResetTokenAsync(user);
+            var token = WebEncoders.Base64UrlEncode(Encoding.UTF8.GetBytes(rawToken));
+            localResetUrl = Url.Action(nameof(ResetPassword), "Account", new { userId = user.Id, token }, Request.Scheme);
+        }
+
+        return View("PasswordResetRequested", new PasswordResetRequestedViewModel(
+            "Si existe una cuenta confirmada con ese correo, recibirás instrucciones para cambiar la contraseña.", localResetUrl));
+    }
+
+    [AllowAnonymous]
+    [HttpGet("reset-password")]
+    public IActionResult ResetPassword(Guid userId, string? token)
+    {
+        if (userId == Guid.Empty || string.IsNullOrWhiteSpace(token))
+            return PasswordResetInvalid();
+        return View(new ResetPasswordInput { UserId = userId, Token = token });
+    }
+
+    [AllowAnonymous]
+    [HttpPost("reset-password")]
+    [ValidateAntiForgeryToken]
+    [EnableRateLimiting("registration")]
+    public async Task<IActionResult> ResetPassword(ResetPasswordInput input)
+    {
+        if (!ModelState.IsValid) return View(input);
+        try
+        {
+            var decodedToken = Encoding.UTF8.GetString(WebEncoders.Base64UrlDecode(input.Token));
+            var user = await userManager.FindByIdAsync(input.UserId.ToString());
+            if (user is null || !await userManager.IsEmailConfirmedAsync(user)) return PasswordResetInvalid();
+            user.MustChangePassword = false;
+            var result = await userManager.ResetPasswordAsync(user, decodedToken, input.Password);
+            if (!result.Succeeded)
+            {
+                foreach (var error in result.Errors) ModelState.AddModelError(string.Empty, error.Description);
+                return View(input);
+            }
+            return View("PasswordResetCompleted");
+        }
+        catch (FormatException) { return PasswordResetInvalid(); }
+    }
+
+    private IActionResult PasswordResetInvalid() => View("PasswordResetInvalid");
+
     [Authorize]
     [HttpPost("logout")]
     [ValidateAntiForgeryToken]
@@ -254,5 +328,25 @@ public sealed class ResendConfirmationInput
     [System.ComponentModel.DataAnnotations.Required, System.ComponentModel.DataAnnotations.EmailAddress, System.ComponentModel.DataAnnotations.StringLength(254)]
     public string Email { get; set; } = string.Empty;
 }
+
+public sealed class ForgotPasswordInput
+{
+    [System.ComponentModel.DataAnnotations.Required, System.ComponentModel.DataAnnotations.EmailAddress, System.ComponentModel.DataAnnotations.StringLength(254)]
+    public string Email { get; set; } = string.Empty;
+}
+
+public sealed class ResetPasswordInput
+{
+    [System.ComponentModel.DataAnnotations.Required]
+    public Guid UserId { get; set; }
+    [System.ComponentModel.DataAnnotations.Required]
+    public string Token { get; set; } = string.Empty;
+    [System.ComponentModel.DataAnnotations.Required, System.ComponentModel.DataAnnotations.StringLength(128, MinimumLength = 12), System.ComponentModel.DataAnnotations.DataType(System.ComponentModel.DataAnnotations.DataType.Password)]
+    public string Password { get; set; } = string.Empty;
+    [System.ComponentModel.DataAnnotations.Required, System.ComponentModel.DataAnnotations.Compare(nameof(Password)), System.ComponentModel.DataAnnotations.DataType(System.ComponentModel.DataAnnotations.DataType.Password)]
+    public string ConfirmPassword { get; set; } = string.Empty;
+}
+
+public sealed record PasswordResetRequestedViewModel(string Message, string? LocalResetUrl);
 
 public sealed record EmailConfirmationViewModel(bool Confirmed, string Message);

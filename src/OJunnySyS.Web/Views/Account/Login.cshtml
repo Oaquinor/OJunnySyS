@@ -21,6 +21,7 @@
         <input asp-for="Password" class="w-full rounded-xl border border-slate-200 px-3 py-3 text-sm outline-none transition focus:border-brand-500 focus:ring-2 focus:ring-brand-100" autocomplete="current-password" />
         <span asp-validation-for="Password" class="text-xs text-rose-700"></span>
     </div>
+    <a class="justify-self-end text-sm font-semibold text-brand-600 hover:underline" href="/account/forgot-password">¿Olvidaste tu contraseña?</a>
     <label class="flex items-center gap-2 text-sm text-slate-600"><input asp-for="RememberMe" class="size-4 accent-brand-600" />Mantener sesión iniciada</label>
     <button type="submit" class="mt-1 inline-flex min-h-12 items-center justify-center rounded-xl bg-brand-600 px-5 text-sm font-bold text-white shadow-sm transition hover:bg-brand-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600">Iniciar sesión</button>
 </form>
