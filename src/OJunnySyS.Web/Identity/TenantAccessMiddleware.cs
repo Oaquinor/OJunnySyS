@@ -8,9 +8,56 @@ public sealed class TenantAccessMiddleware(RequestDelegate next)
 {
     public async Task InvokeAsync(HttpContext context, TenantContext tenantContext, ITenantAccessGuard accessGuard)
     {
-        if (tenantContext.CurrentTenantId is not { } tenantId ||
-            !(context.Request.Path.StartsWithSegments("/app") || context.Request.Path.StartsWithSegments("/api") || context.Request.Path.StartsWithSegments("/_blazor")))
+        var tenantRoute = context.Request.Path.StartsWithSegments("/app") ||
+                          context.Request.Path.StartsWithSegments("/api") ||
+                          context.Request.Path.StartsWithSegments("/_blazor");
+        if (!tenantRoute)
         {
+            await next(context);
+            return;
+        }
+
+        if (tenantContext.CurrentTenantId is not { } tenantId)
+        {
+            if (context.User.Identity?.IsAuthenticated == true && context.User.IsInRole("PlatformAdministrator"))
+            {
+                if (context.Request.Path.StartsWithSegments("/app"))
+                {
+                    context.Response.Redirect("/platform/tenants");
+                    return;
+                }
+
+                if (context.Request.Path.StartsWithSegments("/api"))
+                {
+                    context.Response.StatusCode = StatusCodes.Status403Forbidden;
+                    await context.Response.WriteAsJsonAsync(new ProblemDetails
+                    {
+                        Status = StatusCodes.Status403Forbidden,
+                        Title = "Selecciona una empresa",
+                        Detail = "La administración central no opera módulos de empresa. Abre un espacio desde Administración de plataforma."
+                    }, context.RequestAborted);
+                    return;
+                }
+            }
+
+            if (context.User.Identity?.IsAuthenticated == true && context.Request.Path.StartsWithSegments("/app"))
+            {
+                context.Response.Redirect("/account/tenant-unavailable");
+                return;
+            }
+
+            if (context.User.Identity?.IsAuthenticated == true && context.Request.Path.StartsWithSegments("/api"))
+            {
+                context.Response.StatusCode = StatusCodes.Status403Forbidden;
+                await context.Response.WriteAsJsonAsync(new ProblemDetails
+                {
+                    Status = StatusCodes.Status403Forbidden,
+                    Title = "No hay una empresa activa",
+                    Detail = "La cuenta no tiene una empresa activa asociada. Contacta al administrador de la plataforma."
+                }, context.RequestAborted);
+                return;
+            }
+
             await next(context);
             return;
         }
