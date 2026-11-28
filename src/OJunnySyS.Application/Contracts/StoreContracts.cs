@@ -5,8 +5,11 @@ using OJunnySyS.Domain.Crm;
 
 namespace OJunnySyS.Application.Contracts;
 
-public sealed record ProductDto(Guid Id, string Sku, string Name, string Category, decimal UnitPrice, int StockOnHand, string? Barcode, bool IsActive = true, long Revision = 0, decimal? TaxRateOverride = null, Guid? TaxProfileId = null, string? TaxProfileName = null, decimal? TaxProfileRate = null, string? ImageUrl = null);
-public sealed record UpdateProductRequest(string Sku, string Name, string Category, decimal UnitPrice, string? Barcode, long ExpectedRevision, decimal? TaxRateOverride = null, Guid? TaxProfileId = null, string? ImageUrl = null);
+public sealed record ProductDto(Guid Id, string Sku, string Name, string Category, decimal UnitPrice, int StockOnHand, string? Barcode, bool IsActive = true, long Revision = 0, decimal? TaxRateOverride = null, Guid? TaxProfileId = null, string? TaxProfileName = null, decimal? TaxProfileRate = null, string? ImageUrl = null, Guid? ProductCategoryId = null);
+public sealed record UpdateProductRequest(string Sku, string Name, string Category, decimal UnitPrice, string? Barcode, long ExpectedRevision, decimal? TaxRateOverride = null, Guid? TaxProfileId = null, string? ImageUrl = null, Guid? ProductCategoryId = null);
+public sealed record ProductCategoryDto(Guid Id, string Name, Guid? ParentCategoryId, string? ParentName, string DisplayPath, bool IsActive, long Revision);
+public sealed record CreateProductCategoryRequest(string Name, Guid? ParentCategoryId = null);
+public sealed record SetProductCategoryActiveRequest(bool IsActive, long ExpectedRevision);
 public sealed record TaxProfileDto(Guid Id, string Code, string Name, decimal Rate, bool IsActive, long Revision);
 public sealed record CreateTaxProfileRequest(string Code, string Name, decimal Rate);
 public sealed record UpdateTaxProfileRequest(string Name, decimal Rate, long ExpectedRevision);

@@ -14,6 +14,7 @@ OJunnySyS se desarrolla en C#, ASP.NET Core .NET 10, Blazor Server interactivo, 
 - [x] Separación de datos y autorización por empresa en CRM, ventas, compras, caja e inventario.
 - [x] CRM de clientes, historial de actividad, oportunidades, tareas, etiquetas y segmentos.
 - [x] Catálogo de productos, precios, código de barras y movimientos de inventario.
+- [x] Grupos y subgrupos de artículos como catálogo propio por empresa, con selección dependiente, creación inmediata desde el formulario de producto, clave jerárquica única y vínculo tenant seguro; los productos existentes conservan su categoría histórica y se vinculan al catálogo al guardarse.
 - [x] POS transaccional, pagos divididos, caja, recibos y ventas a crédito con abonos.
 - [x] Descuentos porcentuales por línea autorizados en servidor solo para Administrador/Gerente; los importes e impuestos se calculan sobre el neto, se guardan como snapshot, se reflejan en recibos y se prorratean en devoluciones parciales.
 - [x] Devoluciones parciales, reembolsos y notas de crédito con idempotencia, control de cantidades, restock, cartera, caja y reversos contables; integración MySQL de venta con descuento, cambio de tasa, reembolso en efectivo, reverso contable, reposición e idempotencia.

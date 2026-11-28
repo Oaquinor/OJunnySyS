@@ -615,6 +615,9 @@ namespace OJunnySyS.Infrastructure.Persistence.Migrations
                         .HasMaxLength(160)
                         .HasColumnType("varchar(160)");
 
+                    b.Property<Guid?>("ProductCategoryId")
+                        .HasColumnType("char(36)");
+
                     b.Property<long>("Revision")
                         .IsConcurrencyToken()
                         .ValueGeneratedOnAdd()
@@ -662,6 +665,8 @@ namespace OJunnySyS.Infrastructure.Persistence.Migrations
                     b.HasIndex("TenantId", "Barcode")
                         .IsUnique();
 
+                    b.HasIndex("TenantId", "ProductCategoryId");
+
                     b.HasIndex("TenantId", "Sku")
                         .IsUnique();
 
@@ -670,6 +675,58 @@ namespace OJunnySyS.Infrastructure.Persistence.Migrations
                     b.HasIndex("TenantId", "IsActive", "Name");
 
                     b.ToTable("Products");
+                });
+
+            modelBuilder.Entity("OJunnySyS.Domain.Catalog.ProductCategory", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("char(36)");
+
+                    b.Property<DateTimeOffset>("CreatedAtUtc")
+                        .HasColumnType("datetime");
+
+                    b.Property<string>("HierarchyKey")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("varchar(200)");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("tinyint(1)");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(80)
+                        .HasColumnType("varchar(80)");
+
+                    b.Property<string>("NormalizedName")
+                        .IsRequired()
+                        .HasMaxLength(160)
+                        .HasColumnType("varchar(160)");
+
+                    b.Property<Guid?>("ParentCategoryId")
+                        .HasColumnType("char(36)");
+
+                    b.Property<long>("Revision")
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint")
+                        .HasDefaultValue(0L);
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("char(36)");
+
+                    b.Property<DateTimeOffset?>("UpdatedAtUtc")
+                        .HasColumnType("datetime");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TenantId", "HierarchyKey")
+                        .IsUnique();
+
+                    b.HasIndex("TenantId", "ParentCategoryId");
+
+                    b.ToTable("ProductCategories");
                 });
 
             modelBuilder.Entity("OJunnySyS.Domain.Catalog.TaxProfile", b =>
@@ -2952,13 +3009,38 @@ namespace OJunnySyS.Infrastructure.Persistence.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
+                    b.HasOne("OJunnySyS.Domain.Catalog.ProductCategory", "ProductCategory")
+                        .WithMany()
+                        .HasForeignKey("TenantId", "ProductCategoryId")
+                        .HasPrincipalKey("TenantId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict);
+
                     b.HasOne("OJunnySyS.Domain.Catalog.TaxProfile", "TaxProfile")
                         .WithMany()
                         .HasForeignKey("TenantId", "TaxProfileId")
                         .HasPrincipalKey("TenantId", "Id")
                         .OnDelete(DeleteBehavior.Restrict);
 
+                    b.Navigation("ProductCategory");
+
                     b.Navigation("TaxProfile");
+                });
+
+            modelBuilder.Entity("OJunnySyS.Domain.Catalog.ProductCategory", b =>
+                {
+                    b.HasOne("OJunnySyS.Domain.Tenancy.Tenant", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("OJunnySyS.Domain.Catalog.ProductCategory", "ParentCategory")
+                        .WithMany()
+                        .HasForeignKey("TenantId", "ParentCategoryId")
+                        .HasPrincipalKey("TenantId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.Navigation("ParentCategory");
                 });
 
             modelBuilder.Entity("OJunnySyS.Domain.Catalog.TaxProfile", b =>

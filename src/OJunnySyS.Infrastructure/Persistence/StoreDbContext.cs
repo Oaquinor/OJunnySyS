@@ -23,6 +23,7 @@ public sealed class StoreDbContext(DbContextOptions<StoreDbContext> options)
     : IdentityDbContext<ApplicationUser, IdentityRole<Guid>, Guid>(options)
 {
     public DbSet<Product> Products => Set<Product>();
+    public DbSet<ProductCategory> ProductCategories => Set<ProductCategory>();
     public DbSet<ReportTemplate> ReportTemplates => Set<ReportTemplate>();
     public DbSet<TaxProfile> TaxProfiles => Set<TaxProfile>();
     public DbSet<Customer> Customers => Set<Customer>();
@@ -154,6 +155,21 @@ public sealed class StoreDbContext(DbContextOptions<StoreDbContext> options)
             entity.Property(x => x.Revision).IsConcurrencyToken().HasDefaultValue(0L);
         });
 
+        modelBuilder.Entity<ProductCategory>(entity =>
+        {
+            entity.HasKey(x => x.Id);
+            entity.HasAlternateKey(x => new { x.TenantId, x.Id });
+            entity.HasIndex(x => new { x.TenantId, x.HierarchyKey }).IsUnique();
+            entity.HasOne<Tenant>().WithMany().HasForeignKey(x => x.TenantId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne(x => x.ParentCategory).WithMany().HasForeignKey(x => new { x.TenantId, x.ParentCategoryId })
+                .HasPrincipalKey(x => new { x.TenantId, x.Id }).OnDelete(DeleteBehavior.Restrict);
+            entity.HasQueryFilter(x => CurrentTenantId != null && x.TenantId == CurrentTenantId);
+            entity.Property(x => x.Name).HasMaxLength(80).IsRequired();
+            entity.Property(x => x.NormalizedName).HasMaxLength(160).IsRequired();
+            entity.Property(x => x.HierarchyKey).HasMaxLength(200).IsRequired();
+            entity.Property(x => x.Revision).IsConcurrencyToken().HasDefaultValue(0L);
+        });
+
         modelBuilder.Entity<Product>(entity =>
         {
             entity.HasKey(x => x.Id);
@@ -165,6 +181,8 @@ public sealed class StoreDbContext(DbContextOptions<StoreDbContext> options)
             entity.HasIndex(x => new { x.TenantId, x.IsActive, x.Name });
             entity.HasOne<Tenant>().WithMany().HasForeignKey(x => x.TenantId).OnDelete(DeleteBehavior.Restrict);
             entity.HasOne(x => x.TaxProfile).WithMany().HasForeignKey(x => new { x.TenantId, x.TaxProfileId })
+                .HasPrincipalKey(x => new { x.TenantId, x.Id }).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne(x => x.ProductCategory).WithMany().HasForeignKey(x => new { x.TenantId, x.ProductCategoryId })
                 .HasPrincipalKey(x => new { x.TenantId, x.Id }).OnDelete(DeleteBehavior.Restrict);
             entity.HasQueryFilter(x => CurrentTenantId != null && x.TenantId == CurrentTenantId);
             entity.Property(x => x.Sku).HasMaxLength(40).IsRequired();

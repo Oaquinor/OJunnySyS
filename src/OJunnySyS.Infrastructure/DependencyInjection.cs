@@ -26,6 +26,7 @@ public static class DependencyInjection
         services.AddScoped<IWarehouseRepository, EfWarehouseRepository>();
         services.AddScoped<IPosPaymentMethodRepository, EfPosPaymentMethodRepository>();
         services.AddScoped<ITaxProfileRepository, EfTaxProfileRepository>();
+        services.AddScoped<IProductCategoryRepository, EfProductCategoryRepository>();
         services.AddScoped<IAccountingRepository, EfAccountingRepository>();
         services.AddScoped<IBankingRepository, EfBankingRepository>();
         services.AddScoped<IReportTemplateRepository, EfReportTemplateRepository>();
