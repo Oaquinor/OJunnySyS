@@ -1,6 +1,8 @@
 let shortcutHandler;
+let registrations = 0;
 
 export function register() {
+    registrations++;
     if (shortcutHandler) return;
 
     shortcutHandler = (event) => {
@@ -28,7 +30,8 @@ export function register() {
 }
 
 export function unregister() {
-    if (!shortcutHandler) return;
+    if (registrations > 0) registrations--;
+    if (!shortcutHandler || registrations > 0) return;
     document.removeEventListener("keydown", shortcutHandler);
     shortcutHandler = undefined;
 }

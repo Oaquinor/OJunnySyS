@@ -5,7 +5,7 @@
 Monolito modular con capas limpias. CRM, catálogo, ventas y POS son áreas del mismo producto y despliegue. Se mantienen límites de módulo en Domain y Application antes de separar servicios: no se distribuyen transacciones de venta entre procesos.
 
     Browser
-      └─ OJunnySyS.Web (Blazor Server + API /api/v1)
+      └─ OJunnySyS.Web (marketing, Blazor Server, POS WebAssembly alojado + API /api/v1)
            └─ OJunnySyS.Application (casos de uso y puertos)
                 └─ OJunnySyS.Domain (reglas, entidades y estados)
            └─ OJunnySyS.Infrastructure (EF Core, MySQL, integraciones)
@@ -18,6 +18,7 @@ Dependencias permitidas: Web → Application, Infrastructure; Infrastructure →
 - Los cambios de datos de cliente usan `Revision` como token de concurrencia optimista; la desactivación es lógica para preservar ventas y actividades históricas.
 - **Catálogo**: SKU/código de barras, precio, categoría, estado y existencias.
 - **Ventas/POS**: carrito, cliente opcional, pago, líneas y total; una transacción valida existencias, registra la venta, descuenta inventario y escribe el movimiento correspondiente. Las ventas a crédito requieren un cliente y vencimiento, no dependen de un turno abierto y reconocen cuentas por cobrar sin registrarse como efectivo. Los abonos son recibos inmutables e idempotentes; generan el asiento débito de caja/banco y crédito de cuentas por cobrar. Solo los abonos en efectivo mueven el arqueo. Toda operación conserva el código de terminal.
+- El POS principal es la experiencia completa. `/app/pos/client` usa Blazor WebAssembly alojado y la misma sesión/API same-origin como cliente online alternativo; al confirmar una venta la API vuelve a validar permisos, precios, impuestos, stock, caja y pagos. Mantener paridad de crédito, pagos divididos, descuentos y ventas estacionadas es un pendiente explícito. Ninguna ruta completa ventas offline.
 - **Terminales POS**: códigos permanentes por tenant, nombres editables, activación con revisión optimista y aislamiento de caja por terminal. No se puede desactivar una terminal con turno abierto ni desactivar la última terminal activa.
 - **Inventario por almacén**: saldos por producto y ubicación con balance agregado en el catálogo; cada terminal asigna un almacén y ventas/recepciones actualizan saldo local, total de producto y ledger en una transacción. Los traslados escriben salida y entrada vinculadas por referencia.
 - **Caja**: un turno abierto por terminal; operaciones bloquean las filas de tenant/sesión para coordinar ventas, entradas/retiros, pagos en efectivo a proveedores y cierre con arqueo. Cada movimiento queda ligado al turno y terminal.

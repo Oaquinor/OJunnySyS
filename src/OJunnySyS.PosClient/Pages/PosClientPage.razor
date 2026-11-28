@@ -14,6 +14,7 @@
 
     @if (!string.IsNullOrWhiteSpace(_error)) { <div role="alert" class="rounded-xl border border-rose-200 bg-rose-50 p-3 text-sm text-rose-800">@_error</div> }
     @if (!string.IsNullOrWhiteSpace(_notice)) { <div role="status" class="rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-900">@_notice</div> }
+    @if (_lastSaleId is { } saleId) { <a class="w-fit rounded-lg font-semibold text-brand-700 underline underline-offset-4" href="/app/receipts/@saleId">Abrir e imprimir el recibo</a> }
     <div class="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950"><span><strong>@(_online ? "Conectado" : "Sin conexión")</strong> · Las ventas solo se registran cuando el servidor confirma la transacción.</span><a class="font-semibold underline" href="/app/pos">Abrir POS actual</a></div>
 
     @if (_loading)
@@ -25,7 +26,7 @@
         <div class="grid min-w-0 gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(20rem,24rem)]">
             <section class="grid min-w-0 gap-4">
                 <form class="flex flex-wrap gap-2" @onsubmit="SearchAsync" @onsubmit:preventDefault>
-                    <input class="min-h-11 min-w-48 flex-1 rounded-xl border border-slate-200 px-3 text-sm" @bind="_search" placeholder="Buscar por nombre, SKU o código de barras" aria-label="Buscar productos" />
+                    <input id="pos-search" class="min-h-11 min-w-48 flex-1 rounded-xl border border-slate-200 px-3 text-sm" @bind="_search" placeholder="Buscar por nombre, SKU o código de barras" aria-label="Buscar productos" />
                     <button class="min-h-11 rounded-xl bg-brand-600 px-4 text-sm font-bold text-white disabled:opacity-50" type="submit" disabled="@_busy">Buscar</button>
                 </form>
                 @if (_registers.Count == 0) { <div class="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">No hay terminales activas configuradas para esta empresa.</div> }
@@ -59,12 +60,13 @@
                         }
                     </div>
                 }
-                <label class="grid gap-1.5 text-sm font-semibold text-slate-700">Cliente<select class="min-h-11 rounded-xl border border-slate-200 bg-white px-3" @bind="_customerId"><option value="">Consumidor final</option>@foreach (var customer in _customers) { <option value="@customer.Id">@customer.Name</option> }</select></label>
-                <label class="grid gap-1.5 text-sm font-semibold text-slate-700">Vendedor<select class="min-h-11 rounded-xl border border-slate-200 bg-white px-3" @bind="_sellerId"><option value="">Sin asignar</option>@foreach (var seller in _sellers) { <option value="@seller.Id">@seller.DisplayName</option> }</select></label>
-                <label class="grid gap-1.5 text-sm font-semibold text-slate-700">Método de pago<select class="min-h-11 rounded-xl border border-slate-200 bg-white px-3" @bind="_paymentMethodId"><option value="">Selecciona un método</option>@foreach (var method in _paymentOptions) { <option value="@method.Id">@method.Name</option> }</select></label>
+                <label class="grid gap-1.5 text-sm font-semibold text-slate-700">Cliente<select id="customer" class="min-h-11 rounded-xl border border-slate-200 bg-white px-3" @bind="_customerId"><option value="">Consumidor final</option>@foreach (var customer in _customers) { <option value="@customer.Id">@customer.Name</option> }</select></label>
+                <label class="grid gap-1.5 text-sm font-semibold text-slate-700">Vendedor<select id="seller" class="min-h-11 rounded-xl border border-slate-200 bg-white px-3" @bind="_sellerId"><option value="">Sin asignar</option>@foreach (var seller in _sellers) { <option value="@seller.Id">@seller.DisplayName</option> }</select></label>
+                <label class="grid gap-1.5 text-sm font-semibold text-slate-700">Método de pago<select id="sale-mode" class="min-h-11 rounded-xl border border-slate-200 bg-white px-3" @bind="_paymentMethodId"><option value="">Selecciona un método</option>@foreach (var method in _paymentOptions) { <option value="@method.Id">@method.Name</option> }</select></label>
                 <div class="flex items-center justify-between border-t border-slate-200 pt-4"><span class="text-sm font-semibold text-slate-600">Total estimado</span><strong class="text-2xl font-bold text-ink">@Money(EstimatedTotal)</strong></div>
                 <small class="text-xs leading-5 text-slate-500">El servidor vuelve a calcular precios, impuestos y existencias antes de guardar. Este POS cliente aún no admite completar cobros sin conexión.</small>
-                <div class="flex gap-2"><button type="button" class="min-h-11 flex-1 rounded-xl bg-brand-600 px-4 text-sm font-bold text-white disabled:cursor-not-allowed disabled:opacity-50" @onclick="CheckoutAsync" disabled="@(!CanCheckout)">@(_busy ? "Procesando…" : "Completar venta")</button><button type="button" class="min-h-11 rounded-xl border border-slate-200 px-4 text-sm font-semibold text-slate-600 disabled:opacity-50" @onclick="ClearCart" disabled="@(_cart.Count == 0 || _busy)">Vaciar</button></div>
+                <div class="flex flex-wrap items-center gap-2 border-t border-slate-200 pt-3 text-xs text-slate-500" aria-label="Atajos de teclado"><span class="font-semibold">Atajos:</span><span><kbd class="rounded-md border border-slate-200 bg-slate-50 px-1.5 py-0.5 font-sans">F2</kbd> Buscar</span><span><kbd class="rounded-md border border-slate-200 bg-slate-50 px-1.5 py-0.5 font-sans">F3</kbd> Cliente</span><span><kbd class="rounded-md border border-slate-200 bg-slate-50 px-1.5 py-0.5 font-sans">F4</kbd> Vendedor</span><span><kbd class="rounded-md border border-slate-200 bg-slate-50 px-1.5 py-0.5 font-sans">F6</kbd> Pago</span><span><kbd class="rounded-md border border-slate-200 bg-slate-50 px-1.5 py-0.5 font-sans">F9</kbd> Cobrar</span></div>
+                <div class="flex gap-2"><button id="pos-checkout" type="button" class="min-h-11 flex-1 rounded-xl bg-brand-600 px-4 text-sm font-bold text-white disabled:cursor-not-allowed disabled:opacity-50" @onclick="CheckoutAsync" disabled="@(!CanCheckout)">@(_busy ? "Procesando…" : "Completar venta")</button><button type="button" class="min-h-11 rounded-xl border border-slate-200 px-4 text-sm font-semibold text-slate-600 disabled:opacity-50" @onclick="ClearCart" disabled="@(_cart.Count == 0 || _busy)">Vaciar</button></div>
             </aside>
         </div>
     }
@@ -84,15 +86,17 @@
     private bool _loading = true, _busy, _online = true;
     private string? _error, _notice;
     private Guid _checkoutKey = Guid.NewGuid();
+    private Guid? _lastSaleId;
     private DotNetObjectReference<PosClientPage>? _self;
     private IJSObjectReference? _networkModule;
+    private IJSObjectReference? _shortcutsModule;
 
     private decimal EstimatedTotal => _cart.Sum(item =>
     {
         var product = _products.FirstOrDefault(x => x.Id == item.Key);
         if (product is null) return 0m;
         var rate = product.TaxProfileRate ?? product.TaxRateOverride ?? _settings?.DefaultTaxRate ?? 0m;
-        var subtotal = product.UnitPrice * item.Value;
+        var subtotal = decimal.Round(product.UnitPrice * item.Value, 2, MidpointRounding.AwayFromZero);
         return subtotal + decimal.Round(subtotal * rate, 2, MidpointRounding.AwayFromZero);
     });
     private bool CanCheckout => !_busy && _online && _cart.Count > 0 && _paymentMethodId is not null &&
@@ -123,6 +127,13 @@
         _self = DotNetObjectReference.Create(this);
         _networkModule = await JS.InvokeAsync<IJSObjectReference>("import", "./js/pos-network-status.js");
         await _networkModule.InvokeVoidAsync("watch", _self);
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender) return;
+        _shortcutsModule = await JS.InvokeAsync<IJSObjectReference>("import", "./js/pos-shortcuts.js");
+        await _shortcutsModule.InvokeVoidAsync("register");
     }
 
     private async Task ChangeRegisterAsync(ChangeEventArgs args)
@@ -185,6 +196,7 @@
                 [new CheckoutPaymentLine(selected.Id, EstimatedTotal)], _sellerId);
             var sale = await PosApi.CheckoutAsync(request);
             _notice = $"Venta {sale.Number} confirmada por el servidor · {Money(sale.Total)}";
+            _lastSaleId = sale.Id;
             _cart.Clear(); _checkoutKey = Guid.NewGuid();
             await LoadRegisterAsync();
         }
@@ -204,6 +216,11 @@
         if (_networkModule is not null)
         {
             try { await _networkModule.InvokeVoidAsync("unwatch"); await _networkModule.DisposeAsync(); }
+            catch (JSDisconnectedException) { }
+        }
+        if (_shortcutsModule is not null)
+        {
+            try { await _shortcutsModule.InvokeVoidAsync("unregister"); await _shortcutsModule.DisposeAsync(); }
             catch (JSDisconnectedException) { }
         }
     }

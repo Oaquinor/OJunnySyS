@@ -8,6 +8,7 @@ OJunnySyS se desarrolla en C#, ASP.NET Core .NET 10, Blazor Server interactivo, 
 - [x] Persistencia MySQL con EF Core y migraciones versionadas.
 - [x] Landing en español con SEO básico, datos estructurados, sitemap y robots.
 - [x] PWA instalable con manifest, iconos y página de reconexión.
+- [x] Cliente POS dedicado en Blazor WebAssembly, servido por el mismo host y API protegida; permite buscar artículos, seleccionar cliente/vendedor/terminal/medio de pago, confirmar el checkout con precios/impuestos/stock recalculados por el servidor, abrir el recibo y usar atajos F2/F3/F4/F6/F9.
 - [x] Inicio local con Laragon y configuración fuera del repositorio.
 - [x] Autenticación, roles de plataforma y negocio, bloqueo de acceso y cambio de contraseña inicial.
 - [x] Separación de datos y autorización por empresa en CRM, ventas, compras, caja e inventario.
@@ -41,6 +42,7 @@ OJunnySyS se desarrolla en C#, ASP.NET Core .NET 10, Blazor Server interactivo, 
 - [ ] Integración y autorización de comprobantes electrónicos DGII/e-CF.
 - [x] Configuración de cuentas bancarias y conciliación de estados por CSV contra asientos publicados; control de diferencias, partidas pendientes, aislamiento por empresa e historial cerrado. Falta automatizar conciliación de pagos de tarjetas/transferencias y validar formatos de extracto de bancos locales.
 - [ ] Impresión térmica integrada y manejo de conectividad intermitente.
+- [ ] Igualar en el cliente POS WebAssembly los flujos ya disponibles en el POS principal: ventas a crédito, cobro dividido, descuentos con autorización, estacionar/retomar ventas y experiencia de cobro completa. El flujo principal vigente está en `/app/pos`; el cliente WebAssembly todavía tiene checkout de cobro inmediato con un solo medio de pago.
 - [ ] POS realmente offline: cliente ejecutable sin circuito Blazor Server, sesión/dispositivo autorizados, borradores locales cifrados, sincronización API idempotente y resolución auditable de conflictos. El service worker actual solo conserva recursos estáticos y la página de reconexión; no almacena ventas ni completa transacciones desconectadas. Ver ADR 0002.
 
 ## Operación y producción

@@ -5,6 +5,7 @@ OJunnySyS es una plataforma web/PWA para CRM, POS, inventario, compras y operaci
 ## Estado actual
 
 - La solución C# incluye landing, autenticación, espacio multiempresa, CRM, oportunidades, tareas, catálogo, inventario, POS, caja, compras y reportes.
+- El POS principal está en `/app/pos`; el cliente alternativo WebAssembly está en `/app/pos/client` y usa checkout protegido online. La paridad total de flujos y operación offline siguen pendientes en la hoja de ruta.
 - Blazor ofrece UI interactiva web y PWA instalable con `manifest`, iconos y pantalla sin conexión.
 - La persistencia usa EF Core y MySQL, con migraciones versionadas y capas Domain, Application, Infrastructure y Web.
 - Los módulos de negocio viven en la solución .NET; no se mantiene una segunda implementación del producto.
