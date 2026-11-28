@@ -1,0 +1,223 @@
+@page "/app/sales/quotes"
+@attribute [Authorize(Roles = "Administrator,Manager,Salesperson")]
+@inject SalesQuoteService Quotes
+@inject StoreService Store
+@inject PosRegisterService Registers
+@inject TenantSettingsService Settings
+@inject OJunnySyS.Application.Abstractions.IBusinessClock Clock
+@inject AuthenticationStateProvider AuthenticationState
+@inject ILogger<SalesQuotes> Logger
+
+<PageTitle>Cotizaciones · OJunnySyS</PageTitle>
+<PageHeader Eyebrow="VENTAS / COTIZACIONES" Title="Cotizaciones" Description="Prepara ofertas con precios e impuestos guardados. Convierte las aceptadas en una venta a crédito con trazabilidad.">
+    <Actions><a class="button button-secondary" href="/app/sales">Historial de ventas</a><a class="button button-primary" href="/app/pos">Abrir POS</a></Actions>
+</PageHeader>
+
+<div class="quote-workspace">
+    <section class="panel quote-editor">
+        <div class="panel-heading"><div><span class="eyebrow">@(_editingId is null ? "NUEVA OFERTA" : "BORRADOR")</span><h2>@(_editingId is null ? "Preparar cotización" : "Editar cotización")</h2><p>Una cotización no reserva inventario ni constituye una factura fiscal.</p></div></div>
+        <EditForm Model="_form" OnValidSubmit="SaveDraftAsync">
+            <DataAnnotationsValidator />
+            <div class="quote-form-grid">
+                <label>Cliente<InputSelect @bind-Value="_form.CustomerId"><option value="@Guid.Empty">Selecciona cliente</option>@foreach (var customer in _customers) { <option value="@customer.Id">@customer.Name</option> }</InputSelect></label>
+                <label>Válida hasta<InputDate @bind-Value="_form.ValidUntil" /></label>
+                <label class="quote-notes">Notas para el cliente<InputTextArea @bind-Value="_form.Notes" maxlength="1000" placeholder="Alcance, condiciones o detalles de la oferta" /></label>
+            </div>
+            <div class="quote-line-builder">
+                <label>Producto<InputSelect @bind-Value="_selectedProductId" @bind:after="OnProductChanged"><option value="@Guid.Empty">Selecciona producto</option>@foreach (var product in _products) { <option value="@product.Id">@product.Name · @product.Sku</option> }</InputSelect></label>
+                <label>Cantidad<NumericInput @bind-Value="_lineQuantity" min="1" step="1" /></label>
+                <label>Precio cotizado<NumericInput @bind-Value="_linePrice" min="0" step="0.01" /></label>
+                <button type="button" class="button button-secondary" @onclick="AddLine" disabled="@(_selectedProductId == Guid.Empty)">Agregar línea</button>
+            </div>
+            @if (_form.Lines.Count > 0)
+            {
+                <div class="table-wrap quote-lines-table"><table><thead><tr><th>PRODUCTO</th><th class="align-right">CANT.</th><th class="align-right">PRECIO</th><th class="align-right">IMPUESTO</th><th class="align-right">TOTAL</th><th></th></tr></thead><tbody>
+                    @foreach (var line in _form.Lines)
+                    {
+                        <tr><td><strong>@line.ProductName</strong><small class="quote-line-meta">@line.Sku · Tasa @(line.TaxRate * 100m)%</small></td><td class="align-right">@line.Quantity</td><td class="align-right">@Money(line.UnitPrice)</td><td class="align-right">@Money(line.LineTotal * line.TaxRate)</td><td class="align-right amount">@Money(line.LineTotal * (1 + line.TaxRate))</td><td><button type="button" class="quote-remove" @onclick="() => RemoveLine(line.ProductId)" aria-label="Quitar @line.ProductName">×</button></td></tr>
+                    }
+                </tbody></table></div>
+                <div class="quote-total"><span>Subtotal @Money(_form.Lines.Sum(x => x.LineTotal)) · Impuesto @Money(_form.Lines.Sum(x => x.LineTotal * x.TaxRate))</span><strong>Total @Money(_form.Lines.Sum(x => x.LineTotal * (1 + x.TaxRate)))</strong></div>
+            }
+            <ValidationSummary />
+            @if (_error is not null) { <div class="inline-error" role="alert">@_error</div> }
+            <div class="quote-form-actions"><button class="button button-primary" disabled="@(_saving || _customers.Count == 0 || _form.Lines.Count == 0)">@(_saving ? "Guardando…" : _editingId is null ? "Guardar borrador" : "Actualizar borrador")</button>@if (_editingId is not null) { <button type="button" class="button button-secondary" @onclick="CancelEdit" disabled="@_saving">Cancelar</button> }</div>
+        </EditForm>
+        @if (_customers.Count == 0) { <p class="quote-helper">Primero agrega un cliente en <a href="/app/customers">Clientes</a>.</p> }
+    </section>
+
+    <section class="panel quote-list">
+        <div class="panel-heading"><div><span class="eyebrow">SEGUIMIENTO COMERCIAL</span><h2>Cotizaciones recientes</h2><p>@_quotes.Count documento(s) · las opciones dependen del estado y vigencia.</p></div></div>
+        @if (_notice is not null) { <div class="success-banner quote-notice" role="status">@_notice</div> }
+        @if (_quotes.Count == 0)
+        {
+            <EmptyState Icon="◇" Title="Todavía no hay cotizaciones" Description="Crea una oferta y guarda una versión de precios antes de enviarla al cliente." />
+        }
+        else
+        {
+            <div class="table-wrap"><table><thead><tr><th>NÚMERO / CLIENTE</th><th>VIGENCIA</th><th>ESTADO</th><th class="align-right">TOTAL</th><th>ACCIONES</th></tr></thead><tbody>
+            @foreach (var quote in _quotes)
+            {
+                <tr class="@(quote.Id == _selectedQuote?.Id ? "quote-selected-row" : "")"><td><button type="button" class="quote-number" @onclick="() => SelectQuote(quote)">@quote.Number</button><small class="quote-line-meta">@quote.CustomerName</small></td><td>@quote.ValidUntil.ToString("dd/MM/yyyy")</td><td><span class="status-pill @StatusClass(quote)"><i></i>@StatusName(quote)</span></td><td class="align-right amount">@Money(quote.Total)</td><td><div class="quote-row-actions">
+                    @if (quote.Status == SalesQuoteStatus.Draft) { <button type="button" class="button button-secondary button-small" @onclick="() => Edit(quote)">Editar</button><button type="button" class="button button-primary button-small" @onclick="() => MarkSentAsync(quote)" disabled="@_saving">Marcar enviada</button> }
+                    @if (quote.Status == SalesQuoteStatus.Sent && !IsExpired(quote)) { <button type="button" class="button button-secondary button-small" @onclick="() => AcceptAsync(quote)" disabled="@_saving">Aceptar</button><button type="button" class="button button-secondary button-small" @onclick="() => RejectAsync(quote)" disabled="@_saving">Rechazar</button> }
+                    @if (quote.Status is SalesQuoteStatus.Draft or SalesQuoteStatus.Sent or SalesQuoteStatus.Accepted) { <button type="button" class="button button-quiet-danger button-small" @onclick="() => CancelAsync(quote)" disabled="@_saving">Cancelar</button> }
+                    @if (quote.Status == SalesQuoteStatus.Accepted) { <button type="button" class="button button-primary button-small" @onclick="() => PrepareConversion(quote)">Convertir a venta</button> }
+                    @if (quote.Status == SalesQuoteStatus.Converted && quote.ConvertedSaleId is { } saleId) { <a class="button button-secondary button-small" href="/app/receipts/@saleId">Abrir venta</a> }
+                </div></td></tr>
+            }
+            </tbody></table></div>
+        }
+    </section>
+</div>
+
+@if (_conversionQuote is not null)
+{
+    <div class="modal-backdrop" @onclick="CloseConversion"><section class="modal-card quote-convert-modal" @onclick:stopPropagation="true">
+        <div class="modal-heading"><div><span class="eyebrow">CUENTA POR COBRAR</span><h2>Convertir @_conversionQuote.Number</h2><p>Creará una venta a crédito, descontará existencias y publicará la cuenta por cobrar.</p></div><button type="button" class="icon-button" @onclick="CloseConversion">×</button></div>
+        <div class="form-grid"><label>Terminal<InputSelect @bind-Value="_conversionRegister"><option value="">Selecciona terminal</option>@foreach (var register in _registers) { <option value="@register.Code">@register.Name · @register.Code</option> }</InputSelect></label><label>Vencimiento del crédito<InputDate @bind-Value="_conversionDueDate" /></label></div>
+        @if (_registers.Count == 0) { <div class="inline-error">Configura un terminal POS activo antes de convertir la cotización.</div> }
+        @if (_error is not null) { <div class="inline-error" role="alert">@_error</div> }
+        <div class="modal-actions"><button type="button" class="button button-secondary" @onclick="CloseConversion">Volver</button><button type="button" class="button button-primary" @onclick="ConvertAsync" disabled="@(_saving || string.IsNullOrWhiteSpace(_conversionRegister))">@(_saving ? "Convirtiendo…" : "Crear venta · " + Money(_conversionQuote.Total))</button></div>
+    </section></div>
+}
+
+@code {
+    private IReadOnlyList<SalesQuoteDto> _quotes = [];
+    private IReadOnlyList<CustomerDto> _customers = [];
+    private IReadOnlyList<ProductDto> _products = [];
+    private IReadOnlyList<PosRegisterDto> _registers = [];
+    private QuoteForm _form = new();
+    private Guid _userId, _selectedProductId;
+    private int _lineQuantity = 1;
+    private decimal _linePrice;
+    private Guid? _editingId;
+    private SalesQuoteDto? _selectedQuote, _conversionQuote;
+    private string _conversionRegister = "";
+    private DateOnly _conversionDueDate;
+    private decimal _defaultTaxRate = .18m;
+    private bool _saving;
+    private string? _error, _notice;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var principal = (await AuthenticationState.GetAuthenticationStateAsync()).User;
+        if (!Guid.TryParse(principal.FindFirstValue(System.Security.Claims.ClaimTypes.NameIdentifier), out _userId)) throw new InvalidOperationException("La sesión autenticada no tiene un identificador válido.");
+        var today = Today(); _form.ValidUntil = today.AddDays(15); _conversionDueDate = today.AddDays(30);
+        var settingsTask = Settings.GetAsync();
+        await Task.WhenAll(LoadQuotesAsync(), LoadCatalogAsync(), settingsTask);
+        _defaultTaxRate = (await settingsTask).DefaultTaxRate;
+    }
+
+    private async Task LoadQuotesAsync() { _quotes = await Quotes.GetAsync(); _selectedQuote = _selectedQuote is null ? null : _quotes.FirstOrDefault(x => x.Id == _selectedQuote.Id); }
+    private async Task LoadCatalogAsync()
+    {
+        var customerTask = Store.SearchCustomersAsync(null); var productTask = Store.SearchProductsAsync(null); var registerTask = Registers.GetRegistersAsync(includeInactive: false);
+        await Task.WhenAll(customerTask, productTask, registerTask);
+        _customers = await customerTask; _products = await productTask; _registers = await registerTask;
+    }
+
+    private void OnProductChanged() => _linePrice = _products.FirstOrDefault(x => x.Id == _selectedProductId)?.UnitPrice ?? 0m;
+
+    private void AddLine()
+    {
+        var product = _products.FirstOrDefault(x => x.Id == _selectedProductId);
+        if (product is null || _lineQuantity <= 0 || _linePrice < 0 || _linePrice > product.UnitPrice) { _error = "Revisa el producto, cantidad y precio cotizado."; return; }
+        var taxRate = product.TaxProfileId is not null ? product.TaxProfileRate ?? 0m : product.TaxRateOverride ?? _defaultTaxRate;
+        var existing = _form.Lines.FindIndex(x => x.ProductId == product.Id);
+        if (existing >= 0) _form.Lines[existing] = _form.Lines[existing] with { Quantity = checked(_form.Lines[existing].Quantity + _lineQuantity), UnitPrice = _linePrice };
+        else _form.Lines.Add(new QuoteLineDraft(product.Id, product.Sku, product.Name, _lineQuantity, _linePrice, taxRate));
+        _selectedProductId = Guid.Empty; _lineQuantity = 1; _linePrice = 0m; _error = null;
+    }
+
+    private void RemoveLine(Guid productId) => _form.Lines.RemoveAll(x => x.ProductId == productId);
+
+    private async Task SaveDraftAsync()
+    {
+        _saving = true; _error = null; _notice = null;
+        try
+        {
+            var lines = _form.Lines.Select(x => new SalesQuoteLineRequest(x.ProductId, x.Quantity, x.UnitPrice)).ToArray();
+            if (_form.CustomerId == Guid.Empty || lines.Length == 0) throw new DomainException("Selecciona el cliente y agrega al menos un producto.");
+            var saved = _editingId is { } id
+                ? await Quotes.UpdateAsync(id, new UpdateSalesQuoteRequest(_form.CustomerId, _form.ValidUntil, _form.Notes, _form.ExpectedRevision, lines))
+                : await Quotes.CreateAsync(new CreateSalesQuoteRequest(_form.CustomerId, _form.ValidUntil, _form.Notes, lines));
+            _selectedQuote = saved; _notice = "Borrador " + saved.Number + " guardado. Todavía no se ha enviado."; ResetForm(); await LoadQuotesAsync();
+        }
+        catch (DomainException ex) { _error = ex.Message; }
+        catch (ConcurrencyConflictException ex) { _error = ex.Message; await LoadQuotesAsync(); }
+        catch (Exception ex) { Logger.LogError(ex, "No se pudo guardar la cotización."); _error = "No se pudo guardar la cotización."; }
+        finally { _saving = false; }
+    }
+
+    private void Edit(SalesQuoteDto quote)
+    {
+        _editingId = quote.Id; _form = new QuoteForm { CustomerId = quote.CustomerId, ValidUntil = quote.ValidUntil, Notes = quote.Notes, ExpectedRevision = quote.Revision,
+            Lines = quote.Lines.Select(x => new QuoteLineDraft(x.ProductId, x.Sku, x.ProductName, x.Quantity, x.UnitPrice, x.TaxRate)).ToList() };
+        _error = null; _notice = null;
+    }
+
+    private void SelectQuote(SalesQuoteDto quote) => _selectedQuote = quote;
+    private void CancelEdit() { ResetForm(); _error = null; }
+    private void ResetForm() { _editingId = null; _form = new QuoteForm { ValidUntil = Today().AddDays(15) }; }
+
+    private async Task ChangeStatusAsync(SalesQuoteDto quote, string action)
+    {
+        _saving = true; _error = null; _notice = null;
+        try
+        {
+            var request = new SalesQuoteStatusRequest(quote.Revision);
+            var updated = action switch
+            {
+                "send" => await Quotes.MarkSentAsync(quote.Id, request), "accept" => await Quotes.AcceptAsync(quote.Id, request),
+                "reject" => await Quotes.RejectAsync(quote.Id, request), _ => await Quotes.CancelAsync(quote.Id, request)
+            };
+            _selectedQuote = updated; _notice = action == "send" ? quote.Number + " está marcada como enviada. Comparte la vista impresa con el cliente." : "Estado de " + quote.Number + ": " + StatusName(updated) + ".";
+            await LoadQuotesAsync();
+        }
+        catch (DomainException ex) { _error = ex.Message; }
+        catch (ConcurrencyConflictException ex) { _error = ex.Message; await LoadQuotesAsync(); }
+        catch (Exception ex) { Logger.LogError(ex, "No se pudo cambiar el estado de la cotización {QuoteNumber}.", quote.Number); _error = "No se pudo actualizar la cotización."; }
+        finally { _saving = false; }
+    }
+
+    private Task MarkSentAsync(SalesQuoteDto quote) => ChangeStatusAsync(quote, "send");
+    private Task AcceptAsync(SalesQuoteDto quote) => ChangeStatusAsync(quote, "accept");
+    private Task RejectAsync(SalesQuoteDto quote) => ChangeStatusAsync(quote, "reject");
+    private Task CancelAsync(SalesQuoteDto quote) => ChangeStatusAsync(quote, "cancel");
+
+    private void PrepareConversion(SalesQuoteDto quote) { _conversionQuote = quote; _conversionRegister = _registers.FirstOrDefault()?.Code ?? ""; _conversionDueDate = Today().AddDays(30); _error = null; }
+    private async Task ConvertAsync()
+    {
+        if (_conversionQuote is null) return;
+        _saving = true; _error = null;
+        try
+        {
+            var sale = await Quotes.ConvertAsync(_conversionQuote.Id, _userId, new ConvertSalesQuoteRequest(_conversionQuote.Revision, _conversionRegister, _conversionDueDate));
+            _notice = "Cotización convertida en venta a crédito " + sale.Number + "."; _conversionQuote = null; await LoadQuotesAsync();
+        }
+        catch (DomainException ex) { _error = ex.Message; }
+        catch (ConcurrencyConflictException ex) { _error = ex.Message; await LoadQuotesAsync(); }
+        catch (Exception ex) { Logger.LogError(ex, "No se pudo convertir la cotización."); _error = "No se pudo convertir. Verifica el stock y recarga antes de reintentar."; }
+        finally { _saving = false; }
+    }
+
+    private void CloseConversion() { if (!_saving) _conversionQuote = null; }
+    private DateOnly Today() => DateOnly.FromDateTime(Clock.ToBusinessTime(Clock.UtcNow).DateTime);
+    private bool IsExpired(SalesQuoteDto quote) => quote.Status == SalesQuoteStatus.Sent && quote.ValidUntil < Today();
+    private string StatusName(SalesQuoteDto quote) => IsExpired(quote) ? "Vencida" : quote.Status switch
+    { SalesQuoteStatus.Draft => "Borrador", SalesQuoteStatus.Sent => "Enviada", SalesQuoteStatus.Accepted => "Aceptada", SalesQuoteStatus.Rejected => "Rechazada", SalesQuoteStatus.Converted => "Convertida", _ => "Cancelada" };
+    private static string StatusClass(SalesQuoteDto quote) => quote.Status switch { SalesQuoteStatus.Accepted => "quote-status-accepted", SalesQuoteStatus.Converted => "quote-status-converted", SalesQuoteStatus.Rejected or SalesQuoteStatus.Cancelled => "status-inactive", _ => "" };
+    private static string Money(decimal amount) => DisplayFormat.Money(amount, showCents: true);
+
+    private sealed class QuoteForm
+    {
+        [Required] public Guid CustomerId { get; set; }
+        public DateOnly ValidUntil { get; set; }
+        [StringLength(1000)] public string? Notes { get; set; }
+        public long ExpectedRevision { get; set; }
+        public List<QuoteLineDraft> Lines { get; set; } = [];
+    }
+    private sealed record QuoteLineDraft(Guid ProductId, string Sku, string ProductName, int Quantity, decimal UnitPrice, decimal TaxRate)
+    { public decimal LineTotal => decimal.Round(Quantity * UnitPrice, 2, MidpointRounding.AwayFromZero); }
+}

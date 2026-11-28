@@ -90,6 +90,7 @@ builder.Services.AddAuthorization(options =>
     options.AddPolicy("CrmWrite", policy => policy.RequireRole(AppRoles.Administrator, AppRoles.Manager, AppRoles.Salesperson));
     options.AddPolicy("ReportsRead", policy => policy.RequireRole(AppRoles.Administrator, AppRoles.Manager));
     options.AddPolicy("SalesRead", policy => policy.RequireRole(AppRoles.Administrator, AppRoles.Manager, AppRoles.Cashier));
+    options.AddPolicy("SalesQuoteManage", policy => policy.RequireRole(AppRoles.Administrator, AppRoles.Manager, AppRoles.Salesperson));
     options.AddPolicy("ReceivablesRead", policy => policy.RequireRole(AppRoles.Administrator, AppRoles.Manager, AppRoles.Cashier));
     options.AddPolicy("CustomerStatementRead", policy => policy.RequireRole(AppRoles.Administrator, AppRoles.Manager, AppRoles.Cashier, AppRoles.Salesperson));
     options.AddPolicy("Checkout", policy => policy.RequireRole(AppRoles.Administrator, AppRoles.Manager, AppRoles.Cashier));
@@ -107,6 +108,7 @@ var connectionString = builder.Configuration.GetConnectionString("OjunnySyS")
 var businessTimeZone = builder.Configuration["BusinessTimeZone"] ?? "America/Santo_Domingo";
 builder.Services.AddInfrastructure(connectionString, businessTimeZone);
 builder.Services.AddScoped<StoreService>();
+builder.Services.AddScoped<SalesQuoteService>();
 builder.Services.AddScoped<CrmService>();
 builder.Services.AddScoped<PlatformManagementService>();
 builder.Services.AddScoped<TenantSettingsService>();
@@ -314,6 +316,49 @@ api.MapPost("/crm/activities/{id:guid}/complete", async (Guid id, CrmService crm
     try { return Results.Ok(await crm.CompleteTaskAsync(id, ct)); }
     catch (DomainException ex) { return Results.ValidationProblem(new Dictionary<string, string[]> { ["task"] = [ex.Message] }); }
 }).RequireAuthorization("CrmWrite");
+var salesQuotes = api.MapGroup("/sales/quotes").RequireAuthorization("SalesQuoteManage");
+salesQuotes.MapGet("/", async (SalesQuoteService service, CancellationToken ct) => Results.Ok(await service.GetAsync(ct)));
+salesQuotes.MapPost("/", async (CreateSalesQuoteRequest request, SalesQuoteService service, CancellationToken ct) =>
+{
+    try { var quote = await service.CreateAsync(request, ct); return Results.Created($"/api/v1/sales/quotes/{quote.Id}", quote); }
+    catch (DomainException ex) { return Results.ValidationProblem(new Dictionary<string, string[]> { ["quote"] = [ex.Message] }); }
+});
+salesQuotes.MapPut("/{id:guid}", async (Guid id, UpdateSalesQuoteRequest request, SalesQuoteService service, CancellationToken ct) =>
+{
+    try { return Results.Ok(await service.UpdateAsync(id, request, ct)); }
+    catch (ConcurrencyConflictException ex) { return Results.Conflict(new { error = ex.Message }); }
+    catch (DomainException ex) { return Results.ValidationProblem(new Dictionary<string, string[]> { ["quote"] = [ex.Message] }); }
+});
+salesQuotes.MapPost("/{id:guid}/send", async (Guid id, SalesQuoteStatusRequest request, SalesQuoteService service, CancellationToken ct) =>
+{
+    try { return Results.Ok(await service.MarkSentAsync(id, request, ct)); }
+    catch (ConcurrencyConflictException ex) { return Results.Conflict(new { error = ex.Message }); }
+    catch (DomainException ex) { return Results.ValidationProblem(new Dictionary<string, string[]> { ["quote"] = [ex.Message] }); }
+});
+salesQuotes.MapPost("/{id:guid}/accept", async (Guid id, SalesQuoteStatusRequest request, SalesQuoteService service, CancellationToken ct) =>
+{
+    try { return Results.Ok(await service.AcceptAsync(id, request, ct)); }
+    catch (ConcurrencyConflictException ex) { return Results.Conflict(new { error = ex.Message }); }
+    catch (DomainException ex) { return Results.ValidationProblem(new Dictionary<string, string[]> { ["quote"] = [ex.Message] }); }
+});
+salesQuotes.MapPost("/{id:guid}/reject", async (Guid id, SalesQuoteStatusRequest request, SalesQuoteService service, CancellationToken ct) =>
+{
+    try { return Results.Ok(await service.RejectAsync(id, request, ct)); }
+    catch (ConcurrencyConflictException ex) { return Results.Conflict(new { error = ex.Message }); }
+    catch (DomainException ex) { return Results.ValidationProblem(new Dictionary<string, string[]> { ["quote"] = [ex.Message] }); }
+});
+salesQuotes.MapPost("/{id:guid}/cancel", async (Guid id, SalesQuoteStatusRequest request, SalesQuoteService service, CancellationToken ct) =>
+{
+    try { return Results.Ok(await service.CancelAsync(id, request, ct)); }
+    catch (ConcurrencyConflictException ex) { return Results.Conflict(new { error = ex.Message }); }
+    catch (DomainException ex) { return Results.ValidationProblem(new Dictionary<string, string[]> { ["quote"] = [ex.Message] }); }
+});
+salesQuotes.MapPost("/{id:guid}/convert", async (Guid id, ConvertSalesQuoteRequest request, ClaimsPrincipal user, SalesQuoteService service, CancellationToken ct) =>
+{
+    try { var sale = await service.ConvertAsync(id, CurrentActorId(user), request, ct); return Results.Created($"/api/v1/sales/{sale.Id}", sale); }
+    catch (ConcurrencyConflictException ex) { return Results.Conflict(new { error = ex.Message }); }
+    catch (DomainException ex) { return Results.ValidationProblem(new Dictionary<string, string[]> { ["quote"] = [ex.Message] }); }
+}).RequireAuthorization("Checkout");
 api.MapGet("/sales", async (int? limit, StoreService store, CancellationToken ct) => Results.Ok(await store.GetRecentSalesAsync(limit ?? 50, ct))).RequireAuthorization("SalesRead");
 api.MapGet("/dashboard", async (StoreService store, CancellationToken ct) => Results.Ok(await store.GetDashboardAsync(ct)));
 api.MapGet("/reports/sales", async (DateOnly from, DateOnly to, Guid? warehouseId, Guid? sellerUserId, string? documentNumber, StoreService store, CancellationToken ct) =>

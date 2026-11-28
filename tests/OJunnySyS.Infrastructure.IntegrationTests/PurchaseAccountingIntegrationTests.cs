@@ -6,6 +6,7 @@ using OJunnySyS.Domain.Accounting;
 using OJunnySyS.Domain.Catalog;
 using OJunnySyS.Domain.Cash;
 using OJunnySyS.Domain.Common;
+using OJunnySyS.Domain.Customers;
 using OJunnySyS.Domain.Inventory;
 using OJunnySyS.Domain.Pos;
 using OJunnySyS.Domain.Purchasing;
@@ -19,6 +20,88 @@ namespace OJunnySyS.Infrastructure.IntegrationTests;
 [TestClass]
 public sealed class PurchaseAccountingIntegrationTests
 {
+    [TestMethod]
+    public async Task AcceptedSalesQuote_ConvertsAtomicallyToCreditSaleAndReplayDoesNotDoubleInventory()
+    {
+        var connectionString = Environment.GetEnvironmentVariable("OJUNNYSYS_TEST_CONNECTION");
+        if (string.IsNullOrWhiteSpace(connectionString)) Assert.Inconclusive("Define OJUNNYSYS_TEST_CONNECTION para ejecutar pruebas MySQL aisladas.");
+        var options = new DbContextOptionsBuilder<StoreDbContext>().UseMySQL(connectionString!).Options;
+        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        var tenant = new Tenant("Empresa cotizaciones", "quote-it", "quote-it@example.test", "America/Santo_Domingo");
+        var user = new ApplicationUser
+        {
+            Id = Guid.NewGuid(), TenantId = tenant.Id, DisplayName = "Vendedor de prueba",
+            UserName = "quote-it@example.test", NormalizedUserName = "QUOTE-IT@EXAMPLE.TEST",
+            Email = "quote-it@example.test", NormalizedEmail = "QUOTE-IT@EXAMPLE.TEST",
+            SecurityStamp = Guid.NewGuid().ToString(), ConcurrencyStamp = Guid.NewGuid().ToString()
+        };
+        var customer = new Customer(tenant.Id, "Cliente", "Cotización", "customer-quote@example.test", "8095550104");
+        var warehouse = new Warehouse(tenant.Id, "MAIN", "Almacén principal");
+        var register = new PosRegister(tenant.Id, "MAIN", "Caja principal", warehouse.Id);
+        var product = new Product(tenant.Id, "QUOTE-ITEM", "Artículo cotizado", "Pruebas", 100m, 10, initialUnitCost: 25m);
+        var accounts = new[]
+        {
+            new ChartAccount(tenant.Id, "1100", "Cuentas por cobrar", AccountType.Asset),
+            new ChartAccount(tenant.Id, "1200", "Inventario", AccountType.Asset),
+            new ChartAccount(tenant.Id, "2100", "Impuesto por pagar", AccountType.Liability),
+            new ChartAccount(tenant.Id, "4000", "Ventas", AccountType.Revenue),
+            new ChartAccount(tenant.Id, "5000", "Costo de ventas", AccountType.Expense)
+        };
+        await using (var db = new StoreDbContext(options))
+        {
+            await db.Database.MigrateAsync();
+            db.CurrentTenantId = tenant.Id;
+            db.Tenants.Add(tenant); db.Users.Add(user); db.Customers.Add(customer); db.Warehouses.Add(warehouse);
+            db.PosRegisters.Add(register); db.Products.Add(product); db.WarehouseStocks.Add(new WarehouseStock(tenant.Id, warehouse.Id, product.Id, 10));
+            db.ChartAccounts.AddRange(accounts);
+            await db.SaveChangesAsync();
+        }
+
+        var clock = new FixedClock(today);
+        var context = new PurchaseTestTenantContext(tenant.Id, user.Id);
+        var factory = new PurchaseTestContextFactory(options);
+        var access = new TenantAccessGuard(factory, clock);
+        var store = new EfStoreRepository(factory, context, access, clock, NullLogger<EfStoreRepository>.Instance);
+        var quotes = new EfSalesQuoteRepository(factory, context, access, store);
+        var quote = await quotes.CreateAsync(new CreateSalesQuoteRequest(customer.Id, today.AddDays(15), "Precio válido por quince días",
+            [new SalesQuoteLineRequest(product.Id, 2, 90m)]), today);
+        Assert.AreEqual(SalesQuoteStatus.Draft, quote.Status);
+        Assert.AreEqual(212.40m, quote.Total);
+        quote = await quotes.MarkSentAsync(quote.Id, new SalesQuoteStatusRequest(quote.Revision), today);
+        quote = await quotes.AcceptAsync(quote.Id, new SalesQuoteStatusRequest(quote.Revision), today);
+
+        await using (var update = new StoreDbContext(options))
+        {
+            update.CurrentTenantId = tenant.Id;
+            var changedTenant = await update.Tenants.SingleAsync(x => x.Id == tenant.Id);
+            changedTenant.UpdateBusinessSettings(changedTenant.TimeZoneId, changedTenant.CurrencyCode, .20m);
+            var changedProduct = await update.Products.SingleAsync(x => x.Id == product.Id);
+            changedProduct.UpdateCatalog(product.Sku, product.Name, product.Category, 120m, product.Barcode, product.TaxRateOverride, product.TaxProfileId);
+            await update.SaveChangesAsync();
+        }
+
+        var convertRequest = new ConvertSalesQuoteRequest(quote.Revision, register.Code, today.AddDays(30));
+        var sale = await quotes.ConvertAsync(quote.Id, user.Id, convertRequest);
+        var replay = await quotes.ConvertAsync(quote.Id, user.Id, convertRequest);
+        Assert.AreEqual(sale.Id, replay.Id, "Repetir una conversión devuelve la misma venta.");
+        Assert.AreEqual(PaymentMethod.Credit, sale.PaymentMethod);
+        Assert.AreEqual(212.40m, sale.Total);
+        Assert.AreEqual(212.40m, sale.BalanceDue);
+        Assert.AreEqual(90m, sale.Lines.Single().UnitPrice, "La conversión conserva el precio cotizado aunque cambie el precio del catálogo.");
+        Assert.AreEqual(.18m, sale.Lines.Single().TaxRate, "La conversión conserva el impuesto cotizado aunque cambie la tasa general.");
+
+        await using var verify = new StoreDbContext(options);
+        verify.CurrentTenantId = tenant.Id;
+        var persistedQuote = await verify.SalesQuotes.SingleAsync(x => x.Id == quote.Id);
+        Assert.AreEqual(SalesQuoteStatus.Converted, persistedQuote.Status);
+        Assert.AreEqual(sale.Id, persistedQuote.ConvertedSaleId);
+        Assert.AreEqual(8, (await verify.WarehouseStocks.SingleAsync(x => x.WarehouseId == warehouse.Id && x.ProductId == product.Id)).Quantity);
+        Assert.AreEqual(1, await verify.Sales.CountAsync(x => x.SalesQuoteId == quote.Id));
+        Assert.AreEqual(1, await verify.InventoryMovements.CountAsync(x => x.Reference == sale.Number));
+        var entry = await verify.JournalEntries.Include(x => x.Lines).SingleAsync(x => x.SourceType == "SALE" && x.SourceId == sale.Id);
+        Assert.AreEqual(entry.Lines.Sum(x => x.Debit), entry.Lines.Sum(x => x.Credit));
+    }
+
     [TestMethod]
     public async Task ProductTaxProfile_IsAppliedByPosAndHistoricalSaleKeepsRateSnapshot()
     {

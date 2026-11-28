@@ -288,6 +288,28 @@ public sealed class EfStoreRepository(IDbContextFactory<StoreDbContext> contextF
         var tenantId = tenantContext.GetRequiredTenantId();
         await using var db = await CreateDbContextAsync(cancellationToken);
         await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
+        SalesQuote? salesQuote = null;
+        if (request.SalesQuoteId is { } quoteId)
+        {
+            if (request.PaymentMethod != PaymentMethod.Credit || request.Payments is { Count: > 0 } || request.CustomerId is null || request.DueDate is null)
+                throw new DomainException("Una cotización se convierte en una venta a crédito con cliente y vencimiento.");
+            salesQuote = await db.SalesQuotes.FromSqlInterpolated($"SELECT * FROM SalesQuotes WHERE Id = {quoteId} AND TenantId = {tenantId} FOR UPDATE")
+                .AsSplitQuery().Include(x => x.Lines).SingleOrDefaultAsync(cancellationToken)
+                ?? throw new DomainException("La cotización no existe en esta empresa.");
+            if (salesQuote.Status == SalesQuoteStatus.Converted && salesQuote.ConvertedSaleId is { } convertedSaleId)
+            {
+                var convertedSale = await db.Sales.AsSplitQuery().Include(x => x.Lines).Include(x => x.Payments).Include(x => x.Receipts).Include(x => x.Returns)
+                    .SingleAsync(x => x.Id == convertedSaleId, cancellationToken);
+                await transaction.CommitAsync(cancellationToken);
+                return convertedSale;
+            }
+            if (salesQuote.Status != SalesQuoteStatus.Accepted || request.SalesQuoteRevision != salesQuote.Revision)
+                throw new DomainException("La cotización no está aceptada o cambió. Recarga su estado antes de convertirla.");
+            var quotedLines = salesQuote.Lines.OrderBy(x => x.ProductId).Select(x => (x.ProductId, x.Quantity)).ToArray();
+            var requestedLines = request.Lines.GroupBy(x => x.ProductId).Select(x => (ProductId: x.Key, Quantity: SumQuantities(x.Select(y => y.Quantity)))).OrderBy(x => x.ProductId).ToArray();
+            if (salesQuote.CustomerId != request.CustomerId || !quotedLines.SequenceEqual(requestedLines))
+                throw new DomainException("El cliente y las cantidades deben coincidir con la cotización aceptada.");
+        }
         var priorSale = await db.Sales.AsNoTracking().AsSplitQuery().Include(x => x.Lines).Include(x => x.Payments).Include(x => x.Receipts).Include(x => x.Returns)
             .SingleOrDefaultAsync(x => x.IdempotencyKey == request.IdempotencyKey, cancellationToken);
         if (priorSale is not null)
@@ -334,17 +356,20 @@ public sealed class EfStoreRepository(IDbContextFactory<StoreDbContext> contextF
             warehouseStock.Adjust(-quantity);
             var costSnapshot = product.ConsumeInventory(quantity);
             stockMovements.Add((product, quantity, warehouseStock.Quantity));
-            var taxRate = product.TaxProfileId is not null
+            var quoteLine = salesQuote?.Lines.SingleOrDefault(x => x.ProductId == product.Id);
+            var taxRate = quoteLine?.TaxRate ?? (product.TaxProfileId is not null
                 ? taxProfilesById.GetValueOrDefault(product.TaxProfileId.Value)?.Rate ?? throw new DomainException("El perfil de impuesto del producto no está disponible.")
-                : product.TaxRateOverride ?? tenant.DefaultTaxRate;
-            lines.Add(new SaleLine(product.Id, product.Sku, product.Name, product.UnitPrice, quantity,
+                : product.TaxRateOverride ?? tenant.DefaultTaxRate);
+            var unitPrice = quoteLine?.UnitPrice ?? product.UnitPrice;
+            lines.Add(new SaleLine(product.Id, quoteLine?.Sku ?? product.Sku, quoteLine?.ProductName ?? product.Name, unitPrice, quantity,
                 taxRate, costSnapshot.UnitCost, costSnapshot.UncostedQuantity));
         }
 
         if (request.PaymentMethod == PaymentMethod.Credit && (customer is null || request.DueDate is null)) throw new DomainException("Selecciona un cliente y una fecha de vencimiento para vender a crédito.");
-        var sale = new Sale(tenantId, $"V-{DateTimeOffset.UtcNow:yyyyMMddHHmmss}-{Guid.NewGuid():N}", customer, request.PaymentMethod, lines, cashSession?.Id, cashierUserId, tenant.DefaultTaxRate, request.IdempotencyKey, registerCode, warehouseId, request.DueDate);
+        var sale = new Sale(tenantId, $"V-{DateTimeOffset.UtcNow:yyyyMMddHHmmss}-{Guid.NewGuid():N}", customer, request.PaymentMethod, lines, cashSession?.Id, cashierUserId, tenant.DefaultTaxRate, request.IdempotencyKey, registerCode, warehouseId, request.DueDate, salesQuote?.Id);
         sale.AssignSeller(request.SellerUserId, sellerName);
         sale.RecordPayments(request.PaymentMethod == PaymentMethod.Credit ? [] : await ResolvePaymentAllocationsAsync(db, tenantId, request, sale.Total, cancellationToken));
+        salesQuote?.MarkConverted(sale.Id);
         foreach (var movement in stockMovements)
             db.InventoryMovements.Add(new InventoryMovement(tenantId, movement.Product.Id, InventoryMovementType.Sale, -movement.Quantity, movement.WarehouseBalance, sale.Number, warehouseId));
         customer?.RecordPurchase(sale.Total);

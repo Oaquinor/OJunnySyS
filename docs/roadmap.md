@@ -27,6 +27,7 @@ OJunnySyS se desarrolla en C#, ASP.NET Core .NET 10, Blazor Server interactivo, 
 - [x] Administración inicial de tenants, planes, límites y facturación manual.
 - [x] Configuración por empresa de zona horaria, moneda y tasa general de impuesto, aplicada en servidor y guardada como snapshot en la venta.
 - [x] Catálogo de perfiles de impuesto por empresa, asignación exclusiva por producto y tasa histórica guardada por línea; probado con dos ventas POS MySQL antes y después de cambiar la tasa.
+- [x] Cotizaciones multiempresa con precios/impuestos históricos, vigencia, estados y control de revisión; conversión idempotente a venta a crédito conserva los valores ofertados, descuenta inventario y contabiliza cartera en una sola transacción.
 - [x] API versionada para los flujos que requieren integración externa.
 - [x] Scaffold inicial para funcionalidades y componentes reutilizables.
 - [x] Generador de clases C# desde el esquema MySQL con preview y salida por capas sin sobrescribir archivos.

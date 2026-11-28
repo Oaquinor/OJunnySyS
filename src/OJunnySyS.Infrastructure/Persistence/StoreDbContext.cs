@@ -28,6 +28,8 @@ public sealed class StoreDbContext(DbContextOptions<StoreDbContext> options)
     public DbSet<CustomerTagAssignment> CustomerTagAssignments => Set<CustomerTagAssignment>();
     public DbSet<CustomerSegment> CustomerSegments => Set<CustomerSegment>();
     public DbSet<Sale> Sales => Set<Sale>();
+    public DbSet<SalesQuote> SalesQuotes => Set<SalesQuote>();
+    public DbSet<SalesQuoteLine> SalesQuoteLines => Set<SalesQuoteLine>();
     public DbSet<SalePayment> SalePayments => Set<SalePayment>();
     public DbSet<CustomerReceipt> CustomerReceipts => Set<CustomerReceipt>();
     public DbSet<SaleReturn> SaleReturns => Set<SaleReturn>();
@@ -172,6 +174,7 @@ public sealed class StoreDbContext(DbContextOptions<StoreDbContext> options)
         modelBuilder.Entity<Customer>(entity =>
         {
             entity.HasKey(x => x.Id);
+            entity.HasAlternateKey(x => new { x.TenantId, x.Id });
             entity.HasIndex(x => new { x.TenantId, x.Email }).IsUnique();
             entity.HasIndex(x => new { x.TenantId, x.IsActive, x.FirstName, x.LastName });
             entity.HasOne<Tenant>().WithMany().HasForeignKey(x => x.TenantId).OnDelete(DeleteBehavior.Restrict);
@@ -232,7 +235,9 @@ public sealed class StoreDbContext(DbContextOptions<StoreDbContext> options)
             entity.HasIndex(x => new { x.TenantId, x.CustomerId, x.CreatedAtUtc });
             entity.HasIndex(x => new { x.TenantId, x.WarehouseId, x.CreatedAtUtc });
             entity.HasIndex(x => new { x.TenantId, x.IdempotencyKey }).IsUnique();
+            entity.HasIndex(x => new { x.TenantId, x.SalesQuoteId }).IsUnique();
             entity.HasOne<Tenant>().WithMany().HasForeignKey(x => x.TenantId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne<SalesQuote>().WithMany().HasForeignKey(x => new { x.TenantId, x.SalesQuoteId }).HasPrincipalKey(x => new { x.TenantId, x.Id }).OnDelete(DeleteBehavior.Restrict);
             entity.HasQueryFilter(x => CurrentTenantId != null && x.TenantId == CurrentTenantId);
             entity.Property(x => x.Number).HasMaxLength(64).IsRequired();
             entity.Property(x => x.RegisterCode).HasMaxLength(40).IsRequired();
@@ -255,6 +260,43 @@ public sealed class StoreDbContext(DbContextOptions<StoreDbContext> options)
             entity.Navigation(nameof(Sale.Receipts)).UsePropertyAccessMode(PropertyAccessMode.Field);
             entity.HasMany<SaleReturn>(nameof(Sale.Returns)).WithOne().HasForeignKey(x => new { x.TenantId, x.SaleId }).HasPrincipalKey(x => new { x.TenantId, x.Id }).OnDelete(DeleteBehavior.Restrict);
             entity.Navigation(nameof(Sale.Returns)).UsePropertyAccessMode(PropertyAccessMode.Field);
+        });
+
+        modelBuilder.Entity<SalesQuote>(entity =>
+        {
+            entity.HasKey(x => x.Id);
+            entity.HasAlternateKey(x => new { x.TenantId, x.Id });
+            entity.HasIndex(x => new { x.TenantId, x.Number }).IsUnique();
+            entity.HasIndex(x => new { x.TenantId, x.CustomerId, x.CreatedAtUtc });
+            entity.HasIndex(x => new { x.TenantId, x.Status, x.ValidUntil });
+            entity.HasIndex(x => new { x.TenantId, x.ConvertedSaleId }).IsUnique();
+            entity.HasOne<Tenant>().WithMany().HasForeignKey(x => x.TenantId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne<Customer>().WithMany().HasForeignKey(x => new { x.TenantId, x.CustomerId }).HasPrincipalKey(x => new { x.TenantId, x.Id }).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne<Sale>().WithMany().HasForeignKey(x => new { x.TenantId, x.ConvertedSaleId }).HasPrincipalKey(x => new { x.TenantId, x.Id }).OnDelete(DeleteBehavior.Restrict);
+            entity.HasQueryFilter(x => CurrentTenantId != null && x.TenantId == CurrentTenantId);
+            entity.Property(x => x.Number).HasMaxLength(40).IsRequired();
+            entity.Property(x => x.CustomerName).HasMaxLength(220).IsRequired();
+            entity.Property(x => x.Notes).HasMaxLength(1000);
+            entity.Property(x => x.Status).HasConversion<int>();
+            entity.Property(x => x.Subtotal).HasPrecision(14, 2);
+            entity.Property(x => x.TaxAmount).HasPrecision(14, 2);
+            entity.Property(x => x.Total).HasPrecision(14, 2);
+            entity.Property(x => x.Revision).IsConcurrencyToken().HasDefaultValue(0L);
+            entity.HasMany<SalesQuoteLine>(nameof(SalesQuote.Lines)).WithOne().HasForeignKey(x => new { x.TenantId, x.SalesQuoteId }).HasPrincipalKey(x => new { x.TenantId, x.Id }).OnDelete(DeleteBehavior.Cascade);
+            entity.Navigation(nameof(SalesQuote.Lines)).UsePropertyAccessMode(PropertyAccessMode.Field);
+        });
+
+        modelBuilder.Entity<SalesQuoteLine>(entity =>
+        {
+            entity.HasKey(x => x.Id);
+            entity.HasIndex(x => new { x.TenantId, x.SalesQuoteId });
+            entity.HasOne<Tenant>().WithMany().HasForeignKey(x => x.TenantId).OnDelete(DeleteBehavior.Restrict);
+            entity.Property(x => x.Sku).HasMaxLength(40).IsRequired();
+            entity.Property(x => x.ProductName).HasMaxLength(160).IsRequired();
+            entity.Property(x => x.UnitPrice).HasPrecision(12, 2);
+            entity.Property(x => x.LineTotal).HasPrecision(14, 2);
+            entity.Property(x => x.TaxRate).HasPrecision(5, 4);
+            entity.Ignore(x => x.TaxAmount);
         });
 
         modelBuilder.Entity<SaleReturn>(entity =>

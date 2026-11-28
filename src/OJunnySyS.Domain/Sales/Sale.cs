@@ -17,7 +17,7 @@ public sealed class Sale : TenantEntity
     private readonly List<CustomerReceipt> _receipts = [];
     private readonly List<SaleReturn> _returns = [];
 
-    public Sale(Guid tenantId, string number, Customer? customer, PaymentMethod paymentMethod, IEnumerable<SaleLine> lines, Guid? cashSessionId, Guid cashierUserId, decimal taxRate = 0.18m, Guid? idempotencyKey = null, string registerCode = "MAIN", Guid warehouseId = default, DateOnly? dueDate = null) : base(tenantId)
+    public Sale(Guid tenantId, string number, Customer? customer, PaymentMethod paymentMethod, IEnumerable<SaleLine> lines, Guid? cashSessionId, Guid cashierUserId, decimal taxRate = 0.18m, Guid? idempotencyKey = null, string registerCode = "MAIN", Guid warehouseId = default, DateOnly? dueDate = null, Guid? salesQuoteId = null) : base(tenantId)
     {
         if (string.IsNullOrWhiteSpace(number)) throw new DomainException("El número de venta es obligatorio.");
         if (number.Length > 64) throw new DomainException("El número de venta no puede superar 64 caracteres.");
@@ -32,6 +32,7 @@ public sealed class Sale : TenantEntity
         RegisterCode = PosRegister.NormalizeCode(registerCode);
         if (warehouseId == Guid.Empty) throw new DomainException("El almacén de la venta es obligatorio.");
         WarehouseId = warehouseId;
+        SalesQuoteId = salesQuoteId;
         Number = number; CustomerId = customer?.Id; CustomerName = customer?.FullName ?? "Consumidor final";
         CashSessionId = cashSessionId; CashierUserId = cashierUserId; DueDate = dueDate;
         PaymentMethod = paymentMethod; TaxRate = taxRate; IdempotencyKey = idempotencyKey;
@@ -45,6 +46,7 @@ public sealed class Sale : TenantEntity
     public Guid? CashSessionId { get; private set; }
     public string RegisterCode { get; private set; } = "MAIN";
     public Guid WarehouseId { get; private set; }
+    public Guid? SalesQuoteId { get; private set; }
     public Guid? CashierUserId { get; private set; }
     public Guid? SellerUserId { get; private set; }
     public string? SellerName { get; private set; }

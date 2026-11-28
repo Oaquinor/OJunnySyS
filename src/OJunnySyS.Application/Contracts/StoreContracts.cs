@@ -16,9 +16,16 @@ public sealed record CustomerDto(Guid Id, string Name, string Email, string Phon
 public sealed record UpdateCustomerRequest(string FirstName, string LastName, string Email, string Phone, string? Company, long ExpectedRevision);
 public sealed record DeactivateCustomerRequest(long ExpectedRevision);
 public sealed record SaleDto(Guid Id, string Number, string CustomerName, decimal Subtotal, decimal TaxAmount, decimal Total, PaymentMethod PaymentMethod, DateTimeOffset CreatedAtUtc, SaleStatus Status = SaleStatus.Completed, string? PaymentSummary = null, string? SellerName = null, DateOnly? DueDate = null, decimal AmountPaid = 0m, decimal BalanceDue = 0m);
+public sealed record SalesQuoteLineRequest(Guid ProductId, int Quantity, decimal? UnitPrice = null);
+public sealed record CreateSalesQuoteRequest(Guid CustomerId, DateOnly ValidUntil, string? Notes, IReadOnlyCollection<SalesQuoteLineRequest> Lines);
+public sealed record UpdateSalesQuoteRequest(Guid CustomerId, DateOnly ValidUntil, string? Notes, long ExpectedRevision, IReadOnlyCollection<SalesQuoteLineRequest> Lines);
+public sealed record SalesQuoteStatusRequest(long ExpectedRevision);
+public sealed record ConvertSalesQuoteRequest(long ExpectedRevision, string RegisterCode, DateOnly DueDate);
+public sealed record SalesQuoteLineDto(Guid ProductId, string Sku, string ProductName, int Quantity, decimal UnitPrice, decimal LineTotal, decimal TaxRate, decimal TaxAmount);
+public sealed record SalesQuoteDto(Guid Id, string Number, Guid CustomerId, string CustomerName, DateOnly ValidUntil, string? Notes, SalesQuoteStatus Status, decimal Subtotal, decimal TaxAmount, decimal Total, DateTimeOffset CreatedAtUtc, long Revision, Guid? ConvertedSaleId, IReadOnlyList<SalesQuoteLineDto> Lines);
 public sealed record CheckoutLine(Guid ProductId, int Quantity);
 public sealed record CheckoutPaymentLine(Guid PaymentMethodId, decimal Amount, string? Reference = null);
-public sealed record CheckoutRequest(Guid? CustomerId, PaymentMethod PaymentMethod, IReadOnlyCollection<CheckoutLine> Lines, Guid IdempotencyKey = default, string RegisterCode = "MAIN", IReadOnlyCollection<CheckoutPaymentLine>? Payments = null, Guid? SellerUserId = null, DateOnly? DueDate = null);
+public sealed record CheckoutRequest(Guid? CustomerId, PaymentMethod PaymentMethod, IReadOnlyCollection<CheckoutLine> Lines, Guid IdempotencyKey = default, string RegisterCode = "MAIN", IReadOnlyCollection<CheckoutPaymentLine>? Payments = null, Guid? SellerUserId = null, DateOnly? DueDate = null, Guid? SalesQuoteId = null, long? SalesQuoteRevision = null);
 public sealed record CustomerReceiptRequest(Guid IdempotencyKey, decimal Amount, Guid PaymentMethodId, string? Reference = null, string RegisterCode = "MAIN");
 public sealed record SaleReturnLineRequest(Guid SaleLineId, int Quantity);
 public sealed record CreateSaleReturnRequest(Guid IdempotencyKey, IReadOnlyCollection<SaleReturnLineRequest> Lines, Guid? RefundPaymentMethodId = null, string RegisterCode = "MAIN");
