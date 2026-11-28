@@ -188,6 +188,17 @@ taxProfiles.MapPatch("/{id:guid}/activation", async (Guid id, SetTaxProfileActiv
     catch (DomainException ex) { return Results.ValidationProblem(new Dictionary<string, string[]> { ["taxProfile"] = [ex.Message] }); }
 });
 var api = app.MapGroup("/api/v1").RequireAuthorization();
+var posClientApi = api.MapGroup("/pos/client").RequireAuthorization("Checkout");
+posClientApi.MapGet("/terminals", async (PosRegisterService service, CancellationToken ct) =>
+    Results.Ok(await service.GetRegistersAsync(includeInactive: false, ct)));
+posClientApi.MapGet("/payment-options", async (PosPaymentMethodService service, CancellationToken ct) =>
+    Results.Ok(await service.GetAsync(includeInactive: false, ct)));
+posClientApi.MapGet("/sellers", async (TenantUserService service, CancellationToken ct) =>
+    Results.Ok(await service.GetActiveSalespeopleAsync(ct)));
+posClientApi.MapGet("/business-settings", async (TenantSettingsService service, CancellationToken ct) =>
+    Results.Ok(await service.GetAsync(ct)));
+posClientApi.MapGet("/warehouses/{warehouseId:guid}/products", async (Guid warehouseId, string? search, StoreService service, CancellationToken ct) =>
+    Results.Ok(await service.SearchProductsInWarehouseAsync(search, warehouseId, ct)));
 var tenantUsers = api.MapGroup("/users").RequireAuthorization("TenantUserManagement");
 tenantUsers.MapGet("", async (TenantUserService service, CancellationToken ct) => Results.Ok(await service.GetUsersAsync(ct)));
 tenantUsers.MapPost("", async (CreateTenantUserRequest request, HttpRequest httpRequest, TenantUserService service, CancellationToken ct) =>

@@ -8,6 +8,11 @@ Base path: `/api/v1`. Todas las rutas requieren sesión autenticada. Las respues
 | GET | `/users` | Administrador de la empresa | Listar únicamente usuarios del tenant activo |
 | POST | `/users` | Administrador de la empresa | Invitar un miembro por correo; devuelve si se entregó el mensaje sin exponer tokens |
 | POST | `/users/{id}/activation` | Administrador de la empresa | Activar/desactivar usuario del tenant; impide auto-desactivación y conservar cero administradores |
+| GET | `/pos/client/terminals` | Administrador, gerente o cajero | Terminales activas permitidas para la interfaz POS cliente |
+| GET | `/pos/client/payment-options` | Administrador, gerente o cajero | Métodos activos que se pueden cobrar en el POS |
+| GET | `/pos/client/sellers` | Administrador, gerente o cajero | Vendedores confirmados disponibles para asignación de venta |
+| GET | `/pos/client/business-settings` | Administrador, gerente o cajero | Moneda, tasa y formato comercial que utiliza el POS |
+| GET | `/pos/client/warehouses/{warehouseId}/products` | Administrador, gerente o cajero | Catálogo y existencias de una ubicación, con búsqueda opcional |
 | POST | `/products` | Administrador, Gerente | Crear producto |
 | PUT | `/products/{id}` | Administrador, Gerente | Editar SKU, descripción, precio y código con `expectedRevision`; el stock se cambia exclusivamente mediante movimientos |
 | PATCH | `/products/{id}/activation` | Administrador, Gerente | Activar/desactivar lógicamente con `{ isActive, expectedRevision }`, sin borrar existencias ni historial |
