@@ -1,6 +1,6 @@
 <div class="@CssClass">
     <span aria-hidden="true">⌕</span>
-    <input id="@InputId" value="@Value" placeholder="@Placeholder" @oninput="HandleInputAsync" />
+    <input id="@InputId" class="@InputClass" value="@Value" placeholder="@Placeholder" @oninput="HandleInputAsync" />
 </div>
 
 @code {
@@ -9,6 +9,7 @@
     [Parameter] public string Placeholder { get; set; } = "Buscar…";
     [Parameter] public string? InputId { get; set; }
     [Parameter] public string CssClass { get; set; } = "search-box";
+    [Parameter] public string InputClass { get; set; } = "";
 
     private Task HandleInputAsync(ChangeEventArgs args) => ValueChanged.InvokeAsync(args.Value?.ToString() ?? "");
 }
