@@ -62,6 +62,31 @@ public sealed class Product : TenantEntity
         StockOnHand += delta; MarkChanged();
     }
 
+    public void ApplyInventoryAdjustment(int quantityDelta, decimal? unitCost)
+    {
+        if (quantityDelta == 0 || quantityDelta == int.MinValue) throw new DomainException("La cantidad del ajuste no es válida.");
+        if (quantityDelta < 0)
+        {
+            if (unitCost is not null) throw new DomainException("La disminución usa el costo promedio actual del producto.");
+            _ = ConsumeInventory(-quantityDelta);
+            return;
+        }
+        if (unitCost is null or < 0 or > 9999999999.9999m)
+            throw new DomainException("Indica un costo unitario válido para aumentar las existencias.");
+        if (quantityDelta > int.MaxValue - StockOnHand) throw new DomainException($"Las existencias superan el límite permitido para {Name}.");
+
+        if (unitCost.Value == 0m)
+            UncostedQuantity = checked(UncostedQuantity + quantityDelta);
+        else
+        {
+            var costedUnits = StockOnHand - UncostedQuantity;
+            var totalCosted = checked(costedUnits + quantityDelta);
+            UnitCost = decimal.Round(((UnitCost * costedUnits) + (unitCost.Value * quantityDelta)) / totalCosted, 4, MidpointRounding.AwayFromZero);
+        }
+        StockOnHand = checked(StockOnHand + quantityDelta);
+        MarkChanged();
+    }
+
     public void ApplyPurchaseCost(int receivedUnits, decimal purchaseUnitCost)
     {
         if (receivedUnits <= 0 || purchaseUnitCost < 0)

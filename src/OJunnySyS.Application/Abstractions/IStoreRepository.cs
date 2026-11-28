@@ -25,6 +25,8 @@ public interface IStoreRepository
     Task<Product> UpdateProductAsync(Guid productId, UpdateProductRequest request, CancellationToken cancellationToken = default);
     Task<Product> SetProductActiveAsync(Guid productId, SetProductActiveRequest request, CancellationToken cancellationToken = default);
     Task<InventoryTransferResult> TransferInventoryAsync(InventoryTransferRequest request, CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<InventoryAdjustmentDto>> GetInventoryAdjustmentsAsync(int count = 100, CancellationToken cancellationToken = default);
+    Task<InventoryAdjustmentDto> AdjustInventoryAsync(InventoryAdjustmentRequest request, Guid actorUserId, CancellationToken cancellationToken = default);
     Task<Sale> CheckoutAsync(CheckoutRequest request, Guid cashierUserId, CancellationToken cancellationToken = default);
     Task<CashSessionDto?> GetCurrentCashSessionAsync(string registerCode = "MAIN", CancellationToken cancellationToken = default);
     Task<IReadOnlyList<CashSessionDto>> GetRecentCashSessionsAsync(int count, CancellationToken cancellationToken = default);

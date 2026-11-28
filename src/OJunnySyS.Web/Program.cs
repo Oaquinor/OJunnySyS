@@ -242,6 +242,15 @@ warehouses.MapPatch("/{id:guid}/activation", async (Guid id, SetWarehouseActiveR
     catch (ConcurrencyConflictException ex) { return Results.Conflict(new { error = ex.Message }); }
     catch (DomainException ex) { return Results.ValidationProblem(new Dictionary<string, string[]> { ["warehouse"] = [ex.Message] }); }
 });
+var inventoryAdjustments = api.MapGroup("/inventory/adjustments").RequireAuthorization("CatalogWrite");
+inventoryAdjustments.MapGet("", async (int? count, StoreService service, CancellationToken ct) =>
+    Results.Ok(await service.GetInventoryAdjustmentsAsync(count ?? 100, ct)));
+inventoryAdjustments.MapPost("", async (InventoryAdjustmentRequest request, ClaimsPrincipal user, StoreService service, CancellationToken ct) =>
+{
+    try { return Results.Ok(await service.AdjustInventoryAsync(request, CurrentActorId(user), ct)); }
+    catch (ConcurrencyConflictException ex) { return Results.Conflict(new { error = ex.Message }); }
+    catch (DomainException ex) { return Results.ValidationProblem(new Dictionary<string, string[]> { ["adjustment"] = [ex.Message] }); }
+});
 api.MapPost("/inventory/transfers", async (InventoryTransferRequest request, StoreService store, CancellationToken ct) =>
 {
     try { return Results.Ok(await store.TransferInventoryAsync(request, ct)); }

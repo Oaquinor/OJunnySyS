@@ -21,6 +21,85 @@ namespace OJunnySyS.Infrastructure.IntegrationTests;
 public sealed class PurchaseAccountingIntegrationTests
 {
     [TestMethod]
+    public async Task InventoryAdjustments_AreIdempotentValuedAndPostedWithBalancedLedgerEntries()
+    {
+        var connectionString = Environment.GetEnvironmentVariable("OJUNNYSYS_TEST_CONNECTION");
+        if (string.IsNullOrWhiteSpace(connectionString)) Assert.Inconclusive("Define OJUNNYSYS_TEST_CONNECTION para ejecutar pruebas MySQL aisladas.");
+        var options = new DbContextOptionsBuilder<StoreDbContext>().UseMySQL(connectionString!).Options;
+        var date = new DateOnly(2026, 11, 27);
+        var tenant = new Tenant("Empresa ajuste inventario", "inventory-adjustment-it", "inventory-adjustment-it@example.test", "America/Santo_Domingo");
+        var user = new ApplicationUser
+        {
+            Id = Guid.NewGuid(), TenantId = tenant.Id, DisplayName = "Supervisor de inventario",
+            UserName = "inventory-adjustment-it@example.test", NormalizedUserName = "INVENTORY-ADJUSTMENT-IT@EXAMPLE.TEST",
+            Email = "inventory-adjustment-it@example.test", NormalizedEmail = "INVENTORY-ADJUSTMENT-IT@EXAMPLE.TEST",
+            SecurityStamp = Guid.NewGuid().ToString(), ConcurrencyStamp = Guid.NewGuid().ToString()
+        };
+        var warehouse = new Warehouse(tenant.Id, "MAIN", "Almacén principal");
+        var product = new Product(tenant.Id, "ADJUST-ITEM", "Producto de ajuste", "Prueba", 100m, 10, initialUnitCost: 25m);
+        var inventory = new ChartAccount(tenant.Id, "1200", "Inventario", AccountType.Asset);
+        var gain = new ChartAccount(tenant.Id, "4190", "Ganancias por sobrante", AccountType.Revenue);
+        var loss = new ChartAccount(tenant.Id, "5100", "Pérdidas de inventario", AccountType.Expense);
+        await using (var db = new StoreDbContext(options))
+        {
+            await db.Database.MigrateAsync();
+            db.CurrentTenantId = tenant.Id;
+            db.Tenants.Add(tenant); db.Users.Add(user); db.Warehouses.Add(warehouse); db.Products.Add(product);
+            db.WarehouseStocks.Add(new WarehouseStock(tenant.Id, warehouse.Id, product.Id, 10));
+            db.ChartAccounts.AddRange(inventory, gain, loss);
+            await db.SaveChangesAsync();
+        }
+
+        var clock = new FixedClock(date);
+        var context = new PurchaseTestTenantContext(tenant.Id, user.Id);
+        var factory = new PurchaseTestContextFactory(options);
+        var repository = new EfStoreRepository(factory, context, new TenantAccessGuard(factory, clock), clock, NullLogger<EfStoreRepository>.Instance);
+        var increase = new InventoryAdjustmentRequest(Guid.NewGuid(), product.Id, warehouse.Id, 3, 30m, gain.Id, "Conteo físico: tres unidades sobrantes");
+        var first = await repository.AdjustInventoryAsync(increase, user.Id);
+        var replay = await repository.AdjustInventoryAsync(increase, user.Id);
+        Assert.AreEqual(first.Id, replay.Id, "Repetir la operación devuelve el mismo ajuste.");
+        Assert.AreEqual(90m, first.ValuationAmount);
+        Assert.AreEqual(13, first.BalanceAfter);
+        Assert.IsNotNull(first.JournalEntryNumber);
+
+        var changedReplayRejected = false;
+        try
+        {
+            await repository.AdjustInventoryAsync(increase with { QuantityDelta = 4 }, user.Id);
+        }
+        catch (DomainException) { changedReplayRejected = true; }
+        Assert.IsTrue(changedReplayRejected, "Una clave existente no puede representar una cantidad distinta.");
+
+        var decrease = await repository.AdjustInventoryAsync(new InventoryAdjustmentRequest(Guid.NewGuid(), product.Id, warehouse.Id,
+            -2, null, loss.Id, "Merma verificada en revisión de inventario"), user.Id);
+        Assert.AreEqual(11, decrease.BalanceAfter);
+        Assert.AreEqual(52.31m, decrease.ValuationAmount);
+
+        var insufficientRejected = false;
+        try
+        {
+            await repository.AdjustInventoryAsync(new InventoryAdjustmentRequest(Guid.NewGuid(), product.Id, warehouse.Id,
+                -99, null, loss.Id, "Corrección de una cantidad imposible"), user.Id);
+        }
+        catch (DomainException) { insufficientRejected = true; }
+        Assert.IsTrue(insufficientRejected, "El ajuste no puede llevar el stock por debajo de cero.");
+
+        await using var verify = new StoreDbContext(options);
+        verify.CurrentTenantId = tenant.Id;
+        Assert.AreEqual(2, await verify.InventoryAdjustments.CountAsync());
+        Assert.AreEqual(2, await verify.InventoryMovements.CountAsync(x => x.Type == InventoryMovementType.StockAdjustment));
+        Assert.AreEqual(11, (await verify.WarehouseStocks.SingleAsync(x => x.WarehouseId == warehouse.Id && x.ProductId == product.Id)).Quantity);
+        var persistedProduct = await verify.Products.SingleAsync(x => x.Id == product.Id);
+        Assert.AreEqual(11, persistedProduct.StockOnHand);
+        Assert.AreEqual(26.1538m, persistedProduct.UnitCost);
+        var entries = await verify.JournalEntries.Include(x => x.Lines).Where(x => x.SourceType == "INVENTORYADJUSTMENT").ToListAsync();
+        Assert.AreEqual(2, entries.Count);
+        Assert.IsTrue(entries.All(x => x.Lines.Sum(y => y.Debit) == x.Lines.Sum(y => y.Credit)));
+        Assert.AreEqual(142.31m, entries.Sum(x => x.TotalDebit));
+        Assert.AreEqual(52.31m, entries.Single(x => x.SourceId == decrease.Id).TotalDebit);
+    }
+
+    [TestMethod]
     public async Task AcceptedSalesQuote_ConvertsAtomicallyToCreditSaleAndReplayDoesNotDoubleInventory()
     {
         var connectionString = Environment.GetEnvironmentVariable("OJUNNYSYS_TEST_CONNECTION");

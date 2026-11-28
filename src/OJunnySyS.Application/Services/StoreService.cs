@@ -14,6 +14,8 @@ public sealed class StoreService(IStoreRepository repository, IBusinessClock clo
         (await repository.SearchProductsAsync(query, includeInactive, ct)).Select(Map).ToArray();
 
     public Task<InventoryValuationDto> GetInventoryValuationAsync(CancellationToken ct = default) => repository.GetInventoryValuationAsync(ct);
+    public Task<IReadOnlyList<InventoryAdjustmentDto>> GetInventoryAdjustmentsAsync(int count = 100, CancellationToken ct = default) => repository.GetInventoryAdjustmentsAsync(count, ct);
+    public Task<InventoryAdjustmentDto> AdjustInventoryAsync(InventoryAdjustmentRequest request, Guid actorUserId, CancellationToken ct = default) => repository.AdjustInventoryAsync(request, actorUserId, ct);
 
     public async Task<IReadOnlyList<ProductDto>> SearchProductsInWarehouseAsync(string? query, Guid warehouseId, CancellationToken ct = default) =>
         (await repository.SearchProductsInWarehouseAsync(query, warehouseId, ct))

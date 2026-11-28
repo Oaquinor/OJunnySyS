@@ -49,6 +49,7 @@ public sealed class StoreDbContext(DbContextOptions<StoreDbContext> options)
     public DbSet<PosRegister> PosRegisters => Set<PosRegister>();
     public DbSet<Warehouse> Warehouses => Set<Warehouse>();
     public DbSet<WarehouseStock> WarehouseStocks => Set<WarehouseStock>();
+    public DbSet<InventoryAdjustment> InventoryAdjustments => Set<InventoryAdjustment>();
     public DbSet<ChartAccount> ChartAccounts => Set<ChartAccount>();
     public DbSet<JournalEntry> JournalEntries => Set<JournalEntry>();
     public DbSet<JournalEntryLine> JournalEntryLines => Set<JournalEntryLine>();
@@ -500,6 +501,32 @@ public sealed class StoreDbContext(DbContextOptions<StoreDbContext> options)
             entity.HasOne<Product>().WithMany().HasForeignKey(x => new { x.TenantId, x.ProductId }).HasPrincipalKey(x => new { x.TenantId, x.Id }).OnDelete(DeleteBehavior.Restrict);
             entity.HasQueryFilter(x => CurrentTenantId != null && x.TenantId == CurrentTenantId);
             entity.Property(x => x.Revision).IsConcurrencyToken().HasDefaultValue(0L);
+        });
+
+        modelBuilder.Entity<InventoryAdjustment>(entity =>
+        {
+            entity.HasKey(x => x.Id);
+            entity.HasAlternateKey(x => new { x.TenantId, x.Id });
+            entity.HasIndex(x => new { x.TenantId, x.IdempotencyKey }).IsUnique();
+            entity.HasIndex(x => new { x.TenantId, x.Number }).IsUnique();
+            entity.HasIndex(x => new { x.TenantId, x.WarehouseId, x.CreatedAtUtc });
+            entity.HasOne<Tenant>().WithMany().HasForeignKey(x => x.TenantId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne<Product>().WithMany().HasForeignKey(x => new { x.TenantId, x.ProductId }).HasPrincipalKey(x => new { x.TenantId, x.Id }).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne<Warehouse>().WithMany().HasForeignKey(x => new { x.TenantId, x.WarehouseId }).HasPrincipalKey(x => new { x.TenantId, x.Id }).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne<ChartAccount>().WithMany().HasForeignKey(x => new { x.TenantId, x.CounterAccountId }).HasPrincipalKey(x => new { x.TenantId, x.Id }).OnDelete(DeleteBehavior.Restrict);
+            entity.HasQueryFilter(x => CurrentTenantId != null && x.TenantId == CurrentTenantId);
+            entity.Property(x => x.Number).HasMaxLength(40).IsRequired();
+            entity.Property(x => x.RequestFingerprint).HasMaxLength(64).IsRequired();
+            entity.Property(x => x.ProductSku).HasMaxLength(40).IsRequired();
+            entity.Property(x => x.ProductName).HasMaxLength(160).IsRequired();
+            entity.Property(x => x.WarehouseName).HasMaxLength(120).IsRequired();
+            entity.Property(x => x.ActorName).HasMaxLength(160).IsRequired();
+            entity.Property(x => x.UnitCost).HasPrecision(14, 4);
+            entity.Property(x => x.ValuationAmount).HasPrecision(14, 2);
+            entity.Property(x => x.Reason).HasMaxLength(240).IsRequired();
+            entity.Property(x => x.CounterAccountCode).HasMaxLength(20).IsRequired();
+            entity.Property(x => x.CounterAccountName).HasMaxLength(120).IsRequired();
+            entity.Property(x => x.JournalEntryNumber).HasMaxLength(40);
         });
 
         modelBuilder.Entity<ChartAccount>(entity =>
