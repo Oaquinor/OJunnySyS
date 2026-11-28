@@ -28,7 +28,7 @@ Para cada tabla seleccionada, el flujo previsto es:
 
 ## Uso implementado
 
-La herramienta está en `tools/OJunnySyS.ClassGenerator` como utilidad .NET 10 incluida en la solución. Utiliza una cuenta de base de datos separada y de solo lectura mediante la variable `OJUNNYSYS_GENERATOR_CONNECTION`; no guarda secretos ni necesita usar la cuenta de escritura de la aplicación.
+La herramienta está separada en `tools/OJunnySyS.ClassGenerator.Core`, una biblioteca .NET 10 con modelos, lector MySQL, mapeador y generador reutilizables, y `tools/OJunnySyS.ClassGenerator`, una CLI delgada incluida en la solución. Las pruebas del núcleo están en `tests/OJunnySyS.Application.Tests/ClassGeneratorTests.cs`. La CLI utiliza una cuenta de base de datos separada y de solo lectura mediante `OJUNNYSYS_GENERATOR_CONNECTION`; no guarda secretos ni necesita usar la cuenta de escritura de la aplicación.
 
 ```powershell
 $env:OJUNNYSYS_GENERATOR_CONNECTION = 'Server=127.0.0.1;Database=mi_esquema;User ID=generador_lectura;Password=...;'

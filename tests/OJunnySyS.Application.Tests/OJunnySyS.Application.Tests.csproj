@@ -10,6 +10,7 @@
   <ItemGroup>
     <PackageReference Include="MSTest" />
     <ProjectReference Include="..\..\src\OJunnySyS.Application\OJunnySyS.Application.csproj" />
+    <ProjectReference Include="..\..\tools\OJunnySyS.ClassGenerator.Core\OJunnySyS.ClassGenerator.Core.csproj" />
   </ItemGroup>
 
   <ItemGroup>

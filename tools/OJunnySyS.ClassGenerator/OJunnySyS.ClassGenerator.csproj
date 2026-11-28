@@ -6,6 +6,6 @@
     <ImplicitUsings>enable</ImplicitUsings>
   </PropertyGroup>
   <ItemGroup>
-    <PackageReference Include="MySql.EntityFrameworkCore" />
+    <ProjectReference Include="..\OJunnySyS.ClassGenerator.Core\OJunnySyS.ClassGenerator.Core.csproj" />
   </ItemGroup>
 </Project>
