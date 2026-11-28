@@ -19,7 +19,7 @@ OJunnySyS se desarrolla en C#, ASP.NET Core .NET 10, Blazor Server interactivo, 
 - [x] Entradas/retiros manuales de caja con cuentas de contrapartida, clave idempotente y asiento de doble partida; el sobrante/faltante del arqueo se contabiliza atómicamente al cerrar.
 - [x] Administración multiempresa de terminales POS con caja por terminal y selección de caja en pagos en efectivo a proveedores.
 - [x] Almacenes por empresa, asignación de terminal/compra, saldos por ubicación, transferencias auditables y checkout limitado al stock de la sucursal.
-- [x] Ajustes de inventario con aumento y merma autorizados por rol, motivo y usuario inmutables, saldo por almacén, costo promedio/unidades sin costo, idempotencia y asiento balanceado contra cuenta de ingreso/gasto; probado contra MySQL.
+- [x] Ajustes de inventario con aumento, merma y conciliación contra conteo físico autorizados por rol, motivo y usuario inmutables, saldo por almacén, costo promedio/unidades sin costo, idempotencia y asiento balanceado contra cuenta de ingreso/gasto; probado contra MySQL.
 - [x] Proveedores, compras, recepciones parciales y completas, cuentas por pagar y antigüedad de saldos.
 - [x] Contabilización de cada recepción de compra con inventario, impuesto acreditable y cuentas por pagar; abonos idempotentes reducen la cuenta por pagar y acreditan la cuenta de pago correspondiente.
 - [x] Recepciones de compra con clave idempotente por lote, huella de líneas, protección contra reenvíos y vínculo tenant del asiento contable.

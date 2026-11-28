@@ -1,5 +1,6 @@
 using OJunnySyS.Domain.Catalog;
 using OJunnySyS.Domain.Common;
+using OJunnySyS.Domain.Inventory;
 
 namespace OJunnySyS.Domain.Tests;
 
@@ -45,5 +46,25 @@ public sealed class InventoryAdjustmentTests
         Assert.Throws<DomainException>(() => product.ApplyInventoryAdjustment(1, null));
         Assert.Throws<DomainException>(() => product.ApplyInventoryAdjustment(-3, null));
         Assert.AreEqual(2, product.StockOnHand);
+    }
+
+    [TestMethod]
+    public void Physical_count_can_record_matching_stock_and_rejects_a_mismatched_snapshot()
+    {
+        var tenantId = Guid.NewGuid();
+        var accountId = Guid.NewGuid();
+        var actorId = Guid.NewGuid();
+        var productId = Guid.NewGuid();
+        var warehouseId = Guid.NewGuid();
+
+        var verification = new InventoryAdjustment(tenantId, "IA-COUNT-1", Guid.NewGuid(), new string('A', 64),
+            productId, "COUNT-1", "Producto contado", warehouseId, "Almacén", actorId, "Supervisor", 0, 7, 7,
+            12m, 0m, "Conteo físico sin diferencias", accountId, "4190", "Ganancias por sobrante", null, 7);
+        Assert.AreEqual(7, verification.CountedQuantity);
+        Assert.AreEqual(0, verification.QuantityDelta);
+
+        Assert.Throws<DomainException>(() => new InventoryAdjustment(tenantId, "IA-COUNT-2", Guid.NewGuid(), new string('B', 64),
+            productId, "COUNT-1", "Producto contado", warehouseId, "Almacén", actorId, "Supervisor", 0, 7, 7,
+            12m, 0m, "Conteo físico", accountId, "4190", "Ganancias por sobrante", null, 8));
     }
 }

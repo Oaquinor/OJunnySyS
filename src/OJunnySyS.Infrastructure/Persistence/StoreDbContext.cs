@@ -521,6 +521,7 @@ public sealed class StoreDbContext(DbContextOptions<StoreDbContext> options)
             entity.Property(x => x.ProductName).HasMaxLength(160).IsRequired();
             entity.Property(x => x.WarehouseName).HasMaxLength(120).IsRequired();
             entity.Property(x => x.ActorName).HasMaxLength(160).IsRequired();
+            entity.Property(x => x.CountedQuantity);
             entity.Property(x => x.UnitCost).HasPrecision(14, 4);
             entity.Property(x => x.ValuationAmount).HasPrecision(14, 2);
             entity.Property(x => x.Reason).HasMaxLength(240).IsRequired();

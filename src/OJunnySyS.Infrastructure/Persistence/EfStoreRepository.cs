@@ -295,12 +295,20 @@ public sealed class EfStoreRepository(IDbContextFactory<StoreDbContext> contextF
         ArgumentNullException.ThrowIfNull(request);
         if (request.IdempotencyKey == Guid.Empty || request.ProductId == Guid.Empty || request.WarehouseId == Guid.Empty || request.CounterAccountId == Guid.Empty)
             throw new DomainException("Selecciona un producto, almacén, cuenta y clave de operación válidos.");
-        if (request.QuantityDelta == 0 || request.QuantityDelta == int.MinValue)
-            throw new DomainException("La cantidad del ajuste debe ser distinta de cero.");
-        if (request.QuantityDelta > 0 && request.UnitCost is null or < 0 or > 9999999999.9999m)
-            throw new DomainException("Indica un costo unitario válido para aumentar existencias.");
-        if (request.QuantityDelta < 0 && request.UnitCost is not null)
-            throw new DomainException("Al disminuir existencias se usa el costo promedio actual del producto.");
+        if (request.CountedQuantity is { } countedQuantity)
+        {
+            if (countedQuantity < 0 || request.QuantityDelta != 0 || request.UnitCost is not null)
+                throw new DomainException("El conteo físico debe indicar una cantidad no negativa sin delta ni costo manual.");
+        }
+        else
+        {
+            if (request.QuantityDelta == 0 || request.QuantityDelta == int.MinValue)
+                throw new DomainException("La cantidad del ajuste debe ser distinta de cero.");
+            if (request.QuantityDelta > 0 && request.UnitCost is null or < 0 or > 9999999999.9999m)
+                throw new DomainException("Indica un costo unitario válido para aumentar existencias.");
+            if (request.QuantityDelta < 0 && request.UnitCost is not null)
+                throw new DomainException("Al disminuir existencias se usa el costo promedio actual del producto.");
+        }
         if (string.IsNullOrWhiteSpace(request.Reason) || request.Reason.Trim().Length is < 3 or > 240)
             throw new DomainException("Explica el motivo del ajuste con entre 3 y 240 caracteres.");
 
@@ -311,7 +319,8 @@ public sealed class EfStoreRepository(IDbContextFactory<StoreDbContext> contextF
             ? decimal.Round(requestedUnitCost, 4, MidpointRounding.AwayFromZero)
             : (decimal?)null;
         var fingerprintPayload = string.Join('|', request.ProductId.ToString("N"), request.WarehouseId.ToString("N"),
-            request.QuantityDelta.ToString(CultureInfo.InvariantCulture), adjustmentUnitCost?.ToString("0.0000", CultureInfo.InvariantCulture) ?? "avg",
+            request.CountedQuantity is { } requestedCount ? $"count:{requestedCount.ToString(CultureInfo.InvariantCulture)}" : $"delta:{request.QuantityDelta.ToString(CultureInfo.InvariantCulture)}",
+            adjustmentUnitCost?.ToString("0.0000", CultureInfo.InvariantCulture) ?? "avg",
             request.CounterAccountId.ToString("N"), reason);
         var fingerprint = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(fingerprintPayload)));
 
@@ -338,24 +347,31 @@ public sealed class EfStoreRepository(IDbContextFactory<StoreDbContext> contextF
             ?? throw new DomainException("No hay un saldo inicializado para este producto y almacén.");
         var counterAccount = await db.ChartAccounts.SingleOrDefaultAsync(x => x.Id == request.CounterAccountId && x.IsActive, cancellationToken)
             ?? throw new DomainException("La cuenta de contrapartida no existe o está inactiva en esta empresa.");
-        var isIncrease = request.QuantityDelta > 0;
+        var balanceBefore = stock.Quantity;
+        var quantityDelta = request.CountedQuantity is { } physicalCount ? checked(physicalCount - balanceBefore) : request.QuantityDelta;
+        var isIncrease = quantityDelta > 0;
+        if (quantityDelta == 0 && request.CountedQuantity is null)
+            throw new DomainException("La cantidad del ajuste debe ser distinta de cero.");
         if (isIncrease && counterAccount.Type is not (AccountType.Revenue or AccountType.Equity))
             throw new DomainException("Un sobrante de inventario debe reconocerse contra una cuenta de ingreso u otro resultado.");
-        if (!isIncrease && counterAccount.Type is not (AccountType.Expense or AccountType.Equity))
+        if (quantityDelta < 0 && counterAccount.Type is not (AccountType.Expense or AccountType.Equity))
             throw new DomainException("Una pérdida de inventario debe reconocerse contra una cuenta de gasto u otro resultado.");
 
         var inventoryAccount = await db.ChartAccounts.SingleOrDefaultAsync(x => x.Code == "1200" && x.IsActive && x.Type == AccountType.Asset, cancellationToken)
             ?? throw new DomainException("Activa la cuenta de inventario 1200 antes de contabilizar ajustes.");
-        var balanceBefore = stock.Quantity;
-        var uncostedRemoved = isIncrease ? 0 : Math.Min(product.UncostedQuantity, -request.QuantityDelta);
-        var costedQuantity = isIncrease && request.UnitCost.GetValueOrDefault() > 0
-            ? request.QuantityDelta
-            : !isIncrease ? -request.QuantityDelta - uncostedRemoved : 0;
-        var unitCost = isIncrease ? adjustmentUnitCost!.Value : product.UnitCost;
+        var uncostedRemoved = quantityDelta >= 0 ? 0 : Math.Min(product.UncostedQuantity, -quantityDelta);
+        var costedQuantity = quantityDelta > 0 && (request.CountedQuantity is not null ? product.UnitCost > 0 : request.UnitCost.GetValueOrDefault() > 0)
+            ? quantityDelta
+            : quantityDelta < 0 ? -quantityDelta - uncostedRemoved : 0;
+        var unitCost = request.CountedQuantity is not null || quantityDelta < 0 ? product.UnitCost : adjustmentUnitCost!.Value;
         var valuationAmount = decimal.Round(unitCost * costedQuantity, 2, MidpointRounding.AwayFromZero);
         if (valuationAmount > 999999999999.99m) throw new DomainException("La valoración del ajuste supera el límite contable permitido.");
-        product.ApplyInventoryAdjustment(request.QuantityDelta, adjustmentUnitCost);
-        stock.Adjust(request.QuantityDelta);
+        if (quantityDelta != 0)
+        {
+            product.ApplyInventoryAdjustment(quantityDelta,
+                quantityDelta < 0 ? null : request.CountedQuantity is not null ? unitCost : adjustmentUnitCost);
+            stock.Adjust(quantityDelta);
+        }
 
         var numberPrefix = $"IA-{today:yyyyMMdd}-";
         var number = numberPrefix + $"{(await db.InventoryAdjustments.CountAsync(x => x.Number.StartsWith(numberPrefix), cancellationToken) + 1):0000}";
@@ -367,11 +383,12 @@ public sealed class EfStoreRepository(IDbContextFactory<StoreDbContext> contextF
         }
         var adjustment = new InventoryAdjustment(tenantId, number, request.IdempotencyKey, fingerprint,
             product.Id, product.Sku, product.Name, warehouse.Id, warehouse.Name, actor.Id, actor.DisplayName,
-            request.QuantityDelta, balanceBefore, stock.Quantity, unitCost, valuationAmount, reason,
-            counterAccount.Id, counterAccount.Code, counterAccount.Name, journalEntryNumber);
+            quantityDelta, balanceBefore, stock.Quantity, unitCost, valuationAmount, reason,
+            counterAccount.Id, counterAccount.Code, counterAccount.Name, journalEntryNumber, request.CountedQuantity);
         db.InventoryAdjustments.Add(adjustment);
-        db.InventoryMovements.Add(new InventoryMovement(tenantId, product.Id, InventoryMovementType.StockAdjustment,
-            request.QuantityDelta, stock.Quantity, number, warehouse.Id));
+        if (quantityDelta != 0)
+            db.InventoryMovements.Add(new InventoryMovement(tenantId, product.Id, InventoryMovementType.StockAdjustment,
+                quantityDelta, stock.Quantity, number, warehouse.Id));
 
         if (journalEntryNumber is not null)
         {
@@ -396,7 +413,7 @@ public sealed class EfStoreRepository(IDbContextFactory<StoreDbContext> contextF
     private static InventoryAdjustmentDto ToInventoryAdjustmentDto(InventoryAdjustment x) => new(x.Id, x.Number, x.CreatedAtUtc,
         x.ProductId, x.ProductSku, x.ProductName, x.WarehouseId, x.WarehouseName, x.ActorUserId, x.ActorName,
         x.QuantityDelta, x.BalanceBefore, x.BalanceAfter, x.UnitCost, x.ValuationAmount, x.Reason,
-        x.CounterAccountId, x.CounterAccountCode, x.CounterAccountName, x.JournalEntryNumber);
+        x.CounterAccountId, x.CounterAccountCode, x.CounterAccountName, x.JournalEntryNumber, x.CountedQuantity);
 
     public async Task<Sale> CheckoutAsync(CheckoutRequest request, Guid cashierUserId, CancellationToken cancellationToken = default)
     {

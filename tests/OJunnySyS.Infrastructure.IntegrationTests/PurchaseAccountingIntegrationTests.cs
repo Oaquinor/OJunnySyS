@@ -84,19 +84,48 @@ public sealed class PurchaseAccountingIntegrationTests
         catch (DomainException) { insufficientRejected = true; }
         Assert.IsTrue(insufficientRejected, "El ajuste no puede llevar el stock por debajo de cero.");
 
+        var countKey = Guid.NewGuid();
+        var physicalCount = new InventoryAdjustmentRequest(countKey, product.Id, warehouse.Id, 0, null, loss.Id,
+            "Conteo físico: ocho unidades verificadas", CountedQuantity: 8);
+        var counted = await repository.AdjustInventoryAsync(physicalCount, user.Id);
+        var countReplay = await repository.AdjustInventoryAsync(physicalCount, user.Id);
+        Assert.AreEqual(8, counted.BalanceAfter);
+        Assert.AreEqual(8, counted.CountedQuantity);
+        Assert.AreEqual(-3, counted.QuantityDelta, "El servidor calcula la diferencia contra el saldo bloqueado.");
+        Assert.AreEqual(counted.Id, countReplay.Id, "El reintento del conteo no vuelve a ajustar existencias.");
+        var changedCountReplayRejected = false;
+        try
+        {
+            await repository.AdjustInventoryAsync(physicalCount with { CountedQuantity = 9 }, user.Id);
+        }
+        catch (DomainException) { changedCountReplayRejected = true; }
+        Assert.IsTrue(changedCountReplayRejected, "Una misma clave no puede representar otro conteo físico.");
+
+        var matchingCount = await repository.AdjustInventoryAsync(new InventoryAdjustmentRequest(Guid.NewGuid(), product.Id, warehouse.Id,
+            0, null, loss.Id, "Conteo físico sin diferencia", CountedQuantity: 8), user.Id);
+        Assert.AreEqual(0, matchingCount.QuantityDelta);
+        Assert.IsNull(matchingCount.JournalEntryNumber, "Un conteo sin diferencia no publica asiento.");
+        var positiveCount = await repository.AdjustInventoryAsync(new InventoryAdjustmentRequest(Guid.NewGuid(), product.Id, warehouse.Id,
+            0, null, gain.Id, "Conteo físico: diez unidades encontradas", CountedQuantity: 10), user.Id);
+        Assert.AreEqual(2, positiveCount.QuantityDelta);
+        Assert.AreEqual(26.1538m, positiveCount.UnitCost, "El conteo positivo usa el costo promedio vigente.");
+        Assert.AreEqual(52.31m, positiveCount.ValuationAmount);
+
         await using var verify = new StoreDbContext(options);
         verify.CurrentTenantId = tenant.Id;
-        Assert.AreEqual(2, await verify.InventoryAdjustments.CountAsync());
-        Assert.AreEqual(2, await verify.InventoryMovements.CountAsync(x => x.Type == InventoryMovementType.StockAdjustment));
-        Assert.AreEqual(11, (await verify.WarehouseStocks.SingleAsync(x => x.WarehouseId == warehouse.Id && x.ProductId == product.Id)).Quantity);
+        Assert.AreEqual(5, await verify.InventoryAdjustments.CountAsync());
+        Assert.AreEqual(4, await verify.InventoryMovements.CountAsync(x => x.Type == InventoryMovementType.StockAdjustment));
+        Assert.AreEqual(10, (await verify.WarehouseStocks.SingleAsync(x => x.WarehouseId == warehouse.Id && x.ProductId == product.Id)).Quantity);
         var persistedProduct = await verify.Products.SingleAsync(x => x.Id == product.Id);
-        Assert.AreEqual(11, persistedProduct.StockOnHand);
+        Assert.AreEqual(10, persistedProduct.StockOnHand);
         Assert.AreEqual(26.1538m, persistedProduct.UnitCost);
         var entries = await verify.JournalEntries.Include(x => x.Lines).Where(x => x.SourceType == "INVENTORYADJUSTMENT").ToListAsync();
-        Assert.AreEqual(2, entries.Count);
+        Assert.AreEqual(4, entries.Count);
         Assert.IsTrue(entries.All(x => x.Lines.Sum(y => y.Debit) == x.Lines.Sum(y => y.Credit)));
-        Assert.AreEqual(142.31m, entries.Sum(x => x.TotalDebit));
+        Assert.AreEqual(273.08m, entries.Sum(x => x.TotalDebit));
         Assert.AreEqual(52.31m, entries.Single(x => x.SourceId == decrease.Id).TotalDebit);
+        Assert.AreEqual(78.46m, entries.Single(x => x.SourceId == counted.Id).TotalDebit);
+        Assert.AreEqual(52.31m, entries.Single(x => x.SourceId == positiveCount.Id).TotalDebit);
     }
 
     [TestMethod]

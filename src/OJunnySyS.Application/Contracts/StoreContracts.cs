@@ -55,10 +55,10 @@ public sealed record CreatePurchaseLineRequest(Guid ProductId, int Quantity, dec
 public sealed record CreatePurchaseOrderRequest(Guid SupplierId, string? Reference, IReadOnlyCollection<CreatePurchaseLineRequest> Lines, DateOnly? DueDate = null, Guid WarehouseId = default);
 public sealed record InventoryTransferRequest(Guid ProductId, Guid SourceWarehouseId, Guid DestinationWarehouseId, int Quantity, string? Reference = null);
 public sealed record InventoryTransferResult(string Reference, int Quantity, Guid ProductId, Guid SourceWarehouseId, int SourceBalance, Guid DestinationWarehouseId, int DestinationBalance);
-public sealed record InventoryAdjustmentRequest(Guid IdempotencyKey, Guid ProductId, Guid WarehouseId, int QuantityDelta, decimal? UnitCost, Guid CounterAccountId, string Reason);
+public sealed record InventoryAdjustmentRequest(Guid IdempotencyKey, Guid ProductId, Guid WarehouseId, int QuantityDelta, decimal? UnitCost, Guid CounterAccountId, string Reason, int? CountedQuantity = null);
 public sealed record InventoryAdjustmentDto(Guid Id, string Number, DateTimeOffset CreatedAtUtc, Guid ProductId, string ProductSku, string ProductName,
     Guid WarehouseId, string WarehouseName, Guid ActorUserId, string ActorName, int QuantityDelta, int BalanceBefore, int BalanceAfter,
-    decimal UnitCost, decimal ValuationAmount, string Reason, Guid CounterAccountId, string CounterAccountCode, string CounterAccountName, string? JournalEntryNumber);
+    decimal UnitCost, decimal ValuationAmount, string Reason, Guid CounterAccountId, string CounterAccountCode, string CounterAccountName, string? JournalEntryNumber, int? CountedQuantity = null);
 public sealed record ReceivePurchaseLineRequest(Guid LineId, int Quantity);
 public sealed record ReceivePurchaseOrderRequest(Guid IdempotencyKey, IReadOnlyCollection<ReceivePurchaseLineRequest> Lines);
 public sealed record SupplierPaymentDto(Guid Id, Guid IdempotencyKey, decimal Amount, SupplierPaymentMethod Method, string? Reference, Guid PaidByUserId, DateTimeOffset CreatedAtUtc);

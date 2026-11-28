@@ -8,7 +8,7 @@
 @inject ILogger<InventoryAdjustments> Logger
 
 <PageTitle>Ajustes de inventario · OJunnySyS</PageTitle>
-<PageHeader Eyebrow="INVENTARIO / CONTROL" Title="Ajustes de inventario" Description="Registra sobrantes y pérdidas con motivo, saldo anterior y posterior, valoración y asiento contable.">
+<PageHeader Eyebrow="INVENTARIO / CONTROL" Title="Ajustes de inventario" Description="Registra sobrantes, mermas y conteos físicos con motivo, saldos, valoración y asiento contable.">
     <Actions><a class="button button-secondary" href="/app/inventory/warehouses">Administrar almacenes</a><a class="button button-secondary" href="/app/reports">Ver reportes</a></Actions>
 </PageHeader>
 
@@ -37,27 +37,35 @@ else
                 <EditForm Model="_form" OnValidSubmit="SubmitAsync">
                     <DataAnnotationsValidator />
                     <div class="inventory-adjustment-fields">
-                        <label>Movimiento<InputSelect @bind-Value="_form.Direction" @bind:after="OnDirectionChanged"><option value="1">Aumentar sobrante</option><option value="-1">Disminuir pérdida / merma</option></InputSelect></label>
+                        <label>Movimiento<InputSelect @bind-Value="_form.Direction" @bind:after="OnDirectionChanged"><option value="1">Aumentar sobrante</option><option value="-1">Disminuir pérdida / merma</option><option value="0">Conciliar conteo físico</option></InputSelect></label>
                         <label>Almacén<InputSelect @bind-Value="_form.WarehouseId" @bind:after="LoadWarehouseProductsAsync"><option value="@Guid.Empty">Selecciona almacén</option>@foreach (var warehouse in _warehouses) { <option value="@warehouse.Id">@warehouse.Name · @warehouse.Code</option> }</InputSelect></label>
                         <label class="inventory-field-wide">Producto<InputSelect @bind-Value="_form.ProductId"><option value="@Guid.Empty">Selecciona producto</option>@foreach (var item in _warehouseProducts) { <option value="@item.Id">@item.Name · @item.Sku</option> }</InputSelect></label>
                         @if (SelectedProduct is { } product)
                         {
                             <div class="inventory-balance-preview"><span>Saldo actual del almacén</span><strong>@product.StockOnHand unidades</strong><small>SKU @product.Sku</small></div>
                         }
-                        <label>Cantidad @(_form.Direction > 0 ? "a agregar" : "a retirar")<NumericInput @bind-Value="_form.Quantity" min="1" step="1" /></label>
-                        @if (_form.Direction > 0)
+                        @if (_form.Direction == 0)
                         {
-                            <label>Costo unitario de entrada<NumericInput @bind-Value="_form.UnitCost" min="0" step="0.0001" /><small class="inventory-field-help">Se usa para recalcular el costo promedio del producto. RD$0 agrega unidades sin costo conocido.</small></label>
+                            <label>Cantidad contada físicamente<NumericInput @bind-Value="_form.CountedQuantity" min="0" step="1" /><small class="inventory-field-help">Si difiere, se calcula la variación con el saldo bloqueado del almacén. El sobrante usa el costo promedio vigente.</small></label>
+                            <div class="inventory-cost-note"><span>Saldo del sistema</span><strong>@(SelectedProduct?.StockOnHand ?? 0) unidades</strong><small>La cantidad final será el conteo que ingreses.</small></div>
                         }
                         else
                         {
-                            <div class="inventory-cost-note"><span>Costo de salida</span><strong>Costo promedio del producto</strong><small>El servidor toma el costo vigente y retira primero las unidades sin costo conocido.</small></div>
+                            <label>Cantidad @(_form.Direction > 0 ? "a agregar" : "a retirar")<NumericInput @bind-Value="_form.Quantity" min="1" step="1" /></label>
+                            @if (_form.Direction > 0)
+                            {
+                                <label>Costo unitario de entrada<NumericInput @bind-Value="_form.UnitCost" min="0" step="0.0001" /><small class="inventory-field-help">Se usa para recalcular el costo promedio del producto. RD$0 agrega unidades sin costo conocido.</small></label>
+                            }
+                            else
+                            {
+                                <div class="inventory-cost-note"><span>Costo de salida</span><strong>Costo promedio del producto</strong><small>El servidor toma el costo vigente y retira primero las unidades sin costo conocido.</small></div>
+                            }
                         }
-                        <label class="inventory-field-wide">Cuenta de contrapartida<InputSelect @bind-Value="_form.CounterAccountId"><option value="@Guid.Empty">Selecciona cuenta</option>@foreach (var account in EligibleAccounts) { <option value="@account.Id">@account.Code · @account.Name</option> }</InputSelect><small class="inventory-field-help">@(_form.Direction > 0 ? "El sobrante acredita ingreso u otro resultado." : "La pérdida se carga a gasto u otro resultado.")</small></label>
+                        <label class="inventory-field-wide">Cuenta de contrapartida<InputSelect @bind-Value="_form.CounterAccountId"><option value="@Guid.Empty">Selecciona cuenta</option>@foreach (var account in EligibleAccounts) { <option value="@account.Id">@account.Code · @account.Name</option> }</InputSelect><small class="inventory-field-help">@(_form.Direction > 0 ? "El sobrante acredita ingreso u otro resultado." : _form.Direction < 0 ? "La pérdida se carga a gasto u otro resultado." : "El servidor valida la cuenta según la diferencia encontrada; si coincide el conteo, no crea asiento.")</small></label>
                         <label class="inventory-field-wide">Motivo<InputTextArea @bind-Value="_form.Reason" maxlength="240" placeholder="Conteo físico, merma, daño, pérdida u otra causa documentada" /></label>
                     </div>
                     <div class="inventory-accounting-hint">La valoración y el asiento se calculan en el servidor. El historial conserva el costo, la cuenta y los saldos usados.</div>
-                    <div class="inventory-adjustment-actions"><button class="button button-primary" type="submit" disabled="@(_saving || _form.ProductId == Guid.Empty || _form.WarehouseId == Guid.Empty || _form.CounterAccountId == Guid.Empty)">@(_saving ? "Registrando…" : _form.Direction > 0 ? "Registrar sobrante" : "Registrar pérdida")</button></div>
+                        <div class="inventory-adjustment-actions"><button class="button button-primary" type="submit" disabled="@(_saving || _form.ProductId == Guid.Empty || _form.WarehouseId == Guid.Empty || _form.CounterAccountId == Guid.Empty)">@(_saving ? "Registrando…" : _form.Direction > 0 ? "Registrar sobrante" : _form.Direction < 0 ? "Registrar pérdida" : "Conciliar conteo")</button></div>
                 </EditForm>
             }
         </section>
@@ -66,14 +74,14 @@ else
             <div class="panel-heading"><div><span class="eyebrow">TRAZABILIDAD</span><h2>Ajustes recientes</h2><p>@_adjustments.Count registro(s) · el historial es de solo lectura.</p></div></div>
             @if (_adjustments.Count == 0)
             {
-                <EmptyState Icon="↕" Title="No hay ajustes registrados" Description="Los saldos cambian mediante recepción, venta, devolución, traslado o un ajuste autorizado con motivo." />
+                <EmptyState Icon="↕" Title="No hay ajustes registrados" Description="Los saldos cambian mediante recepción, venta, devolución, traslado o un ajuste autorizado y documentado." />
             }
             else
             {
                 <div class="table-wrap"><table><thead><tr><th>DOCUMENTO / PRODUCTO</th><th>ALMACÉN / USUARIO</th><th>CAMBIO</th><th>VALORACIÓN</th><th>ASIENTO / MOTIVO</th></tr></thead><tbody>
                     @foreach (var item in _adjustments)
                     {
-                        <tr><td><strong class="mono">@item.Number</strong><small class="inventory-history-sub">@item.ProductName · @item.ProductSku</small></td><td>@item.WarehouseName<small class="inventory-history-sub">@item.ActorName · @ClockDate(item.CreatedAtUtc)</small></td><td><strong class="@(item.QuantityDelta > 0 ? "inventory-increase" : "inventory-decrease")">@(item.QuantityDelta > 0 ? "+" : "")@item.QuantityDelta</strong><small class="inventory-history-sub">@item.BalanceBefore → @item.BalanceAfter</small></td><td>@Money(item.ValuationAmount)<small class="inventory-history-sub">@item.CounterAccountCode · @item.CounterAccountName</small></td><td>@(item.JournalEntryNumber ?? "Sin asiento · valor cero")<small class="inventory-history-sub">@item.Reason</small></td></tr>
+                        <tr><td><strong class="mono">@item.Number</strong><small class="inventory-history-sub">@item.ProductName · @item.ProductSku</small></td><td>@item.WarehouseName<small class="inventory-history-sub">@item.ActorName · @ClockDate(item.CreatedAtUtc)</small></td><td><strong class="@(item.QuantityDelta > 0 ? "inventory-increase" : item.QuantityDelta < 0 ? "inventory-decrease" : "")">@(item.QuantityDelta > 0 ? "+" : "")@item.QuantityDelta</strong><small class="inventory-history-sub">@(item.CountedQuantity is null ? $"{item.BalanceBefore} → {item.BalanceAfter}" : $"Conteo: {item.CountedQuantity} · {item.BalanceBefore} → {item.BalanceAfter}")</small></td><td>@Money(item.ValuationAmount)<small class="inventory-history-sub">@item.CounterAccountCode · @item.CounterAccountName</small></td><td>@(item.JournalEntryNumber ?? "Sin asiento · valor cero")<small class="inventory-history-sub">@item.Reason</small></td></tr>
                     }
                 </tbody></table></div>
             }
@@ -92,7 +100,8 @@ else
     private string? _error, _notice;
     private ProductDto? SelectedProduct => _warehouseProducts.SingleOrDefault(x => x.Id == _form.ProductId);
     private IEnumerable<ChartAccountDto> EligibleAccounts => _accounts.Where(x => x.IsActive &&
-        (_form.Direction > 0 ? x.Type is AccountType.Revenue or AccountType.Equity : x.Type is AccountType.Expense or AccountType.Equity));
+        (_form.Direction == 0 ? x.Type is AccountType.Revenue or AccountType.Expense or AccountType.Equity :
+            _form.Direction > 0 ? x.Type is AccountType.Revenue or AccountType.Equity : x.Type is AccountType.Expense or AccountType.Equity));
 
     protected override async Task OnInitializedAsync()
     {
@@ -131,11 +140,15 @@ else
             if (_form.ProductId == Guid.Empty || _form.WarehouseId == Guid.Empty || _form.CounterAccountId == Guid.Empty)
                 throw new DomainException("Selecciona el producto, el almacén y una cuenta de contrapartida.");
             if (_form.Direction > 0 && _form.UnitCost is null) throw new DomainException("Indica el costo unitario para registrar el sobrante.");
+            var isCount = _form.Direction == 0;
             var result = await Store.AdjustInventoryAsync(new InventoryAdjustmentRequest(_form.IdempotencyKey, _form.ProductId, _form.WarehouseId,
-                checked(_form.Quantity * _form.Direction), _form.Direction > 0 ? _form.UnitCost : null, _form.CounterAccountId, _form.Reason), _actorId);
-            _notice = $"Ajuste {result.Number} registrado. Saldo: {result.BalanceBefore} → {result.BalanceAfter}. Valor: {Money(result.ValuationAmount)}." +
-                (result.JournalEntryNumber is null ? " No generó asiento porque el valor contable es cero." : $" Asiento {result.JournalEntryNumber}.");
-            _form.IdempotencyKey = Guid.NewGuid(); _form.Quantity = 1; _form.UnitCost = null; _form.Reason = string.Empty;
+                isCount ? 0 : checked(_form.Quantity * _form.Direction), !isCount && _form.Direction > 0 ? _form.UnitCost : null,
+                _form.CounterAccountId, _form.Reason, isCount ? _form.CountedQuantity : null), _actorId);
+            _notice = isCount
+                ? $"Conteo {result.Number} registrado. Sistema: {result.BalanceBefore} · Físico: {result.CountedQuantity} · Diferencia: {result.QuantityDelta:+#;-#;0}. Valor: {Money(result.ValuationAmount)}."
+                : $"Ajuste {result.Number} registrado. Saldo: {result.BalanceBefore} → {result.BalanceAfter}. Valor: {Money(result.ValuationAmount)}.";
+            _notice += result.JournalEntryNumber is null ? " No generó asiento porque la diferencia no tiene valor contable." : $" Asiento {result.JournalEntryNumber}.";
+            _form.IdempotencyKey = Guid.NewGuid(); _form.Quantity = 1; _form.CountedQuantity = 0; _form.UnitCost = null; _form.Reason = string.Empty;
             await Task.WhenAll(RefreshHistoryAsync(), LoadWarehouseProductsAsync());
         }
         catch (DomainException ex) { _error = ex.Message; }
@@ -155,6 +168,7 @@ else
         public Guid WarehouseId { get; set; }
         public Guid ProductId { get; set; }
         [Range(1, int.MaxValue)] public int Quantity { get; set; } = 1;
+        [Range(0, int.MaxValue)] public int CountedQuantity { get; set; }
         [Range(0, 9999999999.9999)] public decimal? UnitCost { get; set; }
         public Guid CounterAccountId { get; set; }
         [Required, StringLength(240, MinimumLength = 3)] public string Reason { get; set; } = string.Empty;

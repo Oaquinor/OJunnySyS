@@ -1054,6 +1054,9 @@ namespace OJunnySyS.Infrastructure.Persistence.Migrations
                     b.Property<int>("BalanceBefore")
                         .HasColumnType("int");
 
+                    b.Property<int?>("CountedQuantity")
+                        .HasColumnType("int");
+
                     b.Property<string>("CounterAccountCode")
                         .IsRequired()
                         .HasMaxLength(20)
