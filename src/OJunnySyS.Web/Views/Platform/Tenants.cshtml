@@ -37,6 +37,7 @@
                     <span class="w-fit rounded-full bg-brand-50 px-3 py-1.5 text-sm font-bold text-brand-700">@(Model.Count) empresas</span>
                 </div>
                 @if (TempData["Success"] is string success) { <div role="status" class="rounded-xl bg-emerald-50 px-4 py-3 text-sm text-emerald-800">@success</div> }
+                @if (TempData["ConfirmationUrl"] is string confirmationUrl) { <div class="grid gap-2 rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-900"><strong>Confirmación local de correo</strong><p class="m-0">Abre este enlace en el navegador para activar la cuenta administradora de la empresa recién creada.</p><a class="break-all font-semibold text-brand-700 underline" href="@confirmationUrl">Confirmar el correo del administrador</a></div> }
                 @if (TempData["Error"] is string error) { <div role="alert" class="rounded-xl bg-rose-50 px-4 py-3 text-sm text-rose-800">@error</div> }
                 <div class="grid items-start gap-4 xl:grid-cols-[minmax(0,1.45fr)_minmax(20rem,.75fr)]">
                     <section class="min-w-0 rounded-2xl border border-line bg-white p-4 shadow-sm sm:p-5">

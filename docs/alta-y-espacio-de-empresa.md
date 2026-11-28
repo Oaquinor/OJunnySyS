@@ -11,7 +11,7 @@
 
 El administrador encuentra `Mi empresa` en la navegación. El panel lee el tenant activo y sus datos, muestra estado, plan/prueba, fecha de vencimiento en la zona horaria del tenant, usuarios habilitados y actividad. Su checklist comprueba identidad comercial, productos activos, clientes activos y ventas guardadas, y enlaza cada paso al módulo real.
 
-La administración central de tenants y suspensión/activación se mantiene en `/platform/tenants`, protegida por el rol `PlatformAdministrator`. No es la vía de registro normal del cliente.
+La administración central de tenants y suspensión/activación se mantiene en `/platform/tenants`, protegida por el rol `PlatformAdministrator`. No es la vía de registro normal del cliente. Al crear un espacio desde ese panel, se envía el enlace de confirmación al administrador; en Development sin SMTP se presenta un enlace local al operador. El alta central no está disponible en producción si no hay correo saliente configurado, para no dejar cuentas iniciales imposibles de activar. Si el envío SMTP falla después de crear la empresa, se informa para corregir correo y reenviar la confirmación.
 
 ## Límites explícitos actuales
 

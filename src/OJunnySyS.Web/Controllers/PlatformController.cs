@@ -1,14 +1,24 @@
+using System.Text;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.WebUtilities;
+using OJunnySyS.Application.Abstractions;
 using OJunnySyS.Application.Contracts;
 using OJunnySyS.Application.Services;
 using OJunnySyS.Domain.Common;
+using OJunnySyS.Infrastructure.Identity;
 
 namespace OJunnySyS.Web.Controllers;
 
 [Authorize(Roles = "PlatformAdministrator")]
 [Route("platform")]
-public sealed class PlatformController(PlatformManagementService service) : Controller
+public sealed class PlatformController(
+    PlatformManagementService service,
+    UserManager<ApplicationUser> userManager,
+    IAccountEmailSender emailSender,
+    IWebHostEnvironment environment,
+    ILogger<PlatformController> logger) : Controller
 {
     [HttpGet("tenants")]
     public async Task<IActionResult> Tenants(CancellationToken ct) => View(await service.GetTenantsAsync(ct));
@@ -17,12 +27,48 @@ public sealed class PlatformController(PlatformManagementService service) : Cont
     [ValidateAntiForgeryToken]
     public async Task<IActionResult> CreateTenant(CreateTenantInput input, CancellationToken ct)
     {
-        if (!ModelState.IsValid) return View("Tenants", await service.GetTenantsAsync(ct));
+        if (!ModelState.IsValid)
+        {
+            ViewData["Input"] = input;
+            return View("Tenants", await service.GetTenantsAsync(ct));
+        }
+        if (!emailSender.IsConfigured && !environment.IsDevelopment())
+        {
+            ModelState.AddModelError(string.Empty, "El alta desde plataforma requiere correo saliente para que la persona administradora confirme su cuenta.");
+            ViewData["Input"] = input;
+            return View("Tenants", await service.GetTenantsAsync(ct));
+        }
+
         try
         {
-            await service.CreateTenantAsync(new CreateTenantRequest(input.Name, input.Slug, input.OwnerEmail, input.TimeZoneId,
+            var tenant = await service.CreateTenantAsync(new CreateTenantRequest(input.Name, input.Slug, input.OwnerEmail, input.TimeZoneId,
                 input.CurrencyCode, input.AdministratorName, input.AdministratorEmail, input.InitialPassword), ct);
-            TempData["Success"] = $"El espacio {input.Name} quedó creado. La persona administradora deberá cambiar su contraseña al entrar.";
+            var administrator = await userManager.FindByEmailAsync(input.AdministratorEmail.Trim());
+            if (administrator is null) throw new InvalidOperationException("Se creó la empresa, pero no se encontró su cuenta administradora para enviar la confirmación.");
+
+            var token = await userManager.GenerateEmailConfirmationTokenAsync(administrator);
+            var encodedToken = WebEncoders.Base64UrlEncode(Encoding.UTF8.GetBytes(token));
+            var confirmationUrl = Url.Action("ConfirmEmail", "Account", new { userId = administrator.Id, token = encodedToken }, Request.Scheme)!;
+            var emailSent = false;
+            if (emailSender.IsConfigured)
+            {
+                try
+                {
+                    await emailSender.SendConfirmationAsync(administrator.Email!, confirmationUrl, ct);
+                    emailSent = true;
+                }
+                catch (Exception ex) when (ex is InvalidOperationException or System.Net.Mail.SmtpException or IOException)
+                {
+                    logger.LogError(ex, "No se pudo enviar el correo de confirmación de la empresa {TenantId}.", tenant.Id);
+                }
+            }
+
+            TempData["Success"] = emailSent
+                ? $"El espacio {input.Name} quedó creado. Se envió el enlace de confirmación a {administrator.Email}; al entrar deberá cambiar la contraseña temporal."
+                : environment.IsDevelopment()
+                    ? $"El espacio {input.Name} quedó creado. Confirma el correo administrador con el enlace local; luego podrá entrar y cambiar su contraseña temporal."
+                    : $"El espacio {input.Name} quedó creado, pero no se pudo entregar el correo. Verifica el servicio de correo y vuelve a enviar la confirmación a {administrator.Email}.";
+            if (!emailSent && environment.IsDevelopment()) TempData["ConfirmationUrl"] = confirmationUrl;
             return RedirectToAction(nameof(Tenants));
         }
         catch (DomainException ex)
