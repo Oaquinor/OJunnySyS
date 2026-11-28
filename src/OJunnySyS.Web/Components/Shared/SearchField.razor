@@ -1,5 +1,5 @@
 <div class="@CssClass">
-    <span aria-hidden="true">⌕</span>
+    <span class="text-lg leading-none" aria-hidden="true">⌕</span>
     <input id="@InputId" class="@InputClass" value="@Value" placeholder="@Placeholder" @oninput="HandleInputAsync" />
 </div>
 
@@ -8,8 +8,8 @@
     [Parameter] public EventCallback<string> ValueChanged { get; set; }
     [Parameter] public string Placeholder { get; set; } = "Buscar…";
     [Parameter] public string? InputId { get; set; }
-    [Parameter] public string CssClass { get; set; } = "search-box";
-    [Parameter] public string InputClass { get; set; } = "";
+    [Parameter] public string CssClass { get; set; } = "grid min-w-0 grid-cols-[auto_minmax(0,1fr)] items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 text-slate-500";
+    [Parameter] public string InputClass { get; set; } = "min-w-0 border-0 bg-transparent px-0 py-2 text-sm text-ink outline-none";
 
     private Task HandleInputAsync(ChangeEventArgs args) => ValueChanged.InvokeAsync(args.Value?.ToString() ?? "");
 }
