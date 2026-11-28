@@ -1,4 +1,5 @@
 @page "/app/pos"
+@rendermode InteractiveServer
 @implements IAsyncDisposable
 @attribute [Authorize(Roles = "Administrator,Manager,Cashier")]
 @inject StoreService Store
@@ -14,7 +15,7 @@
 
 <PageTitle>Punto de venta · OjunnySyS</PageTitle>
 <PageHeader Eyebrow="VENTAS / PUNTO DE VENTA" Title="Punto de venta" Description="Agrega productos, elige cómo cobrar y listo.">
-    <Actions><div class="pos-terminal-select"><label for="pos-terminal">Terminal<select id="pos-terminal" @bind="_registerCode" @bind:after="OnRegisterChangedAsync"><option value="">Selecciona un terminal</option>@foreach (var register in _registers) { <option value="@register.Code">@register.Name</option> }</select></label></div><a class="register-status" href="/app/cash"><span class="@(CashOpen ? "online-dot" : "cash-closed-dot")"></span><span><strong>@(CashOpen ? "Caja abierta" : "Caja cerrada")</strong><small>@(_registers.FirstOrDefault(x => x.Code == _registerCode)?.Name ?? _registerCode) · @_warehouses.FirstOrDefault(x => x.Id == _warehouseId)?.Name · administrar</small></span></a></Actions>
+    <Actions><div class="pos-header-actions"><div class="pos-terminal-select"><label for="pos-terminal">Terminal<select id="pos-terminal" @bind="_registerCode" @bind:after="OnRegisterChangedAsync"><option value="">Selecciona un terminal</option>@foreach (var register in _registers) { <option value="@register.Code">@register.Name</option> }</select></label></div><a class="register-status" href="/app/cash"><span class="@(CashOpen ? "online-dot" : "cash-closed-dot")"></span><span><strong>@(CashOpen ? "Caja abierta" : "Caja cerrada")</strong><small>@(_registers.FirstOrDefault(x => x.Code == _registerCode)?.Name ?? _registerCode) · @_warehouses.FirstOrDefault(x => x.Id == _warehouseId)?.Name · administrar</small></span></a><ReceiptPrintQuickSettings /></div></Actions>
 </PageHeader>
 @if (_loading)
 {
@@ -29,6 +30,7 @@ else
 @if (!string.IsNullOrWhiteSpace(_notice)) { <div class="success-banner">✓ @_notice @if (_lastSaleId is { } saleId) { <a class="receipt-quick-link" href="/app/receipts/@saleId">Ver recibo</a> }<button @onclick="() => _notice = null">×</button></div> }
 @if (!CashOpen && !string.IsNullOrEmpty(_registerCode)) { <div class="inline-error cash-error">Abre el turno de @_registers.FirstOrDefault(x => x.Code == _registerCode)?.Name antes de cobrar. <a href="/app/cash">Ir a caja y arqueo →</a></div> }
 @if (_registers.Count == 0) { <div class="inline-error cash-error">No hay terminales POS activos. Pide al administrador que configure uno en <a href="/app/pos/registers">Terminales POS</a>.</div> }
+<AuthorizeView Roles="Administrator,Manager"><Authorized><details class="pos-configuration"><summary><span><strong>Configuración del punto de venta</strong><small>Productos, almacenes, terminales, pagos y recibos</small></span><span class="pos-configuration-toggle">Abrir <b>⌄</b></span></summary><nav aria-label="Configuración del punto de venta"><a href="/app/products"><strong>Productos</strong><small>Catálogo, precios e impuestos</small></a><a href="/app/inventory/warehouses"><strong>Almacenes</strong><small>Existencias y traslados</small></a><a href="/app/pos/registers"><strong>Terminales y cajas</strong><small>Asignar cada caja a un almacén</small></a><a href="/app/payment-methods"><strong>Medios de pago</strong><small>Efectivo, tarjetas y transferencias</small></a><a href="/app/settings"><strong>Empresa e impresión</strong><small>Datos fiscales y formato del recibo</small></a></nav></details></Authorized></AuthorizeView>
 <div class="pos-layout">
     <section class="pos-catalog">
         <div class="pos-search-row"><SearchField @bind-Value="_search" @bind-Value:after="LoadProductsAsync" InputId="pos-search" CssClass="search-box pos-search" Placeholder="Buscar producto o escanear código…" /><span class="result-count">@_filteredProducts.Count() productos</span></div>
@@ -38,7 +40,7 @@ else
             {
                 var inCart = _cart.GetValueOrDefault(product.Id);
         <button class="pos-product-card" @onclick="() => Add(product)" disabled="@(inCart >= product.StockOnHand || _parkedSaleId is not null)">
-                    <span class="pos-product-art @ArtClass(product.Category)">@ProductIcon(product.Category)<span class="add-product">＋</span></span>
+                    <span class="pos-product-art @ArtClass(product.Category)">@if (!string.IsNullOrWhiteSpace(product.ImageUrl)) { <img class="product-photo" src="@product.ImageUrl" alt="" loading="lazy" /> } else { @ProductIcon(product.Category) }<span class="add-product">＋</span></span>
                     <span class="pos-product-info"><strong>@product.Name</strong><small>@product.Category · @_cart.GetValueOrDefault(product.Id) en orden · @TaxLabel(product)</small><b>@Money(product.UnitPrice)</b></span>
                     @if (product.StockOnHand <= 5) { <span class="stock-hint">Quedan @product.StockOnHand</span> }
                 </button>
@@ -123,7 +125,7 @@ else
     private decimal GrossSubtotal => CartLines.Sum(x => decimal.Round(x.Product.UnitPrice * x.Quantity, 2, MidpointRounding.AwayFromZero));
     private decimal DiscountTotal => CartLines.Sum(x => LineDiscount(x.Product, x.Quantity));
     private decimal Subtotal => GrossSubtotal - DiscountTotal;
-    private decimal Tax => CartLines.Sum(x => decimal.Round(NetLineTotal(x.Product, x.Quantity) * (x.Product.TaxRateOverride ?? _taxRate), 2, MidpointRounding.AwayFromZero));
+    private decimal Tax => CartLines.Sum(x => decimal.Round(NetLineTotal(x.Product, x.Quantity) * (x.Product.TaxProfileRate ?? x.Product.TaxRateOverride ?? _taxRate), 2));
     private decimal Total => Subtotal + Tax;
     private decimal TenderBalance => decimal.Round(Total - _tenders.Sum(x => x.Amount), 2);
     private bool CashOpen => _cashSession?.Status == CashSessionStatus.Open;

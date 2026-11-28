@@ -27,6 +27,7 @@ public static class DependencyInjection
         services.AddScoped<ITaxProfileRepository, EfTaxProfileRepository>();
         services.AddScoped<IAccountingRepository, EfAccountingRepository>();
         services.AddScoped<IBankingRepository, EfBankingRepository>();
+        services.AddScoped<IReportTemplateRepository, EfReportTemplateRepository>();
         services.AddScoped<ITenantOnboardingService, TenantOnboardingService>();
         services.AddScoped<IAccountEmailSender, SmtpAccountEmailSender>();
         services.AddScoped<ITenantAccessGuard, TenantAccessGuard>();

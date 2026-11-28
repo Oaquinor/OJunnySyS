@@ -1,4 +1,5 @@
 @page "/app/banking"
+@rendermode InteractiveServer
 @attribute [Authorize(Roles = "Administrator,Manager")]
 @inject BankingService BankingApp
 @inject AccountingService Accounting

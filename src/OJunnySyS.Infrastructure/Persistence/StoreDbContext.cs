@@ -14,6 +14,7 @@ using OJunnySyS.Domain.Pos;
 using OJunnySyS.Domain.Inventory;
 using OJunnySyS.Domain.Accounting;
 using OJunnySyS.Domain.Banking;
+using OJunnySyS.Domain.Reporting;
 using OJunnySyS.Infrastructure.Identity;
 
 namespace OJunnySyS.Infrastructure.Persistence;
@@ -22,6 +23,7 @@ public sealed class StoreDbContext(DbContextOptions<StoreDbContext> options)
     : IdentityDbContext<ApplicationUser, IdentityRole<Guid>, Guid>(options)
 {
     public DbSet<Product> Products => Set<Product>();
+    public DbSet<ReportTemplate> ReportTemplates => Set<ReportTemplate>();
     public DbSet<TaxProfile> TaxProfiles => Set<TaxProfile>();
     public DbSet<Customer> Customers => Set<Customer>();
     public DbSet<CustomerTag> CustomerTags => Set<CustomerTag>();
@@ -156,6 +158,7 @@ public sealed class StoreDbContext(DbContextOptions<StoreDbContext> options)
             entity.HasKey(x => x.Id);
             entity.HasAlternateKey(x => new { x.TenantId, x.Id });
             entity.Property(x => x.Barcode).HasMaxLength(64);
+            entity.Property(x => x.ImageUrl).HasMaxLength(500);
             entity.HasIndex(x => new { x.TenantId, x.Sku }).IsUnique();
             entity.HasIndex(x => new { x.TenantId, x.Barcode }).IsUnique();
             entity.HasIndex(x => new { x.TenantId, x.IsActive, x.Name });
@@ -172,6 +175,20 @@ public sealed class StoreDbContext(DbContextOptions<StoreDbContext> options)
             entity.Property(x => x.TaxRateOverride).HasPrecision(5, 4);
             entity.Property(x => x.Revision).IsConcurrencyToken();
             entity.Property(x => x.Revision).HasDefaultValue(0L);
+        });
+
+        modelBuilder.Entity<ReportTemplate>(entity =>
+        {
+            entity.HasKey(x => x.Id);
+            entity.HasAlternateKey(x => new { x.TenantId, x.Id });
+            entity.HasIndex(x => new { x.TenantId, x.Code }).IsUnique();
+            entity.Property(x => x.Code).HasMaxLength(60).IsRequired();
+            entity.Property(x => x.Name).HasMaxLength(120).IsRequired();
+            entity.Property(x => x.ReportType).HasMaxLength(40).IsRequired();
+            entity.Property(x => x.DefinitionJson).HasColumnType("longtext").IsRequired();
+            entity.Property(x => x.Revision).IsConcurrencyToken().HasDefaultValue(0L);
+            entity.HasOne<Tenant>().WithMany().HasForeignKey(x => x.TenantId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasQueryFilter(x => CurrentTenantId != null && x.TenantId == CurrentTenantId);
         });
 
         modelBuilder.Entity<Customer>(entity =>

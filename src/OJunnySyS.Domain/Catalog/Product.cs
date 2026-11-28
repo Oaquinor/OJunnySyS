@@ -6,12 +6,12 @@ public sealed class Product : TenantEntity
 {
     private Product() { }
 
-    public Product(Guid tenantId, string sku, string name, string category, decimal unitPrice, int stockOnHand, string? barcode = null, decimal? taxRateOverride = null, decimal? initialUnitCost = null, Guid? taxProfileId = null) : base(tenantId)
+    public Product(Guid tenantId, string sku, string name, string category, decimal unitPrice, int stockOnHand, string? barcode = null, decimal? taxRateOverride = null, decimal? initialUnitCost = null, Guid? taxProfileId = null, string? imageUrl = null) : base(tenantId)
     {
         if (string.IsNullOrWhiteSpace(sku)) throw new DomainException("El SKU es obligatorio.");
         if (sku.Trim().Length > 40) throw new DomainException("El SKU no puede superar 40 caracteres.");
         Sku = sku.Trim().ToUpperInvariant();
-        UpdateDetails(name, category, unitPrice, barcode, taxRateOverride, taxProfileId);
+        UpdateDetails(name, category, unitPrice, barcode, taxRateOverride, taxProfileId, imageUrl);
         if (stockOnHand < 0) throw new DomainException("El inventario no puede ser negativo.");
         if (initialUnitCost is < 0 or > 9999999999.9999m) throw new DomainException("El costo unitario inicial no es válido.");
         UnitCost = decimal.Round(initialUnitCost ?? 0m, 4, MidpointRounding.AwayFromZero);
@@ -23,6 +23,7 @@ public sealed class Product : TenantEntity
     public string Name { get; private set; } = "";
     public string Category { get; private set; } = "";
     public string? Barcode { get; private set; }
+    public string? ImageUrl { get; private set; }
     public decimal UnitPrice { get; private set; }
     public decimal UnitCost { get; private set; }
     public int UncostedQuantity { get; private set; }
@@ -33,7 +34,7 @@ public sealed class Product : TenantEntity
     public bool IsActive { get; private set; }
     public long Revision { get; private set; }
 
-    public void UpdateDetails(string name, string category, decimal unitPrice, string? barcode, decimal? taxRateOverride = null, Guid? taxProfileId = null)
+    public void UpdateDetails(string name, string category, decimal unitPrice, string? barcode, decimal? taxRateOverride = null, Guid? taxProfileId = null, string? imageUrl = null)
     {
         if (string.IsNullOrWhiteSpace(name)) throw new DomainException("El nombre del producto es obligatorio.");
         category = string.IsNullOrWhiteSpace(category) ? "General" : category;
@@ -42,17 +43,21 @@ public sealed class Product : TenantEntity
         if (taxRateOverride is < 0 or > 1) throw new DomainException("El impuesto del producto debe estar entre 0 y 100 por ciento.");
         if (taxProfileId == Guid.Empty) throw new DomainException("Selecciona un perfil de impuesto válido.");
         if (taxProfileId is not null && taxRateOverride is not null) throw new DomainException("Usa un perfil guardado o una tasa personalizada, no ambos.");
+        if (imageUrl?.Trim() is { Length: > 500 }) throw new DomainException("La dirección de imagen no puede superar 500 caracteres.");
+        if (!string.IsNullOrWhiteSpace(imageUrl) && (!Uri.TryCreate(imageUrl.Trim(), UriKind.Absolute, out var imageUri) || imageUri.Scheme is not ("http" or "https")))
+            throw new DomainException("La imagen debe usar una dirección HTTPS o HTTP válida.");
         Name = name.Trim(); Category = category.Trim(); UnitPrice = decimal.Round(unitPrice, 2);
+        ImageUrl = string.IsNullOrWhiteSpace(imageUrl) ? null : imageUrl.Trim();
         TaxRateOverride = taxRateOverride;
         TaxProfileId = taxProfileId;
         Barcode = string.IsNullOrWhiteSpace(barcode) ? null : barcode.Trim(); MarkChanged();
     }
 
-    public void UpdateCatalog(string sku, string name, string category, decimal unitPrice, string? barcode, decimal? taxRateOverride = null, Guid? taxProfileId = null)
+    public void UpdateCatalog(string sku, string name, string category, decimal unitPrice, string? barcode, decimal? taxRateOverride = null, Guid? taxProfileId = null, string? imageUrl = null)
     {
         if (string.IsNullOrWhiteSpace(sku) || sku.Trim().Length > 40) throw new DomainException("El SKU es obligatorio y no puede superar 40 caracteres.");
         Sku = sku.Trim().ToUpperInvariant();
-        UpdateDetails(name, category, unitPrice, barcode, taxRateOverride, taxProfileId);
+        UpdateDetails(name, category, unitPrice, barcode, taxRateOverride, taxProfileId, imageUrl);
     }
 
     public void AdjustStock(int delta)

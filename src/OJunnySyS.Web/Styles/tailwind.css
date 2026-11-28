@@ -66,6 +66,243 @@
   }
 }
 
+@layer components {
+  .settings-form {
+    @apply grid gap-6 px-6 pb-6;
+  }
+
+  .settings-form .form-grid,
+  .tax-profile-form .form-grid {
+    @apply gap-x-6 gap-y-5;
+  }
+
+  .settings-form .settings-base-grid,
+  .tax-profile-form .form-grid {
+    @apply grid-cols-2;
+  }
+
+  .settings-form .receipt-options {
+    @apply my-4 grid grid-cols-2 gap-x-4 gap-y-3;
+  }
+
+  .settings-form .receipt-options label {
+    @apply flex-row items-center gap-2;
+  }
+
+  .settings-form label,
+  .tax-profile-form .form-grid label {
+    @apply min-w-0 gap-2 leading-6;
+  }
+
+  .settings-form input,
+  .settings-form select,
+  .tax-profile-form input,
+  .tax-profile-form select {
+    @apply min-h-12 w-full min-w-0 rounded-2xl px-4;
+  }
+
+  .settings-section-title {
+    @apply mt-7 mb-4 text-base;
+  }
+
+  .tax-profile-form {
+    @apply grid gap-5 pb-0;
+  }
+
+  .tax-profile-form .form-grid label:last-child {
+    @apply col-span-full;
+  }
+
+  .tax-profile-form .report-filter-note {
+    @apply leading-6;
+  }
+
+  .tax-profile-form .supplier-form-actions {
+    @apply m-0 flex flex-wrap gap-3;
+  }
+
+  .tax-profile-layout {
+    @apply grid items-start gap-6 lg:grid-cols-[minmax(18rem,.8fr)_minmax(0,1.2fr)];
+  }
+
+  .tax-profile-layout > .panel {
+    @apply min-w-0 p-6;
+  }
+
+  .tax-profile-layout .report-filter-note {
+    @apply col-span-full m-0 block text-xs leading-6 text-slate-500;
+  }
+
+  .product-photo {
+    @apply h-full w-full rounded-[inherit] object-cover;
+  }
+
+  .product-image-preview {
+    @apply overflow-hidden rounded-xl border border-slate-200 bg-slate-50;
+  }
+
+  .product-image-preview img {
+    @apply max-h-48 w-full object-contain;
+  }
+
+  .report-designer-shell {
+    @apply grid min-w-0 gap-4 xl:grid-cols-[17rem_minmax(0,1fr)_17rem];
+  }
+
+  .report-designer-palette,
+  .report-designer-inspector,
+  .report-designer-workspace,
+  .report-designer-palette-body,
+  .report-designer-inspector-body {
+    @apply grid min-w-0 content-start gap-4;
+  }
+
+  .report-designer-palette-body,
+  .report-designer-inspector-body {
+    @apply px-4 pb-5;
+  }
+
+  .report-designer-palette-body > label,
+  .report-designer-inspector-body > label {
+    @apply grid min-w-0 gap-2 text-sm font-semibold text-slate-700;
+  }
+
+  .report-designer-template-actions,
+  .report-designer-reorder,
+  .report-designer-toolbar-actions {
+    @apply flex flex-wrap items-center gap-2;
+  }
+
+  .report-designer-divider { @apply border-t border-slate-200; }
+  .report-designer-component-grid { @apply mt-3 grid grid-cols-2 gap-2; }
+  .report-designer-component { @apply grid min-h-20 content-center justify-items-center gap-2 rounded-xl border border-slate-200 bg-white p-3 text-xs text-slate-600 hover:border-brand-100 hover:bg-brand-50; }
+  .report-designer-fields { @apply grid gap-1; }
+  .report-designer-field { @apply flex items-center justify-between gap-2 rounded-lg px-2 py-2 text-left text-xs hover:bg-slate-50; }
+  .report-designer-toolbar { @apply flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white p-4; }
+  .report-designer-canvas-area { @apply grid min-w-0 justify-items-center overflow-auto rounded-2xl border border-slate-200 bg-slate-100 p-5; }
+  .report-designer-page { @apply grid min-h-[70rem] w-full max-w-[50rem] content-start gap-7 rounded-lg bg-white p-10 text-slate-700 shadow-lg; color: #334155; }
+  .report-designer-page-heading { @apply flex items-start justify-between gap-5 border-b border-slate-200 pb-6; }
+  .report-designer-brand { @apply flex items-center gap-3; }
+  .report-designer-mark { @apply grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-brand-600 font-display text-lg font-bold text-white; background: var(--report-accent); }
+  .report-designer-document-title { @apply grid justify-items-end gap-1 text-right; }
+  .report-designer-client { @apply grid grid-cols-2 gap-5 rounded-xl bg-slate-50 p-4; }
+  .report-designer-client > div { @apply grid gap-1; }
+  .report-designer-elements { @apply grid content-start gap-4; }
+  .report-designer-element { @apply grid min-w-0 justify-self-start gap-2 rounded-lg border border-transparent p-2 text-sm leading-6; width: var(--element-width); color: var(--element-color); font-size: var(--element-size); }
+  .report-designer-element.selected { @apply border-brand-500 bg-brand-50/40 outline-2 outline-brand-100; }
+  .report-designer-live-table-heading,.report-designer-live-table-row { @apply grid grid-cols-[minmax(0,1fr)_7rem_5rem] gap-3 border-b border-slate-200 px-2 py-2 text-xs; }
+  .report-designer-live-table-heading { @apply bg-slate-100 font-bold text-slate-600; background: color-mix(in srgb, var(--report-accent) 10%, white); }
+  .report-designer-chart,.report-designer-hint,.report-designer-data-source { @apply grid gap-3 rounded-xl border border-slate-200 bg-slate-50 p-4 text-xs text-slate-600; }
+  .report-designer-chart > div { @apply flex h-24 items-end gap-2 border-b border-slate-300; }
+  .report-designer-chart i { @apply min-w-2 flex-1 rounded-t-md bg-brand-500; height: var(--bar-height); background: var(--report-accent); }
+  .report-designer-summary { @apply grid justify-self-end gap-3; width: min(100%, 20rem); }
+  .report-designer-summary > div { @apply flex items-center justify-between gap-4 text-sm; }
+  .report-designer-grand-total { @apply rounded-xl bg-brand-50 px-4 py-3 text-brand-700; background: color-mix(in srgb, var(--report-accent) 10%, white); color: var(--report-accent); }
+  .report-designer-page-footer { @apply flex flex-wrap justify-between gap-3 border-t border-slate-200 pt-4 text-xs text-slate-500; }
+  .report-designer-signature { @apply grid justify-items-start gap-2; }
+  .report-designer-signature span { @apply h-8 w-56 border-b border-slate-400; }
+
+  .pos-header-actions {
+    @apply flex flex-wrap items-center justify-end gap-3;
+  }
+
+  .pos-configuration {
+    @apply mb-4 rounded-2xl border border-slate-200 bg-white;
+  }
+
+  .pos-configuration summary {
+    @apply flex cursor-pointer list-none items-center justify-between gap-4 px-5 py-4;
+  }
+
+  .pos-configuration summary strong,
+  .pos-configuration summary small {
+    @apply block;
+  }
+
+  .pos-configuration summary strong {
+    @apply text-sm text-slate-800;
+  }
+
+  .pos-configuration summary small,
+  .pos-configuration-toggle {
+    @apply mt-1 text-xs text-slate-500;
+  }
+
+  .pos-configuration nav {
+    @apply grid grid-cols-1 gap-2 px-4 pb-4 sm:grid-cols-2 xl:grid-cols-5;
+  }
+
+  .pos-configuration nav a {
+    @apply grid content-start gap-1 rounded-xl border border-slate-100 bg-slate-50 px-3 py-3 no-underline transition hover:border-brand-100 hover:bg-brand-50;
+  }
+
+  .pos-configuration nav a strong {
+    @apply text-sm text-slate-800;
+  }
+
+  .pos-configuration nav a small {
+    @apply text-xs leading-5 text-slate-500;
+  }
+
+  .print-quick-card {
+    @apply grid max-h-[90vh] w-full max-w-2xl gap-5 overflow-y-auto p-6;
+  }
+
+  .print-quick-grid {
+    @apply grid grid-cols-2 gap-4;
+  }
+
+  .print-quick-grid label {
+    @apply grid min-w-0 gap-2 text-sm font-semibold text-slate-700;
+  }
+
+  .print-quick-options {
+    @apply grid grid-cols-2 gap-x-5 gap-y-3 rounded-xl border border-slate-200 bg-slate-50 p-4;
+  }
+
+  .print-quick-options label {
+    @apply flex items-center gap-2 text-sm text-slate-700;
+  }
+}
+
+@media (max-width: 40rem) {
+  .settings-form {
+    @apply px-4;
+  }
+
+  .settings-form .form-grid,
+  .settings-form .settings-base-grid,
+  .settings-form .receipt-options,
+  .tax-profile-form .form-grid {
+    @apply grid-cols-1;
+  }
+
+  .tax-profile-form {
+    @apply px-0;
+  }
+
+  .tax-profile-layout > .panel {
+    @apply p-4;
+  }
+
+  .print-quick-card {
+    @apply p-4;
+  }
+
+  .print-quick-grid,
+  .print-quick-options,
+  .pos-configuration nav {
+    @apply grid-cols-1;
+  }
+
+  .report-designer-page { @apply gap-5 p-5; }
+  .report-designer-client { @apply grid-cols-1; }
+
+  .tax-profile-form .form-grid label:last-child {
+    @apply col-auto;
+  }
+}
+
 @supports (appearance: base-select) {
   @layer base {
     select {

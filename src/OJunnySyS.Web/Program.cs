@@ -123,6 +123,7 @@ builder.Services.AddScoped<PosPaymentMethodService>();
 builder.Services.AddScoped<TaxProfileService>();
 builder.Services.AddScoped<AccountingService>();
 builder.Services.AddScoped<BankingService>();
+builder.Services.AddScoped<ReportTemplateService>();
 
 var app = builder.Build();
 
@@ -460,7 +461,7 @@ api.MapDelete("/customers/{id:guid}", async (Guid id, long expectedRevision, Sto
 }).RequireAuthorization("CrmWrite");
 api.MapPost("/products", async (CreateProductRequest request, StoreService store, CancellationToken ct) =>
 {
-    try { var product = await store.CreateProductAsync(request.Sku, request.Name, request.Category, request.UnitPrice, request.StockOnHand, request.Barcode, request.TaxRateOverride, request.InitialUnitCost, request.TaxProfileId, ct); return Results.Created($"/api/v1/products/{product.Id}", product); }
+    try { var product = await store.CreateProductAsync(request.Sku, request.Name, request.Category, request.UnitPrice, request.StockOnHand, request.Barcode, request.TaxRateOverride, request.InitialUnitCost, request.TaxProfileId, request.ImageUrl, request.InitialWarehouseId, ct); return Results.Created($"/api/v1/products/{product.Id}", product); }
     catch (DomainException ex) { return Results.ValidationProblem(new Dictionary<string, string[]> { ["product"] = [ex.Message] }); }
 }).RequireAuthorization("CatalogWrite");
 api.MapPut("/products/{id:guid}", async (Guid id, UpdateProductRequest request, StoreService store, CancellationToken ct) =>
@@ -560,4 +561,4 @@ app.MapRazorComponents<App>()
 app.Run();
 
 public sealed record CreateCustomerRequest(string FirstName, string LastName, string Email, string Phone, string? Company);
-public sealed record CreateProductRequest(string Sku, string Name, string Category, decimal UnitPrice, int StockOnHand, string? Barcode, decimal? TaxRateOverride = null, decimal? InitialUnitCost = null, Guid? TaxProfileId = null);
+public sealed record CreateProductRequest(string Sku, string Name, string Category, decimal UnitPrice, int StockOnHand, string? Barcode, decimal? TaxRateOverride = null, decimal? InitialUnitCost = null, Guid? TaxProfileId = null, string? ImageUrl = null, Guid? InitialWarehouseId = null);

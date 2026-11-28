@@ -6,5 +6,6 @@
     <LangVersion>latest</LangVersion>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <AnalysisLevel>latest</AnalysisLevel>
+    <DefaultItemExcludesInProjectFolder>$(DefaultItemExcludesInProjectFolder);artifacts/**</DefaultItemExcludesInProjectFolder>
   </PropertyGroup>
 </Project>

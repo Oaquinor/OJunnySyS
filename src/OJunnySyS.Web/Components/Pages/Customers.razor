@@ -1,4 +1,5 @@
 @page "/app/customers"
+@rendermode InteractiveServer
 @attribute [Authorize(Roles = "Administrator,Manager")]
 @inject StoreService Store
 @inject ILogger<Customers> Logger

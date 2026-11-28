@@ -33,12 +33,26 @@ public sealed class PosApiClient(HttpClient http)
     public Task<CashSessionDto?> GetCashSessionAsync(string registerCode, CancellationToken ct = default) =>
         GetAsync<CashSessionDto?>($"api/v1/cash/session?registerCode={Uri.EscapeDataString(registerCode)}", ct);
 
+    public Task<IReadOnlyList<ParkedSaleDto>> GetParkedSalesAsync(string registerCode, CancellationToken ct = default) =>
+        GetAsync<IReadOnlyList<ParkedSaleDto>>($"api/v1/pos/parked-sales/?registerCode={Uri.EscapeDataString(registerCode)}", ct);
+
+    public async Task<ParkedSaleDto> ParkSaleAsync(ParkSaleRequest request, CancellationToken ct = default) =>
+        await PostAsync<ParkedSaleDto>("api/v1/pos/parked-sales/", request, ct);
+
+    public async Task<ParkedSaleDto> CancelParkedSaleAsync(Guid id, CancelParkedSaleRequest request, CancellationToken ct = default) =>
+        await PostAsync<ParkedSaleDto>($"api/v1/pos/parked-sales/{id:D}/cancel", request, ct);
+
     public async Task<SaleDto> CheckoutAsync(CheckoutRequest request, CancellationToken ct = default)
     {
-        using var response = await http.PostAsJsonAsync("api/v1/pos/checkout", request, ct);
+        return await PostAsync<SaleDto>("api/v1/pos/checkout", request, ct);
+    }
+
+    private async Task<T> PostAsync<T>(string path, object request, CancellationToken ct)
+    {
+        using var response = await http.PostAsJsonAsync(path, request, ct);
         await EnsureSuccessAsync(response, ct);
-        return await response.Content.ReadFromJsonAsync<SaleDto>(cancellationToken: ct)
-            ?? throw new InvalidOperationException("El servidor no devolvió el resultado de la venta.");
+        return await response.Content.ReadFromJsonAsync<T>(cancellationToken: ct)
+            ?? throw new InvalidOperationException("El servidor no devolvió el resultado de la operación.");
     }
 
     private async Task<T> GetAsync<T>(string path, CancellationToken ct)

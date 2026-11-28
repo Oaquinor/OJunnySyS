@@ -1,0 +1,79 @@
+@inject TenantSettingsService TenantSettings
+@inject ILogger<ReceiptPrintQuickSettings> Logger
+
+<button type="button" class="button button-secondary" @onclick="OpenAsync">⚙ Impresión rápida</button>
+@if (_open)
+{
+    <div class="modal-backdrop print-quick-backdrop" @onclick="Close">
+        <section class="modal-card print-quick-card" role="dialog" aria-modal="true" aria-labelledby="print-quick-title" @onclick:stopPropagation="true">
+            <div class="modal-heading">
+                <div><span class="eyebrow">PUNTO DE VENTA · IMPRESIÓN</span><h2 id="print-quick-title">Ajustes rápidos</h2><p>Se aplican al próximo recibo y quedan guardados para la empresa.</p></div>
+                <button type="button" class="icon-button" @onclick="Close" aria-label="Cerrar">×</button>
+            </div>
+            @if (_loading)
+            {
+                <div class="loading-panel">Cargando opciones de impresión…</div>
+            }
+            else
+            {
+                <div class="print-quick-grid">
+                    <label>Ancho del papel<select @bind="_paperWidth"><option value="58">58 mm · compacto</option><option value="80">80 mm · estándar</option><option value="210">A4</option></select></label>
+                    <label>Diseño<select @bind="_design"><option value="classic">Clásico</option><option value="minimal">Minimalista</option><option value="detailed">Detallado</option></select></label>
+                    <label>Tipografía<select @bind="_font"><option value="classic">Clásica</option><option value="modern">Moderna</option><option value="compact">Compacta</option></select></label>
+                    <label>Tamaño de letra<select @bind="_fontSize"><option value="11">Pequeña</option><option value="12">Mediana</option><option value="13">Grande</option></select></label>
+                </div>
+                <div class="print-quick-options">
+                    <label><InputCheckbox @bind-Value="_showCustomer" /> Incluir cliente</label>
+                    <label><InputCheckbox @bind-Value="_showSku" /> Incluir SKU</label>
+                    <label><InputCheckbox @bind-Value="_showUnitPrice" /> Mostrar precio unitario</label>
+                    <label><InputCheckbox @bind-Value="_showLineTotals" /> Mostrar importes por artículo</label>
+                    <label><InputCheckbox @bind-Value="_showTax" /> Mostrar impuestos</label>
+                    <label><InputCheckbox @bind-Value="_compact" /> Interlineado compacto</label>
+                </div>
+                @if (_error is not null) { <div class="inline-error">@_error</div> }
+                @if (_notice is not null) { <div class="success-banner">✓ @_notice</div> }
+                <div class="modal-actions"><a class="button button-secondary" href="/app/settings">Configuración completa</a><button class="button button-primary" @onclick="SaveAsync" disabled="@_saving">@(_saving ? "Guardando…" : "Guardar opciones")</button></div>
+            }
+        </section>
+    </div>
+}
+
+@code {
+    private TenantBusinessSettingsDto? _current;
+    private bool _open, _loading, _saving, _showCustomer, _showSku, _showTax, _showUnitPrice, _showLineTotals, _compact;
+    private int _paperWidth, _fontSize;
+    private string _design = "classic", _font = "modern";
+    private string? _error, _notice;
+
+    private async Task OpenAsync()
+    {
+        _open = true; _loading = true; _error = _notice = null;
+        try
+        {
+            _current = await TenantSettings.GetAsync();
+            _paperWidth = _current.ReceiptPaperWidthMm; _design = _current.ReceiptDesign; _font = _current.ReceiptFontFamily; _fontSize = _current.ReceiptFontSize;
+            _showCustomer = _current.ReceiptShowCustomer; _showSku = _current.ReceiptShowSku; _showTax = _current.ReceiptShowTax;
+            _showUnitPrice = _current.ReceiptShowUnitPrice; _showLineTotals = _current.ReceiptShowLineTotals; _compact = _current.ReceiptCompactLineSpacing;
+        }
+        catch (Exception ex) { Logger.LogError(ex, "No se pudo cargar la impresión rápida."); _error = "No se pudieron cargar las opciones de impresión."; }
+        finally { _loading = false; }
+    }
+
+    private async Task SaveAsync()
+    {
+        if (_current is null) return;
+        _saving = true; _error = _notice = null;
+        try
+        {
+            _current = await TenantSettings.UpdateAsync(new UpdateTenantBusinessSettingsRequest(_current.TimeZoneId, _current.CurrencyCode, _current.DefaultTaxRate,
+                _current.LegalName, _current.TaxIdentifier, _current.BusinessPhone, _current.BusinessAddress, _current.ReceiptHeader, _current.ReceiptFooter,
+                _paperWidth, _showCustomer, _showSku, _showTax, _design, _compact, _font, _fontSize, _current.ReceiptMarginLeftMm, _current.ReceiptMarginRightMm,
+                _showUnitPrice, _showLineTotals));
+            _notice = "Opciones guardadas. Se usarán en los próximos recibos.";
+        }
+        catch (Exception ex) { Logger.LogError(ex, "No se pudo guardar la impresión rápida."); _error = "No se pudieron guardar los cambios. Inténtalo de nuevo."; }
+        finally { _saving = false; }
+    }
+
+    private void Close() => _open = false;
+}

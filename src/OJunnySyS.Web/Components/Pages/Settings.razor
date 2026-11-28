@@ -1,4 +1,5 @@
 @page "/app/settings"
+@rendermode InteractiveServer
 @attribute [Authorize(Roles = "Administrator")]
 @inject TenantSettingsService TenantConfig
 @inject ILogger<Settings> Logger

@@ -185,7 +185,7 @@ public sealed class EfStoreRepository(IDbContextFactory<StoreDbContext> contextF
         return customer;
     }
 
-    public async Task<Product> CreateProductAsync(string sku, string name, string category, decimal unitPrice, int stock, string? barcode, decimal? taxRateOverride = null, decimal? initialUnitCost = null, Guid? taxProfileId = null, CancellationToken cancellationToken = default)
+    public async Task<Product> CreateProductAsync(string sku, string name, string category, decimal unitPrice, int stock, string? barcode, decimal? taxRateOverride = null, decimal? initialUnitCost = null, Guid? taxProfileId = null, string? imageUrl = null, Guid? initialWarehouseId = null, CancellationToken cancellationToken = default)
     {
         var tenantId = tenantContext.GetRequiredTenantId();
         await using var db = await CreateDbContextAsync(cancellationToken);
@@ -194,15 +194,18 @@ public sealed class EfStoreRepository(IDbContextFactory<StoreDbContext> contextF
             ?? throw new DomainException("La empresa activa no existe.");
         if (taxProfileId is { } selectedTaxId && !await db.TaxProfiles.AnyAsync(x => x.Id == selectedTaxId && x.IsActive, cancellationToken))
             throw new DomainException("El perfil de impuesto seleccionado no existe o está inactivo en esta empresa.");
-        var product = new Product(tenantId, sku, name, category, unitPrice, stock, barcode, taxRateOverride, initialUnitCost, taxProfileId);
+        var product = new Product(tenantId, sku, name, category, unitPrice, stock, barcode, taxRateOverride, initialUnitCost, taxProfileId, imageUrl);
         if (await db.Products.AnyAsync(x => x.Sku == product.Sku || (product.Barcode != null && x.Barcode == product.Barcode), cancellationToken))
             throw new DomainException("Ya existe un producto con ese SKU o código de barras.");
         var warehouses = await db.Warehouses.Where(x => x.IsActive).OrderBy(x => x.Code).ToListAsync(cancellationToken);
         var mainWarehouse = warehouses.SingleOrDefault(x => x.Code == "MAIN") ?? throw new DomainException("Configura el almacén principal antes de crear productos.");
+        var stockWarehouse = initialWarehouseId is { } selectedWarehouseId
+            ? warehouses.SingleOrDefault(x => x.Id == selectedWarehouseId) ?? throw new DomainException("El almacén inicial no existe o está inactivo en esta empresa.")
+            : mainWarehouse;
         db.Products.Add(product);
         foreach (var warehouse in warehouses)
-            db.WarehouseStocks.Add(new WarehouseStock(tenantId, warehouse.Id, product.Id, warehouse.Id == mainWarehouse.Id ? stock : 0));
-        if (stock > 0) db.InventoryMovements.Add(new InventoryMovement(tenantId, product.Id, InventoryMovementType.StockAdjustment, stock, stock, "Existencias iniciales del producto", mainWarehouse.Id));
+            db.WarehouseStocks.Add(new WarehouseStock(tenantId, warehouse.Id, product.Id, warehouse.Id == stockWarehouse.Id ? stock : 0));
+        if (stock > 0) db.InventoryMovements.Add(new InventoryMovement(tenantId, product.Id, InventoryMovementType.StockAdjustment, stock, stock, "Existencias iniciales del producto", stockWarehouse.Id));
         await db.SaveChangesAsync(cancellationToken);
         if (product.TaxProfileId is not null) await db.Entry(product).Reference(x => x.TaxProfile).LoadAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);
@@ -218,7 +221,7 @@ public sealed class EfStoreRepository(IDbContextFactory<StoreDbContext> contextF
             throw new ConcurrencyConflictException("El producto cambió en otra sesión. Recarga el catálogo antes de guardar.");
         if (request.TaxProfileId is { } taxProfileId && !await db.TaxProfiles.AnyAsync(x => x.Id == taxProfileId && x.IsActive, cancellationToken))
             throw new DomainException("El perfil de impuesto seleccionado no existe o está inactivo en esta empresa.");
-        product.UpdateCatalog(request.Sku, request.Name, request.Category, request.UnitPrice, request.Barcode, request.TaxRateOverride, request.TaxProfileId);
+        product.UpdateCatalog(request.Sku, request.Name, request.Category, request.UnitPrice, request.Barcode, request.TaxRateOverride, request.TaxProfileId, request.ImageUrl);
         if (await db.Products.AnyAsync(x => x.Id != productId && (x.Sku == product.Sku || (product.Barcode != null && x.Barcode == product.Barcode)), cancellationToken))
             throw new DomainException("Ya existe un producto con ese SKU o código de barras.");
         try { await db.SaveChangesAsync(cancellationToken); }

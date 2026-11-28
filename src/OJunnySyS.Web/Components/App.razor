@@ -27,11 +27,11 @@
     <link rel="apple-touch-icon" href="icons/ojunnysy-icon.svg" />
     <ImportMap />
     <link rel="icon" type="image/png" href="favicon.png" />
-    <HeadOutlet />
+    <HeadOutlet @rendermode="PageRenderMode" />
 </head>
 
 <body>
-    <Routes @rendermode="InteractiveServer" />
+    <Routes />
     <ReconnectModal />
     <script src="@Assets["_framework/blazor.web.js"]"></script>
     <script>
@@ -42,3 +42,11 @@
 </body>
 
 </html>
+
+@code {
+    [CascadingParameter]
+    private HttpContext HttpContext { get; set; } = default!;
+
+    private IComponentRenderMode PageRenderMode =>
+        HttpContext.GetEndpoint()?.Metadata.GetMetadata<RenderModeAttribute>()?.Mode ?? InteractiveServer;
+}

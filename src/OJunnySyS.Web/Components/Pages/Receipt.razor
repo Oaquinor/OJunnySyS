@@ -1,4 +1,5 @@
 @page "/app/receipts/{SaleId:guid}"
+@rendermode InteractiveServer
 @attribute [Authorize(Roles = "Administrator,Manager,Cashier")]
 @inject StoreService Store
 @inject TenantSettingsService TenantConfig
@@ -10,7 +11,7 @@
 
 <PageTitle>Recibo · OJunnySyS</PageTitle>
 <PageHeader Eyebrow="VENTAS / RECIBO" Title="Comprobante de venta" Description="Consulta o imprime el detalle de esta transacción.">
-    <Actions><a class="button button-secondary" href="/app/sales">Volver a ventas</a>@if (_receipt is not null) { <button class="button button-primary" @onclick="PrintAsync">Imprimir recibo</button> }</Actions>
+    <Actions><ReceiptPrintQuickSettings /><a class="button button-secondary" href="/app/sales">Volver a ventas</a>@if (_receipt is not null) { <button class="button button-primary" @onclick="PrintAsync">Imprimir recibo</button> }</Actions>
 </PageHeader>
 
 @if (_loading) { <div class="panel receipt-loading">Cargando recibo…</div> }

@@ -1,4 +1,5 @@
 @page "/app/reports"
+@rendermode InteractiveServer
 @attribute [Authorize(Roles = "Administrator,Manager")]
 @inject StoreService Store
 @inject TenantSettingsService TenantSettings
@@ -8,7 +9,7 @@
 
 <PageTitle>Reportes · OjunnySyS</PageTitle>
 <PageHeader Eyebrow="ANÁLISIS / VENTAS" Title="Reportes" Description="Entiende el rendimiento de las ventas en el período que elijas.">
-    <Actions>@if (_report is not null) { <a class="button button-secondary" href="@ExportUrl">↓ Descargar CSV</a> }</Actions>
+    <Actions><a class="button button-secondary" href="/app/reports/designer">Diseñar documentos</a>@if (_report is not null) { <a class="button button-secondary" href="@ExportUrl">↓ Descargar CSV</a> }</Actions>
 </PageHeader>
 <div class="report-presets" aria-label="Períodos rápidos">
     <span>Período rápido</span>
