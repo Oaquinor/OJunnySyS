@@ -41,7 +41,7 @@ OJunnySyS se desarrolla en C#, ASP.NET Core .NET 10, Blazor Server interactivo, 
 - [ ] Integración y autorización de comprobantes electrónicos DGII/e-CF.
 - [x] Configuración de cuentas bancarias y conciliación de estados por CSV contra asientos publicados; control de diferencias, partidas pendientes, aislamiento por empresa e historial cerrado. Falta automatizar conciliación de pagos de tarjetas/transferencias y validar formatos de extracto de bancos locales.
 - [ ] Impresión térmica integrada y manejo de conectividad intermitente.
-- [ ] Offline de POS con cola local cifrada, idempotencia y resolución de conflictos. Hasta entonces solo se mantiene accesible la shell pública sin almacenar operaciones.
+- [ ] POS realmente offline: cliente ejecutable sin circuito Blazor Server, sesión/dispositivo autorizados, borradores locales cifrados, sincronización API idempotente y resolución auditable de conflictos. El service worker actual solo conserva recursos estáticos y la página de reconexión; no almacena ventas ni completa transacciones desconectadas. Ver ADR 0002.
 
 ## Operación y producción
 
