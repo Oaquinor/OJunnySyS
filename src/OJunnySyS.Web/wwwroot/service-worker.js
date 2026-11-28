@@ -23,7 +23,7 @@ self.addEventListener("fetch", event => {
     return;
   }
 
-  if (url.pathname.startsWith("/api/") || url.pathname.startsWith("/account/")) return;
+  if (url.pathname.startsWith("/api/") || url.pathname.startsWith("/account/") || url.pathname.startsWith("/media/")) return;
   if (!STATIC_EXTENSIONS.test(url.pathname)) return;
 
   event.respondWith(caches.open(CACHE_NAME).then(async cache => {

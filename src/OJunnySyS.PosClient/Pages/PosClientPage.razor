@@ -16,7 +16,8 @@
     @if (!string.IsNullOrWhiteSpace(_error)) { <div role="alert" class="rounded-xl border border-rose-200 bg-rose-50 p-3 text-sm text-rose-800">@_error</div> }
     @if (!string.IsNullOrWhiteSpace(_notice)) { <div role="status" class="rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-900">@_notice</div> }
     @if (_lastSaleId is { } saleId) { <a class="w-fit rounded-lg font-semibold text-brand-700 underline underline-offset-4" href="/app/receipts/@saleId">Abrir e imprimir el recibo</a> }
-    <div class="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950"><span><strong>@(_online ? "Conectado" : "Sin conexión")</strong> · Las ventas solo se registran cuando el servidor confirma la transacción.</span><a class="font-semibold underline" href="/app/pos">Abrir POS actual</a></div>
+    <div class="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950"><span><strong>@(_online ? "Conectado" : "Sin conexión")</strong> · Las ventas solo se registran cuando el servidor confirma la transacción.@if (_cart.Count > 0 && _offlineDraftSaved) { <span class="font-semibold"> Borrador cifrado guardado en este dispositivo; pendiente de revisión y confirmación.</span> }</span><a class="font-semibold underline" href="/app/pos">Abrir POS actual</a></div>
+    @if (!string.IsNullOrWhiteSpace(_offlineStorageError)) { <div role="status" class="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">@_offlineStorageError</div> }
     @if (_parkedSaleId is not null) { <div class="rounded-xl border border-sky-200 bg-sky-50 p-3 text-sm text-sky-900"><strong>Venta retomada</strong> · Sus artículos y descuentos están protegidos hasta cobrar o cancelar esta espera.</div> }
     @if (_parkedSales.Count > 0)
     {
@@ -53,7 +54,7 @@
                         @foreach (var product in _products)
                         {
                             var quantity = _cart.GetValueOrDefault(product.Id);
-                            <button type="button" class="grid min-h-32 content-between gap-3 rounded-2xl border border-slate-200 bg-white p-4 text-left shadow-sm transition hover:border-brand-300 hover:shadow-md disabled:cursor-not-allowed disabled:opacity-50" @onclick="() => Add(product)" disabled="@(!_online || quantity >= product.StockOnHand || _busy || _parkedSaleId is not null)">
+                            <button type="button" class="grid min-h-32 content-between gap-3 rounded-2xl border border-slate-200 bg-white p-4 text-left shadow-sm transition hover:border-brand-300 hover:shadow-md disabled:cursor-not-allowed disabled:opacity-50" @onclick="() => AddAsync(product)" disabled="@(quantity >= product.StockOnHand || _busy || _parkedSaleId is not null)">
                                 @if (!string.IsNullOrWhiteSpace(product.ImageUrl)) { <img class="h-24 w-full rounded-xl bg-slate-50 object-contain" src="@product.ImageUrl" alt="Imagen de @product.Name" loading="lazy" /> }
                                 <span class="grid gap-1"><strong class="text-sm text-ink">@product.Name</strong><small class="text-xs text-slate-500">@product.Sku · @_cart.GetValueOrDefault(product.Id) en orden</small></span>
                                 <span class="flex items-end justify-between gap-3"><strong class="text-lg font-bold text-brand-700">@Money(product.UnitPrice)</strong><small class="text-xs text-slate-500">Disponible: @product.StockOnHand</small></span>
@@ -73,7 +74,7 @@
                         {
                             var product = _cartProducts.GetValueOrDefault(entry.Key);
                             if (product is null) { continue; }
-                            <div class="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2 border-b border-slate-100 py-2"><span class="grid min-w-0 gap-1"><strong class="truncate text-sm text-ink">@product.Name</strong><small class="text-xs text-slate-500">@entry.Value × @Money(product.UnitPrice)</small>@if (_canApplyDiscount) { <label class="grid max-w-32 gap-1 text-xs font-semibold text-slate-600">Descuento (%)<input type="number" min="0" max="100" step="0.01" class="min-h-9 rounded-lg border border-slate-200 px-2 text-xs" value="@DiscountPercent(product.Id).ToString(System.Globalization.CultureInfo.InvariantCulture)" @onchange="e => SetDiscount(product.Id, e.Value?.ToString())" disabled="@(_busy || _parkedSaleId is not null)" /></label> }<small class="text-xs font-semibold text-brand-700">Importe: @Money(LineTotal(product, entry.Value))</small></span><span class="flex items-center gap-1"><button type="button" class="grid size-8 place-items-center rounded-lg border border-slate-200 disabled:opacity-40" @onclick="() => ChangeQuantity(product, -1)" disabled="@(_parkedSaleId is not null)" aria-label="Quitar uno">−</button><strong class="w-6 text-center text-sm">@entry.Value</strong><button type="button" class="grid size-8 place-items-center rounded-lg border border-slate-200 disabled:opacity-40" @onclick="() => ChangeQuantity(product, 1)" disabled="@(_parkedSaleId is not null || entry.Value >= product.StockOnHand)" aria-label="Agregar uno">+</button></span></div>
+                            <div class="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2 border-b border-slate-100 py-2"><span class="grid min-w-0 gap-1"><strong class="truncate text-sm text-ink">@product.Name</strong><small class="text-xs text-slate-500">@entry.Value × @Money(product.UnitPrice)</small>@if (_canApplyDiscount) { <label class="grid max-w-32 gap-1 text-xs font-semibold text-slate-600">Descuento (%)<input type="number" min="0" max="100" step="0.01" class="min-h-9 rounded-lg border border-slate-200 px-2 text-xs" value="@DiscountPercent(product.Id).ToString(System.Globalization.CultureInfo.InvariantCulture)" @onchange="e => SetDiscount(product.Id, e.Value?.ToString())" disabled="@(_busy || _parkedSaleId is not null)" /></label> }<small class="text-xs font-semibold text-brand-700">Importe: @Money(LineTotal(product, entry.Value))</small></span><span class="flex items-center gap-1"><button type="button" class="grid size-8 place-items-center rounded-lg border border-slate-200 disabled:opacity-40" @onclick="() => ChangeQuantityAsync(product, -1)" disabled="@(_parkedSaleId is not null)" aria-label="Quitar uno">−</button><strong class="w-6 text-center text-sm">@entry.Value</strong><button type="button" class="grid size-8 place-items-center rounded-lg border border-slate-200 disabled:opacity-40" @onclick="() => ChangeQuantityAsync(product, 1)" disabled="@(_parkedSaleId is not null || entry.Value >= product.StockOnHand)" aria-label="Agregar uno">+</button></span></div>
                         }
                     </div>
                 }
@@ -100,7 +101,7 @@
                     </div>
                 }
                 <div class="grid gap-2 border-t border-slate-200 pt-4 text-sm"><div class="flex items-center justify-between text-slate-600"><span>Subtotal</span><span>@Money(GrossSubtotal)</span></div>@if (DiscountTotal > 0m) { <div class="flex items-center justify-between text-rose-700"><span>Descuento</span><span>−@Money(DiscountTotal)</span></div> }<div class="flex items-center justify-between text-slate-600"><span>Base imponible</span><span>@Money(NetSubtotal)</span></div><div class="flex items-center justify-between text-slate-600"><span>Impuestos</span><span>@Money(TaxTotal)</span></div><div class="flex items-center justify-between border-t border-slate-100 pt-2 font-bold text-ink"><span>Total estimado</span><strong class="text-2xl">@Money(EstimatedTotal)</strong></div></div>
-                <small class="text-xs leading-5 text-slate-500">El servidor vuelve a calcular precios, descuentos, impuestos y existencias antes de guardar. El crédito exige cliente y vencimiento; no requiere turno de caja. Este POS cliente aún no admite completar cobros sin conexión.</small>
+                <small class="text-xs leading-5 text-slate-500">El borrador de la orden se conserva cifrado por empresa y usuario. Sin conexión no se confirma venta ni recibo; al volver, revisa el catálogo actualizado y confirma para que el servidor valide precios, caja, impuestos e inventario. El crédito requiere cliente y vencimiento.</small>
                 <div class="flex flex-wrap items-center gap-2 border-t border-slate-200 pt-3 text-xs text-slate-500" aria-label="Atajos de teclado"><span class="font-semibold">Atajos:</span><span><kbd class="rounded-md border border-slate-200 bg-slate-50 px-1.5 py-0.5 font-sans">F2</kbd> Buscar</span><span><kbd class="rounded-md border border-slate-200 bg-slate-50 px-1.5 py-0.5 font-sans">F3</kbd> Cliente</span><span><kbd class="rounded-md border border-slate-200 bg-slate-50 px-1.5 py-0.5 font-sans">F4</kbd> Vendedor</span><span><kbd class="rounded-md border border-slate-200 bg-slate-50 px-1.5 py-0.5 font-sans">F6</kbd> Pago</span><span><kbd class="rounded-md border border-slate-200 bg-slate-50 px-1.5 py-0.5 font-sans">F9</kbd> Cobrar</span></div>
                 <div class="flex flex-wrap gap-2"><button id="pos-checkout" type="button" class="min-h-11 flex-1 rounded-xl bg-brand-600 px-4 text-sm font-bold text-white disabled:cursor-not-allowed disabled:opacity-50" @onclick="CheckoutAsync" disabled="@(!CanCheckout)">@(_busy ? "Procesando…" : _isCredit ? "Crear cuenta · " + Money(EstimatedTotal) : "Completar venta")</button><button type="button" class="min-h-11 rounded-xl border border-slate-200 px-3 text-sm font-semibold text-slate-600 disabled:opacity-50" @onclick="ParkCurrentSaleAsync" disabled="@(!_online || _cart.Count == 0 || _busy || _parkedSaleId is not null || _isCredit)">En espera</button><button type="button" class="min-h-11 rounded-xl border border-slate-200 px-3 text-sm font-semibold text-slate-600 disabled:opacity-50" @onclick="ClearCartAsync" disabled="@(_cart.Count == 0 || _busy)">Vaciar</button></div>
             </aside>
@@ -132,6 +133,12 @@
     private DotNetObjectReference<PosClientPage>? _self;
     private IJSObjectReference? _networkModule;
     private IJSObjectReference? _shortcutsModule;
+    private IJSObjectReference? _offlineModule;
+    private OfflineDraft? _offlineDraft;
+    private bool _offlineDraftSaved;
+    private string? _offlineStorageError;
+    private string _currencyCode = "DOP";
+    private decimal _defaultTaxRate;
 
     private decimal GrossSubtotal => _cart.Sum(item =>
     {
@@ -145,7 +152,7 @@
     {
         var product = _cartProducts.GetValueOrDefault(item.Key);
         if (product is null) return 0m;
-        var rate = product.TaxProfileRate ?? product.TaxRateOverride ?? _settings?.DefaultTaxRate ?? 0m;
+        var rate = product.TaxProfileRate ?? product.TaxRateOverride ?? _settings?.DefaultTaxRate ?? _defaultTaxRate;
         return decimal.Round(LineTotal(product, item.Value) * rate, 2);
     });
     private decimal EstimatedTotal => NetSubtotal + TaxTotal;
@@ -160,6 +167,37 @@
         {
             var principal = (await AuthenticationState.GetAuthenticationStateAsync()).User;
             _canApplyDiscount = principal.IsInRole("Administrator") || principal.IsInRole("Manager");
+            _currencyCode = principal.FindFirst("currency_code")?.Value ?? "DOP";
+            if (decimal.TryParse(principal.FindFirst("default_tax_rate")?.Value, System.Globalization.NumberStyles.Number, System.Globalization.CultureInfo.InvariantCulture, out var tenantTaxRate))
+                _defaultTaxRate = tenantTaxRate;
+            try
+            {
+                var userId = principal.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+                var tenantId = principal.FindFirst("tenant_id")?.Value;
+                if (!string.IsNullOrWhiteSpace(userId) && !string.IsNullOrWhiteSpace(tenantId))
+                {
+                    _offlineModule = await JS.InvokeAsync<IJSObjectReference>("import", "./js/pos-offline-drafts.js");
+                    await _offlineModule.InvokeVoidAsync("initialize", userId, tenantId);
+                    _offlineDraft = await _offlineModule.InvokeAsync<OfflineDraft?>("loadDraft");
+                    if (_offlineDraft is not null && _offlineDraft.SavedAtUtc < DateTimeOffset.UtcNow.AddDays(-7))
+                    {
+                        await _offlineModule.InvokeVoidAsync("clearDraft");
+                        _offlineDraft = null;
+                    }
+                    var cachedCatalog = await _offlineModule.InvokeAsync<OfflineCatalog?>("loadCatalog");
+                    if (cachedCatalog is not null)
+                    {
+                        _products = cachedCatalog.Products;
+                        _registers = [cachedCatalog.Register];
+                        _registerCode = cachedCatalog.Register.Code;
+                        _currencyCode = cachedCatalog.CurrencyCode;
+                        _defaultTaxRate = cachedCatalog.DefaultTaxRate;
+                    }
+                    RestoreDraft(_offlineDraft);
+                }
+                else _offlineStorageError = "No se guardará una orden sin asociarla a la empresa y usuario de la sesión.";
+            }
+            catch (JSException) { _offlineStorageError = "El navegador no habilitó el almacenamiento cifrado del borrador. La orden solo permanecerá en esta pantalla."; }
             var registersTask = PosApi.GetRegistersAsync();
             var methodsTask = PosApi.GetPaymentOptionsAsync();
             var sellersTask = PosApi.GetSellersAsync();
@@ -175,10 +213,12 @@
                 _tenders.Add(new TenderForm(cashMethod.Id, 0m));
             else if (_paymentOptions.FirstOrDefault() is { } firstMethod)
                 _tenders.Add(new TenderForm(firstMethod.Id, 0m));
-            _registerCode = _registers.FirstOrDefault()?.Code ?? string.Empty;
+            _registerCode = _registers.FirstOrDefault(x => x.Code == _offlineDraft?.RegisterCode)?.Code ?? _registers.FirstOrDefault()?.Code ?? string.Empty;
             await LoadRegisterAsync();
+            RestoreDraft(_offlineDraft);
+            if (_offlineDraftSaved) ResetCheckoutKey();
         }
-        catch (Exception ex) { _error = ex.Message; }
+        catch (Exception ex) { _online = false; _error = _products.Count > 0 ? "Trabajando con el último catálogo cifrado de este dispositivo. Las ventas no pueden confirmarse hasta reconectar." : ex.Message; }
         finally { _loading = false; }
 
         _self = DotNetObjectReference.Create(this);
@@ -197,6 +237,7 @@
     {
         _registerCode = args.Value?.ToString() ?? string.Empty;
         ResetCartState(); _error = null;
+        await ClearOfflineDraftAsync();
         await LoadRegisterAsync();
     }
 
@@ -211,6 +252,15 @@
         _products = await productsTask;
         _cashSession = await cashTask;
         _parkedSales = await parkedTask;
+        if (_offlineModule is not null && _registers.FirstOrDefault(x => x.Code == _registerCode) is { } selectedRegister)
+        {
+            try
+            {
+                var cachedProducts = string.IsNullOrWhiteSpace(_search) ? _products : await PosApi.SearchProductsAsync(selectedRegister.WarehouseId, null);
+                await _offlineModule.InvokeVoidAsync("saveCatalog", new OfflineCatalog(selectedRegister, cachedProducts, _currencyCode, _settings?.DefaultTaxRate ?? _defaultTaxRate));
+            }
+            catch (JSException) { _offlineStorageError = "No se pudo actualizar el catálogo cifrado sin conexión."; }
+        }
     }
 
     private async Task SearchAsync()
@@ -220,21 +270,23 @@
         catch (Exception ex) { _error = ex.Message; }
     }
 
-    private void Add(ProductDto product)
+    private async Task AddAsync(ProductDto product)
     {
-        if (!_online || _parkedSaleId is not null || _cart.GetValueOrDefault(product.Id) >= product.StockOnHand) return;
+        if (_parkedSaleId is not null || _cart.GetValueOrDefault(product.Id) >= product.StockOnHand) return;
         _cart[product.Id] = _cart.GetValueOrDefault(product.Id) + 1;
         _cartProducts[product.Id] = product;
         ResetOrderKeys(); _error = null;
+        await PersistOfflineDraftAsync();
     }
 
-    private void ChangeQuantity(ProductDto product, int delta)
+    private async Task ChangeQuantityAsync(ProductDto product, int delta)
     {
         if (_parkedSaleId is not null) return;
         var quantity = _cart.GetValueOrDefault(product.Id) + delta;
         if (quantity <= 0) { _cart.Remove(product.Id); _cartProducts.Remove(product.Id); _discounts.Remove(product.Id); }
         else if (quantity <= product.StockOnHand) _cart[product.Id] = quantity;
         ResetOrderKeys();
+        await PersistOfflineDraftAsync();
     }
 
     private async Task ClearCartAsync()
@@ -247,6 +299,7 @@
             return;
         }
         ResetCartState();
+        await ClearOfflineDraftAsync();
     }
 
     private async Task ParkCurrentSaleAsync()
@@ -259,6 +312,7 @@
                 _cart.Select(x => new ParkedSaleLineRequest(x.Key, x.Value, DiscountPercent(x.Key))).ToArray()));
             _notice = $"Venta guardada en espera · {parked.Lines.Sum(x => x.Quantity)} artículos";
             ResetCartState();
+            await ClearOfflineDraftAsync();
             await LoadRegisterAsync();
         }
         catch (Exception ex) { _error = ex.Message; }
@@ -338,6 +392,7 @@
                 : $"Venta {sale.Number} confirmada por el servidor · {Money(sale.Total)}";
             _lastSaleId = sale.Id;
             ResetCartState();
+            await ClearOfflineDraftAsync();
             await LoadRegisterAsync();
         }
         catch (Exception ex) { _error = ex.Message; try { await LoadRegisterAsync(); } catch { } }
@@ -415,15 +470,16 @@
         return gross - discount;
     }
 
-    private void SetDiscount(Guid productId, string? rawValue)
+    private async Task SetDiscount(Guid productId, string? rawValue)
     {
         if (!_canApplyDiscount || _parkedSaleId is not null || !decimal.TryParse(rawValue, System.Globalization.NumberStyles.Number,
                 System.Globalization.CultureInfo.InvariantCulture, out var percent)) return;
         _discounts[productId] = decimal.Round(Math.Clamp(percent, 0m, 100m), 2, MidpointRounding.AwayFromZero);
         ResetOrderKeys();
+        await PersistOfflineDraftAsync();
     }
 
-    private string Money(decimal amount) => string.Format(System.Globalization.CultureInfo.GetCultureInfo("es-DO"), "{0} {1:N2}", _settings?.CurrencyCode ?? "DOP", amount);
+    private string Money(decimal amount) => string.Format(System.Globalization.CultureInfo.GetCultureInfo("es-DO"), "{0} {1:N2}", _settings?.CurrencyCode ?? _currencyCode, amount);
 
     private sealed class TenderForm(Guid paymentMethodId, decimal amount)
     {
@@ -432,7 +488,33 @@
     }
 
     [JSInvokable]
-    public Task SetOnline(bool online) { _online = online; if (!online) _error = null; return InvokeAsync(StateHasChanged); }
+    public async Task SetOnline(bool online)
+    {
+        var wasOnline = _online;
+        _online = online;
+        if (!online) _error = null;
+        else if (!wasOnline && !_loading && !string.IsNullOrWhiteSpace(_registerCode))
+        {
+            try
+            {
+                var methodsTask = PosApi.GetPaymentOptionsAsync();
+                var sellersTask = PosApi.GetSellersAsync();
+                var settingsTask = PosApi.GetBusinessSettingsAsync();
+                var customersTask = PosApi.SearchCustomersAsync();
+                await Task.WhenAll(methodsTask, sellersTask, settingsTask, customersTask);
+                _paymentOptions = await methodsTask; _sellers = await sellersTask; _settings = await settingsTask; _customers = await customersTask;
+                if (_tenders.Count == 0 && _paymentOptions.FirstOrDefault(x => x.Type == PaymentMethodType.Cash) is { } cashMethod)
+                    _tenders.Add(new TenderForm(cashMethod.Id, 0m));
+                await LoadRegisterAsync();
+                foreach (var entry in _cart.ToArray())
+                    if (_products.FirstOrDefault(x => x.Id == entry.Key) is { } current) _cartProducts[entry.Key] = current;
+                ResetCheckoutKey();
+                _notice = _cart.Count > 0 ? "Conexión restablecida · revisa el borrador y confirma para validar datos actuales." : null;
+            }
+            catch { _online = false; _error = "Aún no se puede consultar el servidor. El borrador sigue pendiente."; }
+        }
+        await InvokeAsync(StateHasChanged);
+    }
 
     public async ValueTask DisposeAsync()
     {
@@ -447,5 +529,53 @@
             try { await _shortcutsModule.InvokeVoidAsync("unregister"); await _shortcutsModule.DisposeAsync(); }
             catch (JSDisconnectedException) { }
         }
+        if (_offlineModule is not null)
+        {
+            try { await _offlineModule.DisposeAsync(); }
+            catch (JSDisconnectedException) { }
+        }
     }
+
+    private void RestoreDraft(OfflineDraft? draft)
+    {
+        if (draft is null || draft.Lines.Count == 0 || draft.SavedAtUtc < DateTimeOffset.UtcNow.AddDays(-7)) return;
+        if (!string.IsNullOrWhiteSpace(_registerCode) && !string.Equals(draft.RegisterCode, _registerCode, StringComparison.OrdinalIgnoreCase)) return;
+        _registerCode = draft.RegisterCode;
+        _cart.Clear(); _cartProducts.Clear(); _discounts.Clear();
+        foreach (var line in draft.Lines.Where(x => x.Product.Id != Guid.Empty && x.Quantity is > 0 and <= 10000).Take(200))
+        {
+            _cart[line.Product.Id] = line.Quantity;
+            _cartProducts[line.Product.Id] = line.Product;
+            if (_canApplyDiscount && line.DiscountPercent > 0m) _discounts[line.Product.Id] = Math.Clamp(line.DiscountPercent, 0m, 100m);
+        }
+        _offlineDraftSaved = _cart.Count > 0;
+        if (_offlineDraftSaved) _notice = "Borrador local recuperado · verifica precios, caja e inventario antes de confirmar.";
+    }
+
+    private async Task PersistOfflineDraftAsync()
+    {
+        if (_offlineModule is null) return;
+        if (_cart.Count == 0 || _parkedSaleId is not null) { await ClearOfflineDraftAsync(); return; }
+        try
+        {
+            var lines = _cart.Select(item => new OfflineDraftLine(_cartProducts[item.Key], item.Value, DiscountPercent(item.Key))).ToArray();
+            await _offlineModule.InvokeVoidAsync("saveDraft", new OfflineDraft(_registerCode, lines, DateTimeOffset.UtcNow));
+            _offlineDraftSaved = true; _offlineStorageError = null;
+        }
+        catch (JSException) { _offlineDraftSaved = false; _offlineStorageError = "No se pudo cifrar este borrador; mantenlo abierto hasta recuperar conexión."; }
+    }
+
+    private async Task ClearOfflineDraftAsync()
+    {
+        if (_offlineModule is not null)
+        {
+            try { await _offlineModule.InvokeVoidAsync("clearDraft"); }
+            catch (JSException) { _offlineStorageError = "No se pudo eliminar el borrador local cifrado."; }
+        }
+        _offlineDraft = null; _offlineDraftSaved = false;
+    }
+
+    private sealed record OfflineDraft(string RegisterCode, IReadOnlyList<OfflineDraftLine> Lines, DateTimeOffset SavedAtUtc);
+    private sealed record OfflineDraftLine(ProductDto Product, int Quantity, decimal DiscountPercent);
+    private sealed record OfflineCatalog(PosRegisterDto Register, IReadOnlyList<ProductDto> Products, string CurrencyCode, decimal DefaultTaxRate);
 }

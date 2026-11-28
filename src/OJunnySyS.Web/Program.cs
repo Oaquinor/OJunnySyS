@@ -149,10 +149,12 @@ app.UseMiddleware<TenantAccessMiddleware>();
 app.UseAntiforgery();
 
 app.MapGet("/account/denied", () => Results.Content("<h1>Acceso denegado</h1><p>Tu cuenta no tiene permiso para esta sección.</p><a href='/'>Volver</a>", "text/html"));
-app.MapGet("/media/products/{fileName}", (string fileName, ProductImageStorage storage) =>
-    storage.TryResolve(fileName, out var path, out var contentType)
-        ? Results.File(path, contentType, enableRangeProcessing: false)
-        : Results.NotFound())
+app.MapGet("/media/products/{fileName}", (string fileName, ProductImageStorage storage, HttpContext context) =>
+{
+    if (!storage.TryResolve(fileName, out var path, out var contentType)) return Results.NotFound();
+    context.Response.Headers.CacheControl = "private, no-store";
+    return Results.File(path, contentType, enableRangeProcessing: false);
+})
     .RequireAuthorization("SalesRead");
 app.MapControllers();
 

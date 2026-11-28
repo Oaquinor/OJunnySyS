@@ -45,7 +45,7 @@ OJunnySyS se desarrolla en C#, ASP.NET Core .NET 10, Blazor Server interactivo, 
 - [ ] Impresión térmica integrada y manejo de conectividad intermitente.
 - [x] Paridad operativa del cliente POS WebAssembly para ventas a crédito, vencimiento, pagos divididos, descuentos autorizados en servidor, estacionar/retomar/cancelar ventas, terminal/caja, atajos de teclado y recibo imprimible. Todos los cobros se envían online al mismo caso de uso transaccional del servidor; precios, impuestos e inventario son autoritativos en el servidor.
 - [x] Acceso rápido a ajustes funcionales de impresión desde el POS y el recibo; catálogo con carga local segura PNG/JPEG/WebP por empresa o foto HTTP/HTTPS visible en ambas experiencias POS; existencias iniciales asignables a almacenes activos.
-- [ ] POS realmente offline: cliente ejecutable sin circuito Blazor Server, sesión/dispositivo autorizados, borradores locales cifrados, sincronización API idempotente y resolución auditable de conflictos. El service worker actual solo conserva recursos estáticos y la página de reconexión; no almacena ventas ni completa transacciones desconectadas. Ver ADR 0002.
+- [ ] POS realmente offline: el cliente WebAssembly ahora conserva borradores de carrito y un catálogo limitado cifrados con AES-GCM en IndexedDB, aislados por empresa/usuario; al reconectar refresca productos/caja y exige confirmación online en el caso de uso transaccional normal. No completa transacciones desconectadas. Sigue pendiente validar una identidad/dispositivo offline revocable, borradores multiorden, sincronización idempotente explícita, conflictos/auditoría, arranque frío del shell y pruebas de desconexión/reconexión. Ver ADR 0002.
 
 ## Operación y producción
 
