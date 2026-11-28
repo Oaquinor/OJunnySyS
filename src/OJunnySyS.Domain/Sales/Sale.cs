@@ -38,7 +38,7 @@ public sealed class Sale : TenantEntity
         PaymentMethod = paymentMethod; TaxRate = taxRate; IdempotencyKey = idempotencyKey;
         _lines.AddRange(lines);
         if (_lines.Count == 0) throw new DomainException("La venta debe contener al menos un producto.");
-        Subtotal = _lines.Sum(x => x.LineTotal); TaxAmount = _lines.Sum(x => x.TaxAmount); Total = Subtotal + TaxAmount;
+        Subtotal = _lines.Sum(x => x.LineTotal); DiscountAmount = _lines.Sum(x => x.DiscountAmount); TaxAmount = _lines.Sum(x => x.TaxAmount); Total = Subtotal + TaxAmount;
         Status = SaleStatus.Completed;
     }
 
@@ -58,6 +58,8 @@ public sealed class Sale : TenantEntity
     public SaleStatus Status { get; private set; }
     public decimal TaxRate { get; private set; }
     public decimal Subtotal { get; private set; }
+    public decimal DiscountAmount { get; private set; }
+    public decimal GrossSubtotal => Subtotal + DiscountAmount;
     public decimal TaxAmount { get; private set; }
     public decimal Total { get; private set; }
     public IReadOnlyCollection<SaleLine> Lines => _lines;
@@ -78,10 +80,16 @@ public sealed class Sale : TenantEntity
         {
             var original = _lines.SingleOrDefault(x => x.Id == returnedLine.SaleLineId)
                 ?? throw new DomainException("El renglón devuelto no pertenece a esta venta.");
-            if (returnedLine.ProductId != original.ProductId || returnedLine.UnitPrice != original.UnitPrice || returnedLine.TaxRate != original.TaxRate || returnedLine.UnitCost != original.UnitCost)
+            if (returnedLine.ProductId != original.ProductId || returnedLine.UnitPrice != original.UnitPrice || returnedLine.DiscountPercent != original.DiscountPercent || returnedLine.TaxRate != original.TaxRate || returnedLine.UnitCost != original.UnitCost)
                 throw new DomainException("La devolución debe conservar los datos históricos del artículo vendido.");
             var priorQuantity = _returns.SelectMany(x => x.Lines).Where(x => x.SaleLineId == original.Id).Sum(x => x.Quantity);
             if (returnedLine.Quantity > original.Quantity - priorQuantity) throw new DomainException("La cantidad devuelta supera la cantidad vendida disponible.");
+            var cumulativeQuantity = priorQuantity + returnedLine.Quantity;
+            var cumulativeLines = _returns.SelectMany(x => x.Lines).Where(x => x.SaleLineId == original.Id).Append(returnedLine).ToArray();
+            var expectedSubtotal = decimal.Round(original.LineTotal * cumulativeQuantity / original.Quantity, 2, MidpointRounding.AwayFromZero);
+            var expectedTax = decimal.Round(original.TaxAmount * cumulativeQuantity / original.Quantity, 2, MidpointRounding.AwayFromZero);
+            if (cumulativeLines.Sum(x => x.LineTotal) != expectedSubtotal || cumulativeLines.Sum(x => x.TaxAmount) != expectedTax)
+                throw new DomainException("Los importes de la devolución deben conservar el valor histórico de la línea y su descuento.");
         }
         var expectedReceivableCredit = Math.Min(saleReturn.Total, BalanceDue);
         if (saleReturn.ReceivableCredit != expectedReceivableCredit || saleReturn.RefundAmount != saleReturn.Total - expectedReceivableCredit)
@@ -148,17 +156,21 @@ public sealed class Sale : TenantEntity
 public sealed class SaleLine
 {
     private SaleLine() { }
-    public SaleLine(Guid productId, string sku, string productName, decimal unitPrice, int quantity, decimal taxRate = 0m, decimal unitCost = 0m, int uncostedQuantity = 0)
+    public SaleLine(Guid productId, string sku, string productName, decimal unitPrice, int quantity, decimal taxRate = 0m, decimal unitCost = 0m, int uncostedQuantity = 0, decimal discountPercent = 0m)
     {
         if (quantity <= 0) throw new DomainException("La cantidad debe ser mayor que cero.");
         if (unitPrice < 0) throw new DomainException("El precio no puede ser negativo.");
         if (taxRate is < 0 or > 1) throw new DomainException("La tasa de impuesto del artículo debe estar entre 0 y 100 por ciento.");
         if (unitCost is < 0 or > 9999999999.9999m) throw new DomainException("El costo unitario del artículo no es válido.");
+        if (discountPercent is < 0 or > 100) throw new DomainException("El descuento debe estar entre 0 y 100 por ciento.");
         if (uncostedQuantity < 0 || uncostedQuantity > quantity) throw new DomainException("La cantidad sin costo del artículo no es válida.");
         ProductId = productId; Sku = sku; ProductName = productName; UnitPrice = unitPrice; Quantity = quantity;
         UnitCost = decimal.Round(unitCost, 4, MidpointRounding.AwayFromZero);
         UncostedQuantity = uncostedQuantity;
-        LineTotal = decimal.Round(unitPrice * quantity, 2); TaxRate = taxRate;
+        TaxRate = taxRate; DiscountPercent = decimal.Round(discountPercent, 2, MidpointRounding.AwayFromZero);
+        var grossLineTotal = decimal.Round(unitPrice * quantity, 2, MidpointRounding.AwayFromZero);
+        DiscountAmount = decimal.Round(grossLineTotal * DiscountPercent / 100m, 2, MidpointRounding.AwayFromZero);
+        LineTotal = grossLineTotal - DiscountAmount;
     }
     public Guid Id { get; private set; } = Guid.NewGuid();
     public Guid SaleId { get; private set; }
@@ -171,6 +183,9 @@ public sealed class SaleLine
     public int CostedQuantity => Quantity - UncostedQuantity;
     public int Quantity { get; private set; }
     public decimal LineTotal { get; private set; }
+    public decimal GrossLineTotal => decimal.Round(UnitPrice * Quantity, 2, MidpointRounding.AwayFromZero);
+    public decimal DiscountPercent { get; private set; }
+    public decimal DiscountAmount { get; private set; }
     public decimal TaxRate { get; private set; }
     public decimal TaxAmount => decimal.Round(LineTotal * TaxRate, 2);
     public decimal CostTotal => decimal.Round(UnitCost * CostedQuantity, 2, MidpointRounding.AwayFromZero);

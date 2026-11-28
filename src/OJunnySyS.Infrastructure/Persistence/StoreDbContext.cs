@@ -248,6 +248,8 @@ public sealed class StoreDbContext(DbContextOptions<StoreDbContext> options)
             entity.Property(x => x.SellerName).HasMaxLength(160);
             entity.HasIndex(x => new { x.TenantId, x.SellerUserId, x.CreatedAtUtc });
             entity.Property(x => x.Subtotal).HasPrecision(14, 2);
+            entity.Ignore(x => x.GrossSubtotal);
+            entity.Ignore(x => x.DiscountAmount);
             entity.Property(x => x.TaxAmount).HasPrecision(14, 2);
             entity.Property(x => x.Total).HasPrecision(14, 2);
             entity.Property(x => x.TaxRate).HasPrecision(5, 4);
@@ -332,6 +334,8 @@ public sealed class StoreDbContext(DbContextOptions<StoreDbContext> options)
             entity.Property(x => x.Sku).HasMaxLength(40).IsRequired();
             entity.Property(x => x.ProductName).HasMaxLength(160).IsRequired();
             entity.Property(x => x.UnitPrice).HasPrecision(12, 2);
+            entity.Property(x => x.DiscountPercent).HasPrecision(5, 2).HasDefaultValue(0m);
+            entity.Property(x => x.DiscountAmount).HasPrecision(14, 2).HasDefaultValue(0m);
             entity.Property(x => x.UnitCost).HasPrecision(14, 4);
             entity.Property(x => x.LineTotal).HasPrecision(14, 2);
             entity.Property(x => x.TaxRate).HasPrecision(5, 4);
@@ -362,8 +366,11 @@ public sealed class StoreDbContext(DbContextOptions<StoreDbContext> options)
             entity.Property(x => x.Sku).HasMaxLength(40).IsRequired();
             entity.Property(x => x.ProductName).HasMaxLength(160).IsRequired();
             entity.Property(x => x.UnitPrice).HasPrecision(12, 2);
+            entity.Property(x => x.DiscountPercent).HasPrecision(5, 2).HasDefaultValue(0m);
+            entity.Property(x => x.DiscountAmount).HasPrecision(14, 2).HasDefaultValue(0m);
             entity.Property(x => x.UnitCost).HasPrecision(14, 4).HasDefaultValue(0m);
             entity.Property(x => x.UncostedQuantity).HasDefaultValue(0);
+            entity.Ignore(x => x.GrossLineTotal);
             entity.Ignore(x => x.CostedQuantity);
             entity.Property(x => x.LineTotal).HasPrecision(14, 2);
             entity.Property(x => x.TaxRate).HasPrecision(5, 4);

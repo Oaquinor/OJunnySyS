@@ -62,4 +62,32 @@ public sealed class SaleReturnTests
 
         Assert.Throws<OJunnySyS.Domain.Common.DomainException>(() => sale.RecordReturn(secondCreditNote));
     }
+
+    [TestMethod]
+    public void Partial_returns_allocate_discount_and_tax_rounding_without_exceeding_original_line()
+    {
+        var tenantId = Guid.NewGuid();
+        var customer = new Customer(tenantId, "Ana", "Demo", "discount-return@example.test", "8095550101");
+        var line = new SaleLine(Guid.NewGuid(), "SKU-CENTS", "Artículo de centavos", .05m, 3, .18m, 0m, 3, 10m);
+        var sale = new Sale(tenantId, "V-CENTS", customer, PaymentMethod.Credit, [line], null, Guid.NewGuid(), .18m,
+            Guid.NewGuid(), "MAIN", Guid.NewGuid(), DateOnly.FromDateTime(DateTime.Today.AddDays(30)));
+        sale.RecordPayments([]);
+
+        var expectedSubtotals = new[] { .04m, .05m, .04m };
+        var expectedTaxes = new[] { .01m, 0m, .01m };
+        for (var index = 0; index < 3; index++)
+        {
+            var returnId = Guid.NewGuid();
+            var returned = new SaleReturnLine(tenantId, Guid.NewGuid(), returnId, line.Id, line.ProductId, line.Sku,
+                line.ProductName, 1, 0, line.UnitPrice, line.TaxRate, line.UnitCost, line.DiscountPercent,
+                expectedSubtotals[index], expectedTaxes[index]);
+            var amount = expectedSubtotals[index] + expectedTaxes[index];
+            sale.RecordReturn(new SaleReturn(tenantId, returnId, sale.Id, $"NC-CENTS-{index}", Guid.NewGuid(), [returned],
+                amount, 0m, null, null, null, null, null));
+        }
+
+        Assert.AreEqual(line.LineTotal, sale.Returns.Sum(x => x.Subtotal));
+        Assert.AreEqual(line.TaxAmount, sale.Returns.Sum(x => x.TaxAmount));
+        Assert.AreEqual(0m, sale.BalanceDue);
+    }
 }

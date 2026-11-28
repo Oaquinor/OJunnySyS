@@ -419,6 +419,7 @@ public sealed class EfStoreRepository(IDbContextFactory<StoreDbContext> contextF
     {
         if (request.Lines.Count == 0) throw new DomainException("Agrega productos antes de cobrar.");
         if (request.Lines.Count > 200 || request.Lines.Any(x => x.ProductId == Guid.Empty || x.Quantity <= 0)) throw new DomainException("La venta debe tener hasta 200 líneas con productos y cantidades válidas.");
+        if (request.Lines.Any(x => x.DiscountPercent is < 0 or > 100)) throw new DomainException("Cada descuento debe estar entre 0 y 100 por ciento.");
         if (request.IdempotencyKey == Guid.Empty) throw new DomainException("La clave de idempotencia del cobro es obligatoria.");
         var registerCode = PosRegister.NormalizeCode(request.RegisterCode);
         if (request.Payments is null && request.PaymentMethod == PaymentMethod.Credit) throw new DomainException("Las ventas a crédito aún no están habilitadas.");
@@ -431,6 +432,7 @@ public sealed class EfStoreRepository(IDbContextFactory<StoreDbContext> contextF
         {
             if (request.PaymentMethod != PaymentMethod.Credit || request.Payments is { Count: > 0 } || request.CustomerId is null || request.DueDate is null)
                 throw new DomainException("Una cotización se convierte en una venta a crédito con cliente y vencimiento.");
+            if (request.Lines.Any(x => x.DiscountPercent != 0m)) throw new DomainException("La conversión debe conservar exactamente los precios aceptados en la cotización.");
             salesQuote = await db.SalesQuotes.FromSqlInterpolated($"SELECT * FROM SalesQuotes WHERE Id = {quoteId} AND TenantId = {tenantId} FOR UPDATE")
                 .AsSplitQuery().Include(x => x.Lines).SingleOrDefaultAsync(cancellationToken)
                 ?? throw new DomainException("La cotización no existe en esta empresa.");
@@ -455,6 +457,15 @@ public sealed class EfStoreRepository(IDbContextFactory<StoreDbContext> contextF
             EnsureSameCheckout(priorSale, request, cashierUserId, registerCode);
             await transaction.CommitAsync(cancellationToken);
             return priorSale;
+        }
+        if (request.Lines.Any(x => x.DiscountPercent > 0m))
+        {
+            var discountRoles = new[] { AppRoles.Administrator, AppRoles.Manager };
+            var canDiscount = await (from userRole in db.UserRoles
+                                     join role in db.Roles on userRole.RoleId equals role.Id
+                                     where userRole.UserId == cashierUserId && role.Name != null && discountRoles.Contains(role.Name)
+                                     select role.Id).AnyAsync(cancellationToken);
+            if (!canDiscount) throw new DomainException("Solo un administrador o gerente puede autorizar descuentos.");
         }
         var register = await db.PosRegisters.SingleOrDefaultAsync(x => x.Code == registerCode && x.IsActive, cancellationToken)
             ?? throw new DomainException("El terminal seleccionado no existe o está inactivo.");
@@ -487,6 +498,8 @@ public sealed class EfStoreRepository(IDbContextFactory<StoreDbContext> contextF
         {
             var quantity = SumQuantities(groupedLine.Select(x => x.Quantity));
             if (quantity <= 0) throw new DomainException("La cantidad debe ser mayor que cero.");
+            var discounts = groupedLine.Select(x => x.DiscountPercent).Distinct().ToArray();
+            if (discounts.Length != 1) throw new DomainException("Un mismo producto no puede tener descuentos distintos dentro de una sola venta.");
             var product = await db.Products.FromSqlInterpolated($"SELECT * FROM Products WHERE Id = {groupedLine.Key} AND TenantId = {tenantId} AND IsActive = 1 FOR UPDATE").SingleOrDefaultAsync(cancellationToken)
                 ?? throw new DomainException("Uno de los productos ya no está disponible.");
             var warehouseStock = await db.WarehouseStocks.FromSqlInterpolated($"SELECT * FROM WarehouseStocks WHERE TenantId = {tenantId} AND WarehouseId = {warehouseId} AND ProductId = {product.Id} FOR UPDATE").SingleOrDefaultAsync(cancellationToken)
@@ -500,7 +513,7 @@ public sealed class EfStoreRepository(IDbContextFactory<StoreDbContext> contextF
                 : product.TaxRateOverride ?? tenant.DefaultTaxRate);
             var unitPrice = quoteLine?.UnitPrice ?? product.UnitPrice;
             lines.Add(new SaleLine(product.Id, quoteLine?.Sku ?? product.Sku, quoteLine?.ProductName ?? product.Name, unitPrice, quantity,
-                taxRate, costSnapshot.UnitCost, costSnapshot.UncostedQuantity));
+                taxRate, costSnapshot.UnitCost, costSnapshot.UncostedQuantity, discounts[0]));
         }
 
         if (request.PaymentMethod == PaymentMethod.Credit && (customer is null || request.DueDate is null)) throw new DomainException("Selecciona un cliente y una fecha de vencimiento para vender a crédito.");
@@ -626,11 +639,12 @@ public sealed class EfStoreRepository(IDbContextFactory<StoreDbContext> contextF
 
     private static void EnsureSameCheckout(Sale sale, CheckoutRequest request, Guid cashierUserId, string registerCode)
     {
-        var requestedLines = request.Lines.GroupBy(x => x.ProductId).ToDictionary(x => x.Key, x => SumQuantities(x.Select(line => line.Quantity)));
-        var storedLines = sale.Lines.ToDictionary(x => x.ProductId, x => x.Quantity);
+        var requestedLines = request.Lines.GroupBy(x => x.ProductId).ToDictionary(x => x.Key,
+            x => (Quantity: SumQuantities(x.Select(line => line.Quantity)), DiscountPercent: x.Select(line => line.DiscountPercent).Distinct().Single()));
+        var storedLines = sale.Lines.ToDictionary(x => x.ProductId, x => (x.Quantity, x.DiscountPercent));
         if (sale.CashierUserId != cashierUserId || sale.CustomerId != request.CustomerId || sale.SellerUserId != request.SellerUserId || sale.PaymentMethod != request.PaymentMethod
             || (request.PaymentMethod == PaymentMethod.Credit && sale.DueDate != request.DueDate) || sale.RegisterCode != registerCode
-            || requestedLines.Count != storedLines.Count || requestedLines.Any(x => !storedLines.TryGetValue(x.Key, out var quantity) || quantity != x.Value))
+            || requestedLines.Count != storedLines.Count || requestedLines.Any(x => !storedLines.TryGetValue(x.Key, out var stored) || stored != x.Value))
             throw new DomainException("La clave de idempotencia ya se utilizó con otros datos de cobro.");
         if (request.Payments is not null)
         {
@@ -795,7 +809,8 @@ public sealed class EfStoreRepository(IDbContextFactory<StoreDbContext> contextF
         var registerCode = sale.CashSessionId is { } sessionId
             ? await db.CashSessions.AsNoTracking().Where(x => x.Id == sessionId).Select(x => x.RegisterCode).SingleOrDefaultAsync(cancellationToken)
             : null;
-        var receiptLines = sale.Lines.Select(x => new ReceiptLineDto(x.Id, x.Sku, x.ProductName, x.Quantity, x.UnitPrice, x.LineTotal, x.TaxRate, x.TaxAmount)).ToArray();
+        var receiptLines = sale.Lines.Select(x => new ReceiptLineDto(x.Id, x.Sku, x.ProductName, x.Quantity, x.UnitPrice, x.LineTotal,
+            x.TaxRate, x.TaxAmount, x.DiscountPercent, x.DiscountAmount)).ToArray();
         var unallocatedTax = sale.TaxAmount - receiptLines.Sum(x => x.TaxAmount);
         if (receiptLines.Length > 0 && unallocatedTax != 0)
             receiptLines[^1] = receiptLines[^1] with { TaxAmount = receiptLines[^1].TaxAmount + unallocatedTax };
@@ -805,7 +820,8 @@ public sealed class EfStoreRepository(IDbContextFactory<StoreDbContext> contextF
             sale.Payments.Select(x => new SalePaymentDto(x.MethodName, x.Type, x.Amount, x.Reference)).ToArray(), sale.SellerName,
             sale.Returns.OrderBy(x => x.CreatedAtUtc).Select(x => new SaleReturnDto(x.Id, x.Number, x.Subtotal, x.TaxAmount, x.Total,
                 x.ReceivableCredit, x.RefundAmount, x.CreatedAtUtc, x.Lines.Select(line => new SaleReturnLineDto(line.SaleLineId, line.Sku,
-                    line.ProductName, line.Quantity, line.UnitPrice, line.TaxRate, line.LineTotal, line.TaxAmount)).ToArray())).ToArray(), sale.BalanceDue);
+                    line.ProductName, line.Quantity, line.UnitPrice, line.TaxRate, line.LineTotal, line.TaxAmount,
+                    line.DiscountPercent, line.DiscountAmount)).ToArray())).ToArray(), sale.BalanceDue, sale.DiscountAmount);
     }
 
     private static async Task<CashSessionDto> MapCashSessionAsync(StoreDbContext db, CashSession session, CancellationToken cancellationToken)
@@ -997,19 +1013,26 @@ public sealed class EfStoreRepository(IDbContextFactory<StoreDbContext> contextF
         if (sale.Status != SaleStatus.Completed) throw new DomainException("No se puede devolver una venta anulada.");
 
         var linesById = sale.Lines.ToDictionary(x => x.Id);
-        var returnedBySaleLine = sale.Returns.SelectMany(x => x.Lines).GroupBy(x => x.SaleLineId).ToDictionary(x => x.Key, x => x.Sum(line => line.Quantity));
+        var priorReturnLines = sale.Returns.SelectMany(x => x.Lines).GroupBy(x => x.SaleLineId).ToDictionary(x => x.Key, x => x.ToArray());
         var returnId = Guid.NewGuid();
         var returnLines = new List<SaleReturnLine>(request.Lines.Count);
         foreach (var requested in request.Lines)
         {
             if (!linesById.TryGetValue(requested.SaleLineId, out var original)) throw new DomainException("Uno de los artículos no pertenece a la venta seleccionada.");
-            var alreadyReturned = returnedBySaleLine.GetValueOrDefault(original.Id);
+            var priorLines = priorReturnLines.GetValueOrDefault(original.Id) ?? [];
+            var alreadyReturned = priorLines.Sum(x => x.Quantity);
             if (requested.Quantity > original.Quantity - alreadyReturned) throw new DomainException($"La cantidad a devolver supera lo vendido de {original.ProductName}.");
             var remainingUncosted = Math.Max(0, original.UncostedQuantity - alreadyReturned);
             var uncostedQuantity = Math.Min(requested.Quantity, remainingUncosted);
             var costedQuantity = requested.Quantity - uncostedQuantity;
+            var cumulativeQuantity = alreadyReturned + requested.Quantity;
+            var cumulativeSubtotal = decimal.Round(original.LineTotal * cumulativeQuantity / original.Quantity, 2, MidpointRounding.AwayFromZero);
+            var cumulativeTax = decimal.Round(original.TaxAmount * cumulativeQuantity / original.Quantity, 2, MidpointRounding.AwayFromZero);
+            var returnSubtotal = cumulativeSubtotal - priorLines.Sum(x => x.LineTotal);
+            var returnTax = cumulativeTax - priorLines.Sum(x => x.TaxAmount);
             returnLines.Add(new SaleReturnLine(tenantId, Guid.NewGuid(), returnId, original.Id, original.ProductId, original.Sku,
-                original.ProductName, requested.Quantity, costedQuantity, original.UnitPrice, original.TaxRate, original.UnitCost));
+                original.ProductName, requested.Quantity, costedQuantity, original.UnitPrice, original.TaxRate, original.UnitCost,
+                original.DiscountPercent, returnSubtotal, returnTax));
         }
         var subtotal = returnLines.Sum(x => x.LineTotal);
         var taxes = returnLines.Sum(x => x.TaxAmount);
@@ -1050,7 +1073,8 @@ public sealed class EfStoreRepository(IDbContextFactory<StoreDbContext> contextF
             refundMethod?.Type, cashSession?.Id);
         sale.RecordReturn(creditNote);
         db.SaleReturns.Add(creditNote);
-        await PostSaleReturnJournalEntryAsync(db, tenantId, sale, creditNote, actorId, cancellationToken);
+        if (creditNote.Total > 0 || creditNote.Lines.Sum(x => x.CostTotal) > 0)
+            await PostSaleReturnJournalEntryAsync(db, tenantId, sale, creditNote, actorId, cancellationToken);
         if (cashSession is not null) db.CashMovements.Add(new CashMovement(tenantId, cashSession.Id, actorId, CashMovementKind.CashOut,
             refundAmount, $"Reembolso · {creditNote.Number}"));
         await db.SaveChangesAsync(cancellationToken);

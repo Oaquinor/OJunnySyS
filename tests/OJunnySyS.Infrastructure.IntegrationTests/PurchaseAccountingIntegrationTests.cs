@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.AspNetCore.Identity;
 using Microsoft.Extensions.Logging.Abstractions;
 using OJunnySyS.Application.Abstractions;
 using OJunnySyS.Application.Contracts;
@@ -227,6 +228,15 @@ public sealed class PurchaseAccountingIntegrationTests
             Email = "tax-pos-it@example.test", NormalizedEmail = "TAX-POS-IT@EXAMPLE.TEST",
             SecurityStamp = Guid.NewGuid().ToString(), ConcurrencyStamp = Guid.NewGuid().ToString()
         };
+        var cashier = new ApplicationUser
+        {
+            Id = Guid.NewGuid(), TenantId = tenant.Id, DisplayName = "Cajero sin permiso de descuento",
+            UserName = "tax-pos-cashier-it@example.test", NormalizedUserName = "TAX-POS-CASHIER-IT@EXAMPLE.TEST",
+            Email = "tax-pos-cashier-it@example.test", NormalizedEmail = "TAX-POS-CASHIER-IT@EXAMPLE.TEST",
+            SecurityStamp = Guid.NewGuid().ToString(), ConcurrencyStamp = Guid.NewGuid().ToString()
+        };
+        var managerRole = new IdentityRole<Guid> { Id = Guid.NewGuid(), Name = AppRoles.Manager, NormalizedName = AppRoles.Manager.ToUpperInvariant() };
+        var cashierRole = new IdentityRole<Guid> { Id = Guid.NewGuid(), Name = AppRoles.Cashier, NormalizedName = AppRoles.Cashier.ToUpperInvariant() };
         var profile = new TaxProfile(tenant.Id, "TAX-REDUCED", "Tasa reducida", .10m);
         var warehouse = new Warehouse(tenant.Id, "MAIN", "Almacén principal");
         var product = new Product(tenant.Id, "TAX-ITEM", "Artículo gravado", "Pruebas", 100m, 10, initialUnitCost: 20m, taxProfileId: profile.Id);
@@ -245,7 +255,10 @@ public sealed class PurchaseAccountingIntegrationTests
         {
             await db.Database.MigrateAsync();
             db.CurrentTenantId = tenant.Id;
-            db.Tenants.Add(tenant); db.Users.Add(user); db.TaxProfiles.Add(profile); db.Warehouses.Add(warehouse);
+            db.Tenants.Add(tenant); db.Users.AddRange(user, cashier); db.Roles.AddRange(managerRole, cashierRole);
+            db.UserRoles.AddRange(new IdentityUserRole<Guid> { UserId = user.Id, RoleId = managerRole.Id },
+                new IdentityUserRole<Guid> { UserId = cashier.Id, RoleId = cashierRole.Id });
+            db.TaxProfiles.Add(profile); db.Warehouses.Add(warehouse);
             db.Products.Add(product); db.PosRegisters.Add(register); db.CashSessions.Add(cashSession);
             db.WarehouseStocks.Add(new WarehouseStock(tenant.Id, warehouse.Id, product.Id, 10));
             db.ChartAccounts.AddRange(accounts); db.TenantPaymentMethods.Add(cash);
@@ -257,11 +270,31 @@ public sealed class PurchaseAccountingIntegrationTests
         var factory = new PurchaseTestContextFactory(options);
         var repository = new EfStoreRepository(factory, tenantContext, new TenantAccessGuard(factory, clock), clock,
             NullLogger<EfStoreRepository>.Instance);
-        var first = await repository.CheckoutAsync(new CheckoutRequest(null, PaymentMethod.Cash,
-            [new CheckoutLine(product.Id, 1)], Guid.NewGuid(), register.Code), user.Id);
-        Assert.AreEqual(10m, first.TaxAmount);
-        Assert.AreEqual(110m, first.Total);
+        var checkoutKey = Guid.NewGuid();
+        var discountedRequest = new CheckoutRequest(null, PaymentMethod.Cash,
+            [new CheckoutLine(product.Id, 1, 10m)], checkoutKey, register.Code);
+        var first = await repository.CheckoutAsync(discountedRequest, user.Id);
+        Assert.AreEqual(10m, first.DiscountAmount);
+        Assert.AreEqual(90m, first.Subtotal);
+        Assert.AreEqual(9m, first.TaxAmount);
+        Assert.AreEqual(99m, first.Total);
         Assert.AreEqual(.10m, first.Lines.Single().TaxRate);
+        Assert.AreEqual(10m, first.Lines.Single().DiscountAmount);
+        Assert.AreEqual(first.Id, (await repository.CheckoutAsync(discountedRequest, user.Id)).Id, "El reintento conserva un solo cobro descontado.");
+        var changedDiscountReplayRejected = false;
+        try
+        {
+            await repository.CheckoutAsync(discountedRequest with { Lines = [new CheckoutLine(product.Id, 1, 5m)] }, user.Id);
+        }
+        catch (DomainException) { changedDiscountReplayRejected = true; }
+        Assert.IsTrue(changedDiscountReplayRejected, "La clave de idempotencia incluye el descuento autorizado.");
+        var cashierDiscountRejected = false;
+        try
+        {
+            await repository.CheckoutAsync(discountedRequest with { IdempotencyKey = Guid.NewGuid() }, cashier.Id);
+        }
+        catch (DomainException) { cashierDiscountRejected = true; }
+        Assert.IsTrue(cashierDiscountRejected, "Un cajero sin rol de gerencia no puede autorizar descuentos desde el servidor.");
 
         var profileRepository = new EfTaxProfileRepository(factory, tenantContext, new TenantAccessGuard(factory, clock));
         await profileRepository.UpdateAsync(profile.Id, new UpdateTaxProfileRequest("Tasa reducida actualizada", .05m, profile.Revision));

@@ -23,7 +23,7 @@ public sealed record SalesQuoteStatusRequest(long ExpectedRevision);
 public sealed record ConvertSalesQuoteRequest(long ExpectedRevision, string RegisterCode, DateOnly DueDate);
 public sealed record SalesQuoteLineDto(Guid ProductId, string Sku, string ProductName, int Quantity, decimal UnitPrice, decimal LineTotal, decimal TaxRate, decimal TaxAmount);
 public sealed record SalesQuoteDto(Guid Id, string Number, Guid CustomerId, string CustomerName, DateOnly ValidUntil, string? Notes, SalesQuoteStatus Status, decimal Subtotal, decimal TaxAmount, decimal Total, DateTimeOffset CreatedAtUtc, long Revision, Guid? ConvertedSaleId, IReadOnlyList<SalesQuoteLineDto> Lines);
-public sealed record CheckoutLine(Guid ProductId, int Quantity);
+public sealed record CheckoutLine(Guid ProductId, int Quantity, decimal DiscountPercent = 0m);
 public sealed record CheckoutPaymentLine(Guid PaymentMethodId, decimal Amount, string? Reference = null);
 public sealed record CheckoutRequest(Guid? CustomerId, PaymentMethod PaymentMethod, IReadOnlyCollection<CheckoutLine> Lines, Guid IdempotencyKey = default, string RegisterCode = "MAIN", IReadOnlyCollection<CheckoutPaymentLine>? Payments = null, Guid? SellerUserId = null, DateOnly? DueDate = null, Guid? SalesQuoteId = null, long? SalesQuoteRevision = null);
 public sealed record CustomerReceiptRequest(Guid IdempotencyKey, decimal Amount, Guid PaymentMethodId, string? Reference = null, string RegisterCode = "MAIN");
@@ -77,9 +77,9 @@ public sealed record CashMovementRequest(CashMovementKind Kind, decimal Amount, 
 public sealed record CloseCashSessionRequest(decimal CountedCash, Guid? CashPaymentMethodId = null, Guid? DifferenceAccountId = null);
 public sealed record SalePaymentDto(string MethodName, PaymentMethodType Type, decimal Amount, string? Reference);
 public sealed record SaleReturnDto(Guid Id, string Number, decimal Subtotal, decimal TaxAmount, decimal Total, decimal ReceivableCredit, decimal RefundAmount, DateTimeOffset CreatedAtUtc, IReadOnlyList<SaleReturnLineDto> Lines);
-public sealed record SaleReturnLineDto(Guid SaleLineId, string Sku, string ProductName, int Quantity, decimal UnitPrice, decimal TaxRate, decimal LineTotal, decimal TaxAmount);
-public sealed record SaleReceiptDto(Guid Id, string Number, string CustomerName, decimal Subtotal, decimal TaxRate, decimal TaxAmount, decimal Total, PaymentMethod PaymentMethod, SaleStatus Status, DateTimeOffset CreatedAtUtc, string? RegisterCode, IReadOnlyList<ReceiptLineDto> Lines, IReadOnlyList<SalePaymentDto>? Payments = null, string? SellerName = null, IReadOnlyList<SaleReturnDto>? Returns = null, decimal BalanceDue = 0m);
-public sealed record ReceiptLineDto(Guid SaleLineId, string Sku, string ProductName, int Quantity, decimal UnitPrice, decimal LineTotal, decimal TaxRate = 0m, decimal TaxAmount = 0m);
+public sealed record SaleReturnLineDto(Guid SaleLineId, string Sku, string ProductName, int Quantity, decimal UnitPrice, decimal TaxRate, decimal LineTotal, decimal TaxAmount, decimal DiscountPercent = 0m, decimal DiscountAmount = 0m);
+public sealed record SaleReceiptDto(Guid Id, string Number, string CustomerName, decimal Subtotal, decimal TaxRate, decimal TaxAmount, decimal Total, PaymentMethod PaymentMethod, SaleStatus Status, DateTimeOffset CreatedAtUtc, string? RegisterCode, IReadOnlyList<ReceiptLineDto> Lines, IReadOnlyList<SalePaymentDto>? Payments = null, string? SellerName = null, IReadOnlyList<SaleReturnDto>? Returns = null, decimal BalanceDue = 0m, decimal DiscountAmount = 0m);
+public sealed record ReceiptLineDto(Guid SaleLineId, string Sku, string ProductName, int Quantity, decimal UnitPrice, decimal LineTotal, decimal TaxRate = 0m, decimal TaxAmount = 0m, decimal DiscountPercent = 0m, decimal DiscountAmount = 0m);
 public sealed record SalesReport(DateOnly From, DateOnly To, int SalesCount, decimal Subtotal, decimal TaxAmount, decimal Total,
     IReadOnlyList<PaymentBreakdown> Payments, IReadOnlyList<ProductSalesSummary> TopProducts, IReadOnlyList<DailySalesSummary> DailySales,
     IReadOnlyList<SellerSalesSummary>? Sellers = null, IReadOnlyList<CustomerSalesSummary>? Customers = null,

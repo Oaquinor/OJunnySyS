@@ -22,7 +22,7 @@ public sealed class SaleReturn : TenantEntity
         Subtotal = decimal.Round(_lines.Sum(x => x.LineTotal), 2, MidpointRounding.AwayFromZero);
         TaxAmount = decimal.Round(_lines.Sum(x => x.TaxAmount), 2, MidpointRounding.AwayFromZero);
         Total = decimal.Round(Subtotal + TaxAmount, 2, MidpointRounding.AwayFromZero);
-        if (Total <= 0) throw new DomainException("El total de la devolución debe ser mayor que cero.");
+        if (Total < 0) throw new DomainException("El total de la devolución no puede ser negativo.");
         if (receivableCredit < 0 || refundAmount < 0 || decimal.Round(receivableCredit + refundAmount, 2) != Total)
             throw new DomainException("La nota de crédito y el reembolso deben distribuir el total de la devolución.");
         if (refundAmount > 0 && (paymentMethodId is null || ledgerAccountId is null || paymentMethodType is null || string.IsNullOrWhiteSpace(paymentMethodName)))
@@ -58,18 +58,24 @@ public sealed class SaleReturnLine : TenantEntity
 {
     private SaleReturnLine() { }
     public SaleReturnLine(Guid tenantId, Guid id, Guid saleReturnId, Guid saleLineId, Guid productId, string sku, string productName,
-        int quantity, int costedQuantity, decimal unitPrice, decimal taxRate, decimal unitCost) : base(tenantId)
+        int quantity, int costedQuantity, decimal unitPrice, decimal taxRate, decimal unitCost, decimal discountPercent = 0m,
+        decimal? lineTotalSnapshot = null, decimal? taxAmountSnapshot = null) : base(tenantId)
     {
         if (saleReturnId == Guid.Empty || saleLineId == Guid.Empty || productId == Guid.Empty || quantity <= 0)
             throw new DomainException("El artículo y la cantidad devuelta no son válidos.");
         if (string.IsNullOrWhiteSpace(sku) || sku.Length > 40 || string.IsNullOrWhiteSpace(productName) || productName.Length > 160 ||
-            unitPrice < 0 || unitCost < 0 || taxRate is < 0 or > 1)
+            unitPrice < 0 || unitCost < 0 || taxRate is < 0 or > 1 || discountPercent is < 0 or > 100)
             throw new DomainException("Los datos históricos del artículo devuelto no son válidos.");
         if (id == Guid.Empty || costedQuantity < 0 || costedQuantity > quantity) throw new DomainException("La cantidad devuelta con costo no es válida.");
         Id = id; SaleReturnId = saleReturnId; SaleLineId = saleLineId; ProductId = productId;
         Sku = sku; ProductName = productName; Quantity = quantity; CostedQuantity = costedQuantity; UnitPrice = unitPrice; TaxRate = taxRate; UnitCost = unitCost;
-        LineTotal = decimal.Round(unitPrice * quantity, 2, MidpointRounding.AwayFromZero);
-        TaxAmount = decimal.Round(LineTotal * taxRate, 2, MidpointRounding.AwayFromZero);
+        DiscountPercent = decimal.Round(discountPercent, 2, MidpointRounding.AwayFromZero);
+        var grossAmount = decimal.Round(unitPrice * quantity, 2, MidpointRounding.AwayFromZero);
+        LineTotal = lineTotalSnapshot ?? grossAmount - decimal.Round(grossAmount * DiscountPercent / 100m, 2, MidpointRounding.AwayFromZero);
+        TaxAmount = taxAmountSnapshot ?? decimal.Round(LineTotal * taxRate, 2, MidpointRounding.AwayFromZero);
+        if (LineTotal < 0 || LineTotal > grossAmount || TaxAmount < 0 || TaxAmount > LineTotal)
+            throw new DomainException("Los importes históricos de la devolución no son válidos.");
+        DiscountAmount = grossAmount - LineTotal;
         CostTotal = decimal.Round(unitCost * costedQuantity, 2, MidpointRounding.AwayFromZero);
     }
     public Guid SaleReturnId { get; private set; }
@@ -79,6 +85,8 @@ public sealed class SaleReturnLine : TenantEntity
     public string ProductName { get; private set; } = "";
     public int Quantity { get; private set; }
     public decimal UnitPrice { get; private set; }
+    public decimal DiscountPercent { get; private set; }
+    public decimal DiscountAmount { get; private set; }
     public decimal TaxRate { get; private set; }
     public decimal UnitCost { get; private set; }
     public int CostedQuantity { get; private set; }

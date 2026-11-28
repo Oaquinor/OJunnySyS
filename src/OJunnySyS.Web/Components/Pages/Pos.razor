@@ -50,10 +50,10 @@ else
             @if (_cart.Count == 0) { <div class="cart-empty"><span>▣</span><strong>Tu orden está vacía</strong><p>Selecciona un producto para comenzar la venta.</p></div> }
             @foreach (var line in CartLines)
             {
-                <div class="order-line"><span class="line-art @ArtClass(line.Product.Category)">@ProductIcon(line.Product.Category)</span><div class="line-details"><strong>@line.Product.Name</strong><small>@Money(line.Product.UnitPrice) / unidad</small><div class="quantity-control"><button @onclick="() => ChangeQuantity(line.Product, -1)">−</button><span>@line.Quantity</span><button @onclick="() => ChangeQuantity(line.Product, 1)" disabled="@(line.Quantity >= line.Product.StockOnHand)">＋</button></div></div><strong class="line-total">@Money(line.Product.UnitPrice * line.Quantity)</strong></div>
+                <div class="order-line"><span class="line-art @ArtClass(line.Product.Category)">@ProductIcon(line.Product.Category)</span><div class="line-details"><strong>@line.Product.Name</strong><small>@Money(line.Product.UnitPrice) / unidad</small><div class="quantity-control"><button @onclick="() => ChangeQuantity(line.Product, -1)">−</button><span>@line.Quantity</span><button @onclick="() => ChangeQuantity(line.Product, 1)" disabled="@(line.Quantity >= line.Product.StockOnHand)">＋</button></div>@if (_canApplyDiscount) { <label class="line-discount">Descuento (%)<NumericInput aria-label="Descuento por producto (%)" @bind-Value="_discounts[line.Product.Id].Percent" @bind-Value:after="() => OnDiscountChanged(line.Product.Id)" min="0" max="100" step="0.01" /></label> }@if (LineDiscount(line.Product, line.Quantity) > 0) { <small class="line-discount-total">Descuento: −@Money(LineDiscount(line.Product, line.Quantity))</small> }</div><strong class="line-total">@Money(NetLineTotal(line.Product, line.Quantity))</strong></div>
             }
         </div>
-        <div class="order-summary"><div><span>Subtotal</span><strong>@Money(Subtotal)</strong></div><div><span>Impuesto (@(_taxRate * 100m)%)</span><strong>@Money(Tax)</strong></div><div class="grand-total"><span>Total</span><strong>@Money(Total)</strong></div></div>
+        <div class="order-summary"><div><span>Subtotal</span><strong>@Money(GrossSubtotal)</strong></div>@if (DiscountTotal > 0) { <div><span>Descuento</span><strong>−@Money(DiscountTotal)</strong></div> }<div><span>Base imponible</span><strong>@Money(Subtotal)</strong></div><div><span>Impuesto</span><strong>@Money(Tax)</strong></div><div class="grand-total"><span>Total</span><strong>@Money(Total)</strong></div></div>
         <div class="payment-method"><div class="payment-config-heading"><label for="sale-mode">Forma de venta</label></div><select id="sale-mode" @bind="_isCredit" @bind:after="OnSaleModeChanged"><option value="false">Cobro inmediato</option><option value="true">A crédito</option></select>
         @if (_isCredit) { <label class="customer-select">Vencimiento<InputDate @bind-Value="_dueDate" @bind-Value:after="ResetCheckoutKey" /></label><small>El saldo quedará en cuentas por cobrar; no se suma a la caja hasta registrar un abono.</small> }
         else { <div class="payment-config-heading"><label>Distribución de pago</label><button type="button" class="button button-secondary button-small" @onclick="AddTender" disabled="@(_tenders.Count >= 10 || _tenders.Count >= _paymentMethods.Count)">＋ Dividir pago</button></div>
@@ -78,10 +78,12 @@ else
     private Guid _cashierUserId;
     private Guid? _lastSaleId;
     private readonly Dictionary<Guid, int> _cart = [];
+    private readonly Dictionary<Guid, CartDiscountForm> _discounts = [];
     private string _search = "";
     private string? _category, _error, _notice;
     private Guid? _customerId;
     private bool _isCredit;
+    private bool _canApplyDiscount;
     private DateOnly? _dueDate = DateOnly.FromDateTime(DateTime.Today).AddDays(30);
     private Guid? _sellerUserId;
     private string _registerCode = "MAIN";
@@ -95,8 +97,10 @@ else
     private IReadOnlyList<string> _categories => _products.Select(x => x.Category).Distinct().Order().ToArray();
     private IEnumerable<ProductDto> _filteredProducts => _products.Where(x => (_category is null || x.Category == _category) && x.StockOnHand > 0);
     private IEnumerable<(ProductDto Product, int Quantity)> CartLines => _cart.Select(x => (_products.FirstOrDefault(p => p.Id == x.Key), x.Value)).Where(x => x.Item1 is not null).Select(x => (x.Item1!, x.Value));
-    private decimal Subtotal => CartLines.Sum(x => x.Product.UnitPrice * x.Quantity);
-    private decimal Tax => CartLines.Sum(x => decimal.Round(x.Product.UnitPrice * x.Quantity * (x.Product.TaxRateOverride ?? _taxRate), 2));
+    private decimal GrossSubtotal => CartLines.Sum(x => decimal.Round(x.Product.UnitPrice * x.Quantity, 2, MidpointRounding.AwayFromZero));
+    private decimal DiscountTotal => CartLines.Sum(x => LineDiscount(x.Product, x.Quantity));
+    private decimal Subtotal => GrossSubtotal - DiscountTotal;
+    private decimal Tax => CartLines.Sum(x => decimal.Round(NetLineTotal(x.Product, x.Quantity) * (x.Product.TaxRateOverride ?? _taxRate), 2, MidpointRounding.AwayFromZero));
     private decimal Total => Subtotal + Tax;
     private decimal TenderBalance => decimal.Round(Total - _tenders.Sum(x => x.Amount), 2);
     private bool CashOpen => _cashSession?.Status == CashSessionStatus.Open;
@@ -108,6 +112,7 @@ else
         try
         {
             var principal = (await AuthenticationState.GetAuthenticationStateAsync()).User;
+            _canApplyDiscount = principal.IsInRole("Administrator") || principal.IsInRole("Manager");
             if (!Guid.TryParse(principal.FindFirstValue(System.Security.Claims.ClaimTypes.NameIdentifier), out _cashierUserId))
                 throw new InvalidOperationException("No se pudo identificar al cajero.");
 
@@ -141,13 +146,18 @@ else
     private IEnumerable<TenantPaymentMethodDto> AvailableMethods(TenderForm tender) => _paymentMethods.Where(m => m.Id == tender.PaymentMethodId || _tenders.All(x => x == tender || x.PaymentMethodId != m.Id));
     private void AddTender() { var available = _paymentMethods.FirstOrDefault(m => _tenders.All(x => x.PaymentMethodId != m.Id)); if (available is null) return; _tenders.Add(new(available.Id, 0)); ResetCheckoutKey(); }
     private void RemoveTender(TenderForm tender) { _tenders.Remove(tender); ResetCheckoutKey(); }
-    private void Add(ProductDto product) { if (_cart.GetValueOrDefault(product.Id) < product.StockOnHand) { _cart[product.Id] = _cart.GetValueOrDefault(product.Id) + 1; ResetCheckoutKey(); } _error = null; }
-    private void ChangeQuantity(ProductDto product, int delta) { var quantity = _cart.GetValueOrDefault(product.Id) + delta; if (quantity <= 0) { _cart.Remove(product.Id); ResetCheckoutKey(); } else if (quantity <= product.StockOnHand) { _cart[product.Id] = quantity; ResetCheckoutKey(); } }
-    private void ClearCart() { _cart.Clear(); ResetCheckoutKey(); _error = null; }
-    private async Task CheckoutAsync() { _saving = true; _error = null; try { var sale = await Store.CheckoutAsync(new CheckoutRequest(_customerId, SummaryPaymentMethod, _cart.Select(x => new CheckoutLine(x.Key, x.Value)).ToArray(), _checkoutKey, _registerCode, _isCredit ? [] : _tenders.Select(x => new CheckoutPaymentLine(x.PaymentMethodId, x.Amount, x.Reference)).ToArray(), _sellerUserId, _isCredit ? _dueDate : null), _cashierUserId); _notice = _isCredit ? $"Cuenta {sale.Number} creada · vence {sale.DueDate:dd/MM/yyyy}" : $"Venta {sale.Number} completada · {Money(sale.Total)}"; _lastSaleId = sale.Id; ClearCart(); _sellerUserId = null; _isCredit = false; _cashSession = await Store.GetCurrentCashSessionAsync(_registerCode); await LoadProductsAsync(); } catch (DomainException ex) { _error = ex.Message; await LoadProductsAsync(); } catch (Exception ex) { Logger.LogError(ex, "No se pudo completar el checkout."); _error = "No se pudo completar la operación. Revisa la caja y el inventario e inténtalo de nuevo; el mismo intento se reconocerá al reintentar."; await LoadProductsAsync(); } finally { _saving = false; } }
+    private void Add(ProductDto product) { if (_cart.GetValueOrDefault(product.Id) < product.StockOnHand) { _cart[product.Id] = _cart.GetValueOrDefault(product.Id) + 1; _discounts.TryAdd(product.Id, new()); ResetCheckoutKey(); } _error = null; }
+    private void ChangeQuantity(ProductDto product, int delta) { var quantity = _cart.GetValueOrDefault(product.Id) + delta; if (quantity <= 0) { _cart.Remove(product.Id); _discounts.Remove(product.Id); ResetCheckoutKey(); } else if (quantity <= product.StockOnHand) { _cart[product.Id] = quantity; ResetCheckoutKey(); } }
+    private void ClearCart() { _cart.Clear(); _discounts.Clear(); ResetCheckoutKey(); _error = null; }
+    private void OnDiscountChanged(Guid productId) { if (!_canApplyDiscount) _discounts[productId].Percent = 0m; ResetCheckoutKey(); }
+    private decimal DiscountPercent(Guid productId) => _discounts.GetValueOrDefault(productId)?.Percent ?? 0m;
+    private decimal LineDiscount(ProductDto product, int quantity) => decimal.Round(decimal.Round(product.UnitPrice * quantity, 2, MidpointRounding.AwayFromZero) * DiscountPercent(product.Id) / 100m, 2, MidpointRounding.AwayFromZero);
+    private decimal NetLineTotal(ProductDto product, int quantity) => decimal.Round(product.UnitPrice * quantity, 2, MidpointRounding.AwayFromZero) - LineDiscount(product, quantity);
+    private async Task CheckoutAsync() { _saving = true; _error = null; try { var sale = await Store.CheckoutAsync(new CheckoutRequest(_customerId, SummaryPaymentMethod, _cart.Select(x => new CheckoutLine(x.Key, x.Value, DiscountPercent(x.Key))).ToArray(), _checkoutKey, _registerCode, _isCredit ? [] : _tenders.Select(x => new CheckoutPaymentLine(x.PaymentMethodId, x.Amount, x.Reference)).ToArray(), _sellerUserId, _isCredit ? _dueDate : null), _cashierUserId); _notice = _isCredit ? $"Cuenta {sale.Number} creada · vence {sale.DueDate:dd/MM/yyyy}" : $"Venta {sale.Number} completada · {Money(sale.Total)}"; _lastSaleId = sale.Id; ClearCart(); _sellerUserId = null; _isCredit = false; _cashSession = await Store.GetCurrentCashSessionAsync(_registerCode); await LoadProductsAsync(); } catch (DomainException ex) { _error = ex.Message; await LoadProductsAsync(); } catch (Exception ex) { Logger.LogError(ex, "No se pudo completar el checkout."); _error = "No se pudo completar la operación. Revisa la caja y el inventario e inténtalo de nuevo; el mismo intento se reconocerá al reintentar."; await LoadProductsAsync(); } finally { _saving = false; } }
     private PaymentMethod SummaryPaymentMethod => _isCredit ? PaymentMethod.Credit : _tenders.Count > 1 ? PaymentMethod.Other : _paymentMethods.FirstOrDefault(x => x.Id == _tenders.FirstOrDefault()?.PaymentMethodId)?.Type switch { PaymentMethodType.Cash => PaymentMethod.Cash, PaymentMethodType.Card => PaymentMethod.Card, PaymentMethodType.Transfer => PaymentMethod.Transfer, _ => PaymentMethod.Other };
     private void OnSaleModeChanged() { if (!_isCredit && _tenders.Count == 0 && _paymentMethods.FirstOrDefault(x => x.Type == PaymentMethodType.Cash) is { } cash) _tenders.Add(new(cash.Id, Total)); ResetCheckoutKey(); }
     private sealed class TenderForm(Guid paymentMethodId, decimal amount) { public Guid PaymentMethodId { get; set; } = paymentMethodId; public decimal Amount { get; set; } = amount; public string? Reference { get; set; } }
+    private sealed class CartDiscountForm { public decimal Percent { get; set; } }
     private string CategoryClass(string? value) => _category == value ? "category-tab active" : "category-tab";
     private static string Money(decimal amount) => DisplayFormat.Money(amount, showCents: true);
     private string TaxLabel(ProductDto product) => product.TaxRateOverride is { } rate ? rate == 0 ? "Exento" : $"Impuesto {rate * 100m:0.##}%" : $"Impuesto general {_taxRate * 100m:0.##}%";

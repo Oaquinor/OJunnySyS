@@ -90,6 +90,25 @@ public sealed class CreditSaleTests
         Assert.AreEqual(93m, sale.BalanceDue);
     }
 
+    [TestMethod]
+    public void Discount_reduces_taxable_base_and_is_capped_and_snapshotted()
+    {
+        var tenantId = Guid.NewGuid();
+        var customer = NewCustomer(tenantId);
+        var line = new SaleLine(Guid.NewGuid(), "SKU-DISCOUNT", "Artículo con descuento", 100m, 2, .18m,
+            discountPercent: 10m);
+        var sale = new Sale(tenantId, "V-DISCOUNT", customer, PaymentMethod.Credit, [line], null, Guid.NewGuid(), .18m,
+            Guid.NewGuid(), "MAIN", Guid.NewGuid(), DateOnly.FromDateTime(DateTime.Today.AddDays(30)));
+
+        Assert.AreEqual(200m, line.GrossLineTotal);
+        Assert.AreEqual(20m, line.DiscountAmount);
+        Assert.AreEqual(180m, sale.Subtotal);
+        Assert.AreEqual(20m, sale.DiscountAmount);
+        Assert.AreEqual(32.40m, sale.TaxAmount);
+        Assert.AreEqual(212.40m, sale.Total);
+        Assert.Throws<DomainException>(() => new SaleLine(Guid.NewGuid(), "SKU-BAD", "Descuento inválido", 10m, 1, discountPercent: 100.01m));
+    }
+
     private static Sale CreateCreditSale()
     {
         var (tenantId, userId, warehouseId, lines) = Inputs();
