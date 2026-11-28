@@ -1048,7 +1048,8 @@ public sealed class EfStoreRepository(IDbContextFactory<StoreDbContext> contextF
             refundMethod = await db.TenantPaymentMethods.SingleOrDefaultAsync(x => x.Id == methodId && x.IsActive, cancellationToken)
                 ?? throw new DomainException("El medio de reembolso no existe o está inactivo.");
             if (refundMethod.LedgerAccountId is not { } accountId) throw new DomainException("Configura la cuenta contable del medio de reembolso.");
-            var refundAccount = await db.ChartAccounts.SingleOrDefaultAsync(x => x.Id == accountId && x.IsActive && x.CanReceivePayments, cancellationToken);
+            var refundAccount = await db.ChartAccounts.SingleOrDefaultAsync(x => x.Id == accountId && x.IsActive &&
+                x.Type == AccountType.Asset && x.Code.StartsWith("10"), cancellationToken);
             if (refundAccount is null) throw new DomainException("La cuenta contable del reembolso debe ser una cuenta activa de efectivo, banco o saldo de pago.");
             if (refundMethod.Type == PaymentMethodType.Cash)
                 cashSession = await db.CashSessions.FromSqlInterpolated($"SELECT * FROM CashSessions WHERE TenantId = {tenantId} AND RegisterCode = {registerCode} AND Status = {(int)CashSessionStatus.Open} FOR UPDATE").SingleOrDefaultAsync(cancellationToken)

@@ -245,6 +245,7 @@ public sealed class PurchaseAccountingIntegrationTests
         var accounts = new[]
         {
             new ChartAccount(tenant.Id, "1000", "Caja", AccountType.Asset),
+            new ChartAccount(tenant.Id, "1100", "Cuentas por cobrar", AccountType.Asset),
             new ChartAccount(tenant.Id, "1200", "Inventario", AccountType.Asset),
             new ChartAccount(tenant.Id, "2100", "Impuesto por pagar", AccountType.Liability),
             new ChartAccount(tenant.Id, "4000", "Ventas", AccountType.Revenue),
@@ -301,11 +302,33 @@ public sealed class PurchaseAccountingIntegrationTests
         var second = await repository.CheckoutAsync(new CheckoutRequest(null, PaymentMethod.Cash,
             [new CheckoutLine(product.Id, 1)], Guid.NewGuid(), register.Code), user.Id);
         Assert.AreEqual(5m, second.TaxAmount);
+
+        var returnRequest = new CreateSaleReturnRequest(Guid.NewGuid(),
+            [new SaleReturnLineRequest(first.Lines.Single().Id, 1)], cash.Id, register.Code);
+        var returned = await repository.ReturnSaleAsync(first.Id, user.Id, returnRequest);
+        Assert.AreEqual(1, returned.Returns.Count);
+        Assert.AreEqual(90m, returned.Returns.Single().Subtotal, "La nota conserva la base neta de la venta histórica.");
+        Assert.AreEqual(9m, returned.Returns.Single().TaxAmount, "La nota revierte el impuesto histórico, aunque cambie la tasa actual.");
+        Assert.AreEqual(99m, returned.Returns.Single().RefundAmount);
+        Assert.AreEqual(10m, returned.Returns.Single().Lines.Single().DiscountAmount);
+        var replayedReturn = await repository.ReturnSaleAsync(first.Id, user.Id, returnRequest);
+        Assert.AreEqual(1, replayedReturn.Returns.Count, "Repetir la devolución no duplica la nota ni el reembolso.");
+
         await using var verify = new StoreDbContext(options);
         verify.CurrentTenantId = tenant.Id;
         var historicalSale = await verify.Sales.Include(x => x.Lines).SingleAsync(x => x.Id == first.Id);
         Assert.AreEqual(.10m, historicalSale.Lines.Single().TaxRate, "Cambiar el catálogo no modifica el impuesto de ventas pasadas.");
-        Assert.AreEqual(8, (await verify.WarehouseStocks.SingleAsync(x => x.WarehouseId == warehouse.Id && x.ProductId == product.Id)).Quantity);
+        Assert.AreEqual(9, (await verify.WarehouseStocks.SingleAsync(x => x.WarehouseId == warehouse.Id && x.ProductId == product.Id)).Quantity,
+            "La devolución devuelve una unidad al almacén original sin restaurar la segunda venta.");
+        var persistedReturn = await verify.SaleReturns.Include(x => x.Lines).SingleAsync(x => x.IdempotencyKey == returnRequest.IdempotencyKey);
+        Assert.AreEqual(1, await verify.CashMovements.CountAsync(x => x.SessionId == cashSession.Id && x.Kind == CashMovementKind.CashOut && x.Amount == 99m),
+            "El reembolso se registra una sola vez como salida de caja.");
+        var returnJournal = await verify.JournalEntries.Include(x => x.Lines)
+            .SingleAsync(x => x.SourceType == "SALERETURN" && x.SourceId == persistedReturn.Id);
+        Assert.AreEqual(returnJournal.Lines.Sum(x => x.Debit), returnJournal.Lines.Sum(x => x.Credit), "El asiento de devolución queda cuadrado.");
+        Assert.AreEqual(90m, returnJournal.Lines.Single(x => x.AccountCode == "4000").Debit);
+        Assert.AreEqual(9m, returnJournal.Lines.Single(x => x.AccountCode == "2100").Debit);
+        Assert.AreEqual(99m, returnJournal.Lines.Single(x => x.AccountCode == "1000").Credit);
     }
 
     [TestMethod]
