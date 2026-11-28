@@ -108,6 +108,7 @@ var connectionString = builder.Configuration.GetConnectionString("OjunnySyS")
 var businessTimeZone = builder.Configuration["BusinessTimeZone"] ?? "America/Santo_Domingo";
 builder.Services.AddInfrastructure(connectionString, businessTimeZone);
 builder.Services.AddScoped<StoreService>();
+builder.Services.AddScoped<ParkedSaleService>();
 builder.Services.AddScoped<SalesQuoteService>();
 builder.Services.AddScoped<CrmService>();
 builder.Services.AddScoped<PlatformManagementService>();
@@ -370,6 +371,20 @@ salesQuotes.MapPost("/{id:guid}/convert", async (Guid id, ConvertSalesQuoteReque
     catch (ConcurrencyConflictException ex) { return Results.Conflict(new { error = ex.Message }); }
     catch (DomainException ex) { return Results.ValidationProblem(new Dictionary<string, string[]> { ["quote"] = [ex.Message] }); }
 }).RequireAuthorization("Checkout");
+var parkedSales = api.MapGroup("/pos/parked-sales").RequireAuthorization("Checkout");
+parkedSales.MapGet("/", async (string? registerCode, ParkedSaleService service, CancellationToken ct) =>
+    Results.Ok(await service.GetParkedSalesAsync(registerCode ?? "MAIN", ct)));
+parkedSales.MapPost("/", async (ParkSaleRequest request, ClaimsPrincipal user, ParkedSaleService service, CancellationToken ct) =>
+{
+    try { var parked = await service.ParkSaleAsync(request, CurrentActorId(user), ct); return Results.Created($"/api/v1/pos/parked-sales/{parked.Id}", parked); }
+    catch (DomainException ex) { return Results.ValidationProblem(new Dictionary<string, string[]> { ["parkedSale"] = [ex.Message] }); }
+});
+parkedSales.MapPost("/{id:guid}/cancel", async (Guid id, CancelParkedSaleRequest request, ClaimsPrincipal user, ParkedSaleService service, CancellationToken ct) =>
+{
+    try { return Results.Ok(await service.CancelParkedSaleAsync(id, CurrentActorId(user), request, ct)); }
+    catch (ConcurrencyConflictException ex) { return Results.Conflict(new { error = ex.Message }); }
+    catch (DomainException ex) { return Results.ValidationProblem(new Dictionary<string, string[]> { ["parkedSale"] = [ex.Message] }); }
+});
 api.MapGet("/sales", async (int? limit, StoreService store, CancellationToken ct) => Results.Ok(await store.GetRecentSalesAsync(limit ?? 50, ct))).RequireAuthorization("SalesRead");
 api.MapGet("/dashboard", async (StoreService store, CancellationToken ct) => Results.Ok(await store.GetDashboardAsync(ct)));
 api.MapGet("/reports/sales", async (DateOnly from, DateOnly to, Guid? warehouseId, Guid? sellerUserId, string? documentNumber, StoreService store, CancellationToken ct) =>

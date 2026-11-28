@@ -14,10 +14,9 @@ else if (_model is not null)
 {
     <section class="panel settings-panel">
         <div class="panel-heading"><div><h2>@_model.Name</h2><p>Espacio <span class="mono">@_model.Slug</span></p></div></div>
-        <EditForm Model="_model" OnValidSubmit="SaveAsync">
+        <EditForm Model="_model" OnValidSubmit="SaveAsync" class="settings-form">
             <DataAnnotationsValidator />
-            <div class="form-grid">
-                <label>Zona horaria<InputText @bind-Value="_model.TimeZoneId" placeholder="America/Santo_Domingo" /></label>
+            <div class="form-grid settings-base-grid">
                 <label>Moneda (código ISO)<InputText @bind-Value="_model.CurrencyCode" maxlength="3" /></label>
                 <label>Tasa general de impuesto (%)<NumericInput @bind-Value="_model.TaxPercent" min="0" max="100" step="0.01" /></label>
             </div>

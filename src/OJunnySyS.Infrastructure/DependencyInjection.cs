@@ -12,6 +12,7 @@ public static class DependencyInjection
     {
         services.AddDbContextFactory<StoreDbContext>(options => options.UseMySQL(connectionString));
         services.AddScoped<IStoreRepository, EfStoreRepository>();
+        services.AddScoped<IParkedSaleRepository, EfParkedSaleRepository>();
         services.AddScoped<ISalesQuoteRepository, EfSalesQuoteRepository>();
         services.AddScoped<ICrmRepository, EfCrmRepository>();
         services.AddScoped<IPlatformManagementRepository, EfPlatformManagementRepository>();

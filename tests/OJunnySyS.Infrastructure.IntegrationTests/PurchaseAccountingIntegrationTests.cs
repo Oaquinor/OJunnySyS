@@ -314,12 +314,33 @@ public sealed class PurchaseAccountingIntegrationTests
         var replayedReturn = await repository.ReturnSaleAsync(first.Id, user.Id, returnRequest);
         Assert.AreEqual(1, replayedReturn.Returns.Count, "Repetir la devolución no duplica la nota ni el reembolso.");
 
+        var parkedRepository = new EfParkedSaleRepository(factory, tenantContext, new TenantAccessGuard(factory, clock));
+        var parkRequest = new ParkSaleRequest(Guid.NewGuid(), register.Code, null, null, [new ParkedSaleLineRequest(product.Id, 1)]);
+        var parkedSale = await parkedRepository.ParkSaleAsync(parkRequest, user.Id);
+        Assert.AreEqual(9, await GetWarehouseQuantityAsync(options, tenant.Id, warehouse.Id, product.Id), "Guardar una venta en espera no reserva ni consume inventario.");
+        Assert.AreEqual(parkedSale.Id, (await parkedRepository.ParkSaleAsync(parkRequest, user.Id)).Id, "El reintento de guardado no crea otra venta en espera.");
+        var parkedCheckout = new CheckoutRequest(null, PaymentMethod.Cash, [new CheckoutLine(product.Id, 1)], Guid.NewGuid(), register.Code,
+            ParkedSaleId: parkedSale.Id);
+        var completedParkedSale = await repository.CheckoutAsync(parkedCheckout, user.Id);
+        Assert.AreEqual(parkedSale.Id, completedParkedSale.ParkedSaleId);
+        Assert.AreEqual(completedParkedSale.Id, (await repository.CheckoutAsync(parkedCheckout, user.Id)).Id,
+            "El reintento del cobro retomado devuelve la misma venta.");
+        var secondConversionRejected = false;
+        try
+        {
+            await repository.CheckoutAsync(parkedCheckout with { IdempotencyKey = Guid.NewGuid() }, user.Id);
+        }
+        catch (DomainException) { secondConversionRejected = true; }
+        Assert.IsTrue(secondConversionRejected, "La misma venta en espera no se puede cobrar dos veces con claves diferentes.");
+        Assert.AreEqual(0, (await parkedRepository.GetParkedSalesAsync(register.Code)).Count,
+            "Una venta cobrada sale de la lista de pendientes.");
+
         await using var verify = new StoreDbContext(options);
         verify.CurrentTenantId = tenant.Id;
         var historicalSale = await verify.Sales.Include(x => x.Lines).SingleAsync(x => x.Id == first.Id);
         Assert.AreEqual(.10m, historicalSale.Lines.Single().TaxRate, "Cambiar el catálogo no modifica el impuesto de ventas pasadas.");
-        Assert.AreEqual(9, (await verify.WarehouseStocks.SingleAsync(x => x.WarehouseId == warehouse.Id && x.ProductId == product.Id)).Quantity,
-            "La devolución devuelve una unidad al almacén original sin restaurar la segunda venta.");
+        Assert.AreEqual(8, (await verify.WarehouseStocks.SingleAsync(x => x.WarehouseId == warehouse.Id && x.ProductId == product.Id)).Quantity,
+            "La devolución repone su unidad y cobrar la venta retomada consume solo la unidad pendiente.");
         var persistedReturn = await verify.SaleReturns.Include(x => x.Lines).SingleAsync(x => x.IdempotencyKey == returnRequest.IdempotencyKey);
         Assert.AreEqual(1, await verify.CashMovements.CountAsync(x => x.SessionId == cashSession.Id && x.Kind == CashMovementKind.CashOut && x.Amount == 99m),
             "El reembolso se registra una sola vez como salida de caja.");
@@ -329,6 +350,16 @@ public sealed class PurchaseAccountingIntegrationTests
         Assert.AreEqual(90m, returnJournal.Lines.Single(x => x.AccountCode == "4000").Debit);
         Assert.AreEqual(9m, returnJournal.Lines.Single(x => x.AccountCode == "2100").Debit);
         Assert.AreEqual(99m, returnJournal.Lines.Single(x => x.AccountCode == "1000").Credit);
+        var persistedParked = await verify.ParkedSales.SingleAsync(x => x.Id == parkedSale.Id);
+        Assert.AreEqual(ParkedSaleStatus.Completed, persistedParked.Status);
+        Assert.AreEqual(completedParkedSale.Id, persistedParked.ConvertedSaleId);
+    }
+
+    private static async Task<int> GetWarehouseQuantityAsync(DbContextOptions<StoreDbContext> options, Guid tenantId, Guid warehouseId, Guid productId)
+    {
+        await using var db = new StoreDbContext(options);
+        db.CurrentTenantId = tenantId;
+        return await db.WarehouseStocks.Where(x => x.WarehouseId == warehouseId && x.ProductId == productId).Select(x => x.Quantity).SingleAsync();
     }
 
     [TestMethod]

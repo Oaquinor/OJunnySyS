@@ -1,6 +1,8 @@
 @page "/app/pos"
+@implements IAsyncDisposable
 @attribute [Authorize(Roles = "Administrator,Manager,Cashier")]
 @inject StoreService Store
+@inject ParkedSaleService ParkedSales
 @inject TenantSettingsService TenantSettings
 @inject PosRegisterService PosRegisters
 @inject WarehouseService WarehouseService
@@ -8,6 +10,7 @@
 @inject TenantUserService TenantUsers
 @inject AuthenticationStateProvider AuthenticationState
 @inject ILogger<Pos> Logger
+@inject IJSRuntime JS
 
 <PageTitle>Punto de venta · OjunnySyS</PageTitle>
 <PageHeader Eyebrow="VENTAS / PUNTO DE VENTA" Title="Punto de venta" Description="Agrega productos, elige cómo cobrar y listo.">
@@ -28,13 +31,13 @@ else
 @if (_registers.Count == 0) { <div class="inline-error cash-error">No hay terminales POS activos. Pide al administrador que configure uno en <a href="/app/pos/registers">Terminales POS</a>.</div> }
 <div class="pos-layout">
     <section class="pos-catalog">
-        <div class="pos-search-row"><SearchField @bind-Value="_search" @bind-Value:after="LoadProductsAsync" CssClass="search-box pos-search" Placeholder="Buscar producto o escanear código…" /><span class="result-count">@_filteredProducts.Count() productos</span></div>
+        <div class="pos-search-row"><SearchField @bind-Value="_search" @bind-Value:after="LoadProductsAsync" InputId="pos-search" CssClass="search-box pos-search" Placeholder="Buscar producto o escanear código…" /><span class="result-count">@_filteredProducts.Count() productos</span></div>
         <div class="category-tabs"><button class="@CategoryClass(null)" @onclick="() => _category = null">Todos</button>@foreach (var category in _categories) { <button class="@CategoryClass(category)" @onclick="() => _category = category">@category</button> }</div>
         <div class="pos-product-grid">
             @foreach (var product in _filteredProducts)
             {
                 var inCart = _cart.GetValueOrDefault(product.Id);
-                <button class="pos-product-card" @onclick="() => Add(product)" disabled="@(inCart >= product.StockOnHand)">
+        <button class="pos-product-card" @onclick="() => Add(product)" disabled="@(inCart >= product.StockOnHand || _parkedSaleId is not null)">
                     <span class="pos-product-art @ArtClass(product.Category)">@ProductIcon(product.Category)<span class="add-product">＋</span></span>
                     <span class="pos-product-info"><strong>@product.Name</strong><small>@product.Category · @_cart.GetValueOrDefault(product.Id) en orden · @TaxLabel(product)</small><b>@Money(product.UnitPrice)</b></span>
                     @if (product.StockOnHand <= 5) { <span class="stock-hint">Quedan @product.StockOnHand</span> }
@@ -43,14 +46,28 @@ else
         </div>
     </section>
     <aside class="order-panel">
-        <div class="order-header"><div><span class="eyebrow">VENTA ACTUAL</span><h2>Tu orden <span class="order-count">@_cart.Values.Sum()</span></h2></div><button class="clear-button" @onclick="ClearCart" disabled="@(_cart.Count == 0)">Vaciar</button></div>
-        <div class="customer-select"><label for="customer">Cliente</label><select id="customer" @bind="_customerId" @bind:after="ResetCheckoutKey"><option value="">Consumidor final</option>@foreach (var customer in _customers) { <option value="@customer.Id">@customer.Name</option> }</select></div>
-        <div class="customer-select"><label for="seller">Vendedor</label><select id="seller" @bind="_sellerUserId" @bind:after="ResetCheckoutKey"><option value="">Sin asignar</option>@foreach (var seller in _salespeople) { <option value="@seller.Id">@seller.DisplayName</option> }</select></div>
+        <div class="order-header"><div><span class="eyebrow">VENTA ACTUAL</span><h2>Tu orden <span class="order-count">@_cart.Values.Sum()</span></h2></div><div class="pos-order-actions"><button class="button button-secondary button-small" @onclick="ParkCurrentSaleAsync" disabled="@(_cart.Count == 0 || _saving || _parkedSaleId is not null)">Guardar en espera</button><button class="clear-button" @onclick="ClearCartAsync" disabled="@(_cart.Count == 0 || _saving)">Vaciar</button></div></div>
+        @if (_parkedSaleId is not null) { <div class="parked-active-note"><strong>Venta en espera retomada</strong><span>Artículos y descuentos quedan protegidos. Los precios e impuestos se actualizan al cobrar.</span></div> }
+        @if (_parkedSales.Count > 0)
+        {
+            <section class="parked-sales-panel" aria-label="Ventas en espera">
+                <div class="parked-sales-heading"><div><span class="eyebrow">TURNO DE VENTA</span><h3>En espera <span class="order-count">@_parkedSales.Count</span></h3></div><button type="button" class="icon-button" @onclick="RefreshParkedSalesAsync" aria-label="Actualizar ventas en espera">↻</button></div>
+                @foreach (var parked in _parkedSales)
+                {
+                    <article class="parked-sale-card">
+                        <div><strong>@parked.CustomerName</strong><span>@parked.Lines.Sum(x => x.Quantity) unidades · guardada @parked.CreatedAtUtc.LocalDateTime.ToString("t")</span><small>@string.Join(" · ", parked.Lines.Select(x => $"{x.Quantity} {x.ProductName}"))</small></div>
+                        <div class="parked-sale-actions"><button type="button" class="button button-secondary button-small" @onclick="() => ResumeParkedSaleAsync(parked, false)" disabled="@(_saving || _cart.Count > 0)">Retomar</button><button type="button" class="button button-quiet button-small" @onclick="() => ResumeParkedSaleAsync(parked, true)" disabled="@(_saving || _cart.Count > 0)">Editar</button><button type="button" class="icon-button danger" @onclick="() => CancelParkedSaleAsync(parked)" disabled="@_saving" aria-label="Cancelar venta en espera">×</button></div>
+                    </article>
+                }
+            </section>
+        }
+        <div class="customer-select"><label for="customer">Cliente</label><select id="customer" @bind="_customerId" @bind:after="ResetCheckoutKey" disabled="@(_parkedSaleId is not null)"><option value="">Consumidor final</option>@foreach (var customer in _customers) { <option value="@customer.Id">@customer.Name</option> }</select></div>
+        <div class="customer-select"><label for="seller">Vendedor</label><select id="seller" @bind="_sellerUserId" @bind:after="ResetCheckoutKey" disabled="@(_parkedSaleId is not null)"><option value="">Sin asignar</option>@foreach (var seller in _salespeople) { <option value="@seller.Id">@seller.DisplayName</option> }</select></div>
         <div class="order-lines">
             @if (_cart.Count == 0) { <div class="cart-empty"><span>▣</span><strong>Tu orden está vacía</strong><p>Selecciona un producto para comenzar la venta.</p></div> }
             @foreach (var line in CartLines)
             {
-                <div class="order-line"><span class="line-art @ArtClass(line.Product.Category)">@ProductIcon(line.Product.Category)</span><div class="line-details"><strong>@line.Product.Name</strong><small>@Money(line.Product.UnitPrice) / unidad</small><div class="quantity-control"><button @onclick="() => ChangeQuantity(line.Product, -1)">−</button><span>@line.Quantity</span><button @onclick="() => ChangeQuantity(line.Product, 1)" disabled="@(line.Quantity >= line.Product.StockOnHand)">＋</button></div>@if (_canApplyDiscount) { <label class="line-discount">Descuento (%)<NumericInput aria-label="Descuento por producto (%)" @bind-Value="_discounts[line.Product.Id].Percent" @bind-Value:after="() => OnDiscountChanged(line.Product.Id)" min="0" max="100" step="0.01" /></label> }@if (LineDiscount(line.Product, line.Quantity) > 0) { <small class="line-discount-total">Descuento: −@Money(LineDiscount(line.Product, line.Quantity))</small> }</div><strong class="line-total">@Money(NetLineTotal(line.Product, line.Quantity))</strong></div>
+                <div class="order-line"><span class="line-art @ArtClass(line.Product.Category)">@ProductIcon(line.Product.Category)</span><div class="line-details"><strong>@line.Product.Name</strong><small>@Money(line.Product.UnitPrice) / unidad</small><div class="quantity-control"><button @onclick="() => ChangeQuantity(line.Product, -1)" disabled="@(_parkedSaleId is not null)">−</button><span>@line.Quantity</span><button @onclick="() => ChangeQuantity(line.Product, 1)" disabled="@(line.Quantity >= line.Product.StockOnHand || _parkedSaleId is not null)">＋</button></div>@if (_canApplyDiscount) { <label class="line-discount">Descuento (%)<NumericInput aria-label="Descuento por producto (%)" @bind-Value="_discounts[line.Product.Id].Percent" @bind-Value:after="() => OnDiscountChanged(line.Product.Id)" min="0" max="100" step="0.01" disabled="@(_parkedSaleId is not null)" /></label> }@if (LineDiscount(line.Product, line.Quantity) > 0) { <small class="line-discount-total">Descuento: −@Money(LineDiscount(line.Product, line.Quantity))</small> }</div><strong class="line-total">@Money(NetLineTotal(line.Product, line.Quantity))</strong></div>
             }
         </div>
         <div class="order-summary"><div><span>Subtotal</span><strong>@Money(GrossSubtotal)</strong></div>@if (DiscountTotal > 0) { <div><span>Descuento</span><strong>−@Money(DiscountTotal)</strong></div> }<div><span>Base imponible</span><strong>@Money(Subtotal)</strong></div><div><span>Impuesto</span><strong>@Money(Tax)</strong></div><div class="grand-total"><span>Total</span><strong>@Money(Total)</strong></div></div>
@@ -61,7 +78,8 @@ else
             @if (_paymentMethods.FirstOrDefault(x => x.Id == _tenders.FirstOrDefault()?.PaymentMethodId) is { } selected && (!string.IsNullOrWhiteSpace(selected.Instructions) || !string.IsNullOrWhiteSpace(selected.AccountLabel) || !string.IsNullOrWhiteSpace(selected.AccountReference) || !string.IsNullOrWhiteSpace(selected.QrPayload))) { <small class="payment-instructions">@selected.Instructions @selected.AccountLabel @selected.AccountReference @selected.QrPayload</small> }
             <small class="tender-balance">@if (TenderBalance == 0) { <span>Pago completo</span> } else if (TenderBalance > 0) { <span>Falta @Money(TenderBalance)</span> } else { <span>Exceso @Money(-TenderBalance)</span> }</small> }
         </div>
-        <button class="button button-primary checkout-button" @onclick="CheckoutAsync" disabled="@(_cart.Count == 0 || _saving || (!_isCredit && !CashOpen) || (_isCredit ? (_customerId is null || _dueDate is null) : (_paymentMethods.Count == 0 || TenderBalance != 0 || _tenders.Any(x => x.Amount <= 0))))">@(_saving ? "Procesando…" : _isCredit ? "Crear cuenta · " + Money(Total) : "Cobrar · " + Money(Total)) <span>→</span></button>
+        <div class="flex flex-wrap items-center gap-2 border-t border-line pt-3 text-xs text-slate-500" aria-label="Atajos de teclado"><span class="font-semibold">Atajos:</span><span><kbd class="rounded-md border border-slate-200 bg-slate-50 px-1.5 py-0.5 font-sans text-xs">F2</kbd> Buscar</span><span><kbd class="rounded-md border border-slate-200 bg-slate-50 px-1.5 py-0.5 font-sans text-xs">F3</kbd> Cliente</span><span><kbd class="rounded-md border border-slate-200 bg-slate-50 px-1.5 py-0.5 font-sans text-xs">F4</kbd> Vendedor</span><span><kbd class="rounded-md border border-slate-200 bg-slate-50 px-1.5 py-0.5 font-sans text-xs">F6</kbd> Pago</span><span><kbd class="rounded-md border border-slate-200 bg-slate-50 px-1.5 py-0.5 font-sans text-xs">F9</kbd> Cobrar</span></div>
+        <button id="pos-checkout" class="button button-primary checkout-button" @onclick="CheckoutAsync" disabled="@(_cart.Count == 0 || _saving || (!_isCredit && !CashOpen) || (_isCredit ? (_customerId is null || _dueDate is null) : (_paymentMethods.Count == 0 || TenderBalance != 0 || _tenders.Any(x => x.Amount <= 0))))">@(_saving ? "Procesando…" : _isCredit ? "Crear cuenta · " + Money(Total) : "Cobrar · " + Money(Total)) <span>→</span></button>
         @if (!string.IsNullOrWhiteSpace(_error)) { <div class="inline-error">@_error</div> }
         <div class="secure-note">▣ Transacción registrada de forma segura</div>
     </aside>
@@ -73,10 +91,13 @@ else
     private List<CustomerDto> _customers = [];
     private List<TenantMemberDto> _salespeople = [];
     private List<PosRegisterDto> _registers = [];
+    private IReadOnlyList<ParkedSaleDto> _parkedSales = [];
     private List<WarehouseDto> _warehouses = [];
     private CashSessionDto? _cashSession;
     private Guid _cashierUserId;
     private Guid? _lastSaleId;
+    private Guid? _parkedSaleId;
+    private long _parkedSaleRevision;
     private readonly Dictionary<Guid, int> _cart = [];
     private readonly Dictionary<Guid, CartDiscountForm> _discounts = [];
     private string _search = "";
@@ -93,7 +114,9 @@ else
     private bool _saving, _loading = true;
     private string? _loadError;
     private Guid _checkoutKey = Guid.NewGuid();
+    private Guid _parkKey = Guid.NewGuid();
     private decimal _taxRate = 0.18m;
+    private IJSObjectReference? _shortcutsModule;
     private IReadOnlyList<string> _categories => _products.Select(x => x.Category).Distinct().Order().ToArray();
     private IEnumerable<ProductDto> _filteredProducts => _products.Where(x => (_category is null || x.Category == _category) && x.StockOnHand > 0);
     private IEnumerable<(ProductDto Product, int Quantity)> CartLines => _cart.Select(x => (_products.FirstOrDefault(p => p.Id == x.Key), x.Value)).Where(x => x.Item1 is not null).Select(x => (x.Item1!, x.Value));
@@ -105,6 +128,31 @@ else
     private decimal TenderBalance => decimal.Round(Total - _tenders.Sum(x => x.Amount), 2);
     private bool CashOpen => _cashSession?.Status == CashSessionStatus.Open;
     protected override Task OnInitializedAsync() => InitializeAsync();
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender)
+            return;
+
+        _shortcutsModule = await JS.InvokeAsync<IJSObjectReference>("import", "./js/pos-shortcuts.js");
+        await _shortcutsModule.InvokeVoidAsync("register");
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (_shortcutsModule is null)
+            return;
+
+        try
+        {
+            await _shortcutsModule.InvokeVoidAsync("unregister");
+            await _shortcutsModule.DisposeAsync();
+        }
+        catch (JSDisconnectedException)
+        {
+            // The Blazor circuit is already gone; the browser is cleaning up the page.
+        }
+    }
     private async Task InitializeAsync()
     {
         _loading = true;
@@ -126,6 +174,7 @@ else
                 _tenders.Add(new(cashMethod.Id, 0));
             _taxRate = (await TenantSettings.GetAsync()).DefaultTaxRate;
             _cashSession = string.IsNullOrEmpty(_registerCode) ? null : await Store.GetCurrentCashSessionAsync(_registerCode);
+            await RefreshParkedSalesAsync();
             await LoadProductsAsync();
             _customers = (await Store.SearchCustomersAsync(null)).ToList();
             ResetCheckoutKey();
@@ -140,20 +189,98 @@ else
             _loading = false;
         }
     }
-    private async Task OnRegisterChangedAsync() { ClearCart(); _error = null; _warehouseId = _registers.FirstOrDefault(x => x.Code == _registerCode)?.WarehouseId ?? Guid.Empty; _cashSession = string.IsNullOrEmpty(_registerCode) ? null : await Store.GetCurrentCashSessionAsync(_registerCode); await LoadProductsAsync(); }
+    private async Task OnRegisterChangedAsync() { ResetCartState(); _error = null; _warehouseId = _registers.FirstOrDefault(x => x.Code == _registerCode)?.WarehouseId ?? Guid.Empty; _cashSession = string.IsNullOrEmpty(_registerCode) ? null : await Store.GetCurrentCashSessionAsync(_registerCode); await RefreshParkedSalesAsync(); await LoadProductsAsync(); }
     private async Task LoadProductsAsync() => _products = _warehouseId == Guid.Empty ? [] : (await Store.SearchProductsInWarehouseAsync(_search, _warehouseId)).ToList();
-    private void ResetCheckoutKey() { _checkoutKey = Guid.NewGuid(); if (_tenders.Count == 1) _tenders[0].Amount = Total; }
+    private void ResetCheckoutKey() { _checkoutKey = Guid.NewGuid(); _parkKey = Guid.NewGuid(); if (_tenders.Count == 1) _tenders[0].Amount = Total; }
+    private async Task RefreshParkedSalesAsync() => _parkedSales = string.IsNullOrWhiteSpace(_registerCode) ? [] : await ParkedSales.GetParkedSalesAsync(_registerCode);
     private IEnumerable<TenantPaymentMethodDto> AvailableMethods(TenderForm tender) => _paymentMethods.Where(m => m.Id == tender.PaymentMethodId || _tenders.All(x => x == tender || x.PaymentMethodId != m.Id));
     private void AddTender() { var available = _paymentMethods.FirstOrDefault(m => _tenders.All(x => x.PaymentMethodId != m.Id)); if (available is null) return; _tenders.Add(new(available.Id, 0)); ResetCheckoutKey(); }
     private void RemoveTender(TenderForm tender) { _tenders.Remove(tender); ResetCheckoutKey(); }
     private void Add(ProductDto product) { if (_cart.GetValueOrDefault(product.Id) < product.StockOnHand) { _cart[product.Id] = _cart.GetValueOrDefault(product.Id) + 1; _discounts.TryAdd(product.Id, new()); ResetCheckoutKey(); } _error = null; }
     private void ChangeQuantity(ProductDto product, int delta) { var quantity = _cart.GetValueOrDefault(product.Id) + delta; if (quantity <= 0) { _cart.Remove(product.Id); _discounts.Remove(product.Id); ResetCheckoutKey(); } else if (quantity <= product.StockOnHand) { _cart[product.Id] = quantity; ResetCheckoutKey(); } }
-    private void ClearCart() { _cart.Clear(); _discounts.Clear(); ResetCheckoutKey(); _error = null; }
+    private void ResetCartState() { _cart.Clear(); _discounts.Clear(); _parkedSaleId = null; _parkedSaleRevision = 0; _isCredit = false; _customerId = null; _sellerUserId = null; ResetCheckoutKey(); _error = null; }
+    private async Task ClearCartAsync()
+    {
+        if (_parkedSaleId is { } parkedId)
+        {
+            try
+            {
+                await ParkedSales.CancelParkedSaleAsync(parkedId, _cashierUserId, new CancelParkedSaleRequest(_parkedSaleRevision));
+                await RefreshParkedSalesAsync();
+            }
+            catch (DomainException ex) { _error = ex.Message; return; }
+            catch (Exception ex) { Logger.LogError(ex, "No se pudo cancelar la venta en espera."); _error = "No se pudo cancelar la venta en espera. Actualiza la lista e inténtalo otra vez."; return; }
+        }
+        ResetCartState();
+    }
+    private async Task ParkCurrentSaleAsync()
+    {
+        if (_cart.Count == 0 || _parkedSaleId is not null) return;
+        _saving = true; _error = null;
+        try
+        {
+            var parked = await ParkedSales.ParkSaleAsync(new ParkSaleRequest(_parkKey, _registerCode, _customerId, _sellerUserId,
+                _cart.Select(x => new ParkedSaleLineRequest(x.Key, x.Value, DiscountPercent(x.Key))).ToArray()), _cashierUserId);
+            _notice = $"Venta guardada en espera · {parked.Lines.Sum(x => x.Quantity)} unidades";
+            ResetCartState();
+            await RefreshParkedSalesAsync();
+        }
+        catch (DomainException ex) { _error = ex.Message; }
+        catch (Exception ex) { Logger.LogError(ex, "No se pudo guardar la venta en espera."); _error = "No se pudo guardar la venta en espera. Puedes reintentar sin duplicar el registro."; }
+        finally { _saving = false; }
+    }
+    private async Task ResumeParkedSaleAsync(ParkedSaleDto parked, bool edit)
+    {
+        if (_cart.Count > 0) { _error = "Vacía o guarda la venta actual antes de retomar otra."; return; }
+        if (parked.CustomerId is { } customerId && _customers.All(x => x.Id != customerId)) { _error = "El cliente de esta venta ya no está disponible. Cancela la pendiente o pide a un administrador reactivarlo."; return; }
+        if (parked.SellerUserId is { } sellerId && _salespeople.All(x => x.Id != sellerId)) { _error = "El vendedor asignado ya no está disponible. Cancela la pendiente o pide a un administrador reactivarlo."; return; }
+        _saving = true; _error = null;
+        try
+        {
+            var found = new List<(ParkedSaleLineDto Line, ProductDto Product)>();
+            foreach (var line in parked.Lines)
+            {
+                var product = _products.FirstOrDefault(x => x.Id == line.ProductId);
+                if (product is null)
+                    product = (await Store.SearchProductsInWarehouseAsync(line.Sku, _warehouseId)).FirstOrDefault(x => x.Id == line.ProductId);
+                if (product is null) { _error = $"El artículo {line.Sku} ya no está activo en este terminal; no se cargó la venta."; return; }
+                found.Add((line, product));
+            }
+            if (edit)
+            {
+                var cancelled = await ParkedSales.CancelParkedSaleAsync(parked.Id, _cashierUserId, new CancelParkedSaleRequest(parked.Revision));
+                if (cancelled.Status != ParkedSaleStatus.Cancelled) { _error = "La venta pendiente cambió mientras la retomabas. Actualiza la lista."; return; }
+                await RefreshParkedSalesAsync();
+            }
+            ResetCartState();
+            _customerId = parked.CustomerId;
+            _sellerUserId = parked.SellerUserId;
+            foreach (var item in found)
+            {
+                _cart[item.Line.ProductId] = item.Line.Quantity;
+                _discounts[item.Line.ProductId] = new CartDiscountForm { Percent = item.Line.DiscountPercent };
+            }
+            if (!edit) { _parkedSaleId = parked.Id; _parkedSaleRevision = parked.Revision; }
+            _notice = edit ? "Venta recuperada para editar · el registro pendiente se canceló" : "Venta en espera retomada · verifica existencias y precios antes de cobrar";
+            ResetCheckoutKey();
+        }
+        catch (DomainException ex) { _error = ex.Message; }
+        catch (Exception ex) { Logger.LogError(ex, "No se pudo retomar la venta en espera."); _error = "No se pudo retomar la venta. Actualiza la lista e inténtalo de nuevo."; }
+        finally { _saving = false; }
+    }
+    private async Task CancelParkedSaleAsync(ParkedSaleDto parked)
+    {
+        _saving = true; _error = null;
+        try { await ParkedSales.CancelParkedSaleAsync(parked.Id, _cashierUserId, new CancelParkedSaleRequest(parked.Revision)); _notice = "Venta en espera cancelada"; await RefreshParkedSalesAsync(); }
+        catch (DomainException ex) { _error = ex.Message; }
+        catch (Exception ex) { Logger.LogError(ex, "No se pudo cancelar la venta en espera."); _error = "No se pudo cancelar la venta. Actualiza la lista e inténtalo de nuevo."; }
+        finally { _saving = false; }
+    }
     private void OnDiscountChanged(Guid productId) { if (!_canApplyDiscount) _discounts[productId].Percent = 0m; ResetCheckoutKey(); }
     private decimal DiscountPercent(Guid productId) => _discounts.GetValueOrDefault(productId)?.Percent ?? 0m;
     private decimal LineDiscount(ProductDto product, int quantity) => decimal.Round(decimal.Round(product.UnitPrice * quantity, 2, MidpointRounding.AwayFromZero) * DiscountPercent(product.Id) / 100m, 2, MidpointRounding.AwayFromZero);
     private decimal NetLineTotal(ProductDto product, int quantity) => decimal.Round(product.UnitPrice * quantity, 2, MidpointRounding.AwayFromZero) - LineDiscount(product, quantity);
-    private async Task CheckoutAsync() { _saving = true; _error = null; try { var sale = await Store.CheckoutAsync(new CheckoutRequest(_customerId, SummaryPaymentMethod, _cart.Select(x => new CheckoutLine(x.Key, x.Value, DiscountPercent(x.Key))).ToArray(), _checkoutKey, _registerCode, _isCredit ? [] : _tenders.Select(x => new CheckoutPaymentLine(x.PaymentMethodId, x.Amount, x.Reference)).ToArray(), _sellerUserId, _isCredit ? _dueDate : null), _cashierUserId); _notice = _isCredit ? $"Cuenta {sale.Number} creada · vence {sale.DueDate:dd/MM/yyyy}" : $"Venta {sale.Number} completada · {Money(sale.Total)}"; _lastSaleId = sale.Id; ClearCart(); _sellerUserId = null; _isCredit = false; _cashSession = await Store.GetCurrentCashSessionAsync(_registerCode); await LoadProductsAsync(); } catch (DomainException ex) { _error = ex.Message; await LoadProductsAsync(); } catch (Exception ex) { Logger.LogError(ex, "No se pudo completar el checkout."); _error = "No se pudo completar la operación. Revisa la caja y el inventario e inténtalo de nuevo; el mismo intento se reconocerá al reintentar."; await LoadProductsAsync(); } finally { _saving = false; } }
+    private async Task CheckoutAsync() { _saving = true; _error = null; try { var sale = await Store.CheckoutAsync(new CheckoutRequest(_customerId, SummaryPaymentMethod, _cart.Select(x => new CheckoutLine(x.Key, x.Value, DiscountPercent(x.Key))).ToArray(), _checkoutKey, _registerCode, _isCredit ? [] : _tenders.Select(x => new CheckoutPaymentLine(x.PaymentMethodId, x.Amount, x.Reference)).ToArray(), _sellerUserId, _isCredit ? _dueDate : null, ParkedSaleId: _parkedSaleId), _cashierUserId); _notice = _isCredit ? $"Cuenta {sale.Number} creada · vence {sale.DueDate:dd/MM/yyyy}" : $"Venta {sale.Number} completada · {Money(sale.Total)}"; _lastSaleId = sale.Id; ResetCartState(); await RefreshParkedSalesAsync(); _cashSession = await Store.GetCurrentCashSessionAsync(_registerCode); await LoadProductsAsync(); } catch (DomainException ex) { _error = ex.Message; await LoadProductsAsync(); } catch (Exception ex) { Logger.LogError(ex, "No se pudo completar el checkout."); _error = "No se pudo completar la operación. Revisa la caja y el inventario e inténtalo de nuevo; el mismo intento se reconocerá al reintentar."; await LoadProductsAsync(); } finally { _saving = false; } }
     private PaymentMethod SummaryPaymentMethod => _isCredit ? PaymentMethod.Credit : _tenders.Count > 1 ? PaymentMethod.Other : _paymentMethods.FirstOrDefault(x => x.Id == _tenders.FirstOrDefault()?.PaymentMethodId)?.Type switch { PaymentMethodType.Cash => PaymentMethod.Cash, PaymentMethodType.Card => PaymentMethod.Card, PaymentMethodType.Transfer => PaymentMethod.Transfer, _ => PaymentMethod.Other };
     private void OnSaleModeChanged() { if (!_isCredit && _tenders.Count == 0 && _paymentMethods.FirstOrDefault(x => x.Type == PaymentMethodType.Cash) is { } cash) _tenders.Add(new(cash.Id, Total)); ResetCheckoutKey(); }
     private sealed class TenderForm(Guid paymentMethodId, decimal amount) { public Guid PaymentMethodId { get; set; } = paymentMethodId; public decimal Amount { get; set; } = amount; public string? Reference { get; set; } }

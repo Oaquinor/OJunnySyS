@@ -1,66 +1,66 @@
-<div class="brand">
-    <div class="brand-mark">O<span>.</span></div>
-    <div><strong>ojunny<span>sys</span></strong><small>GESTIÓN COMERCIAL</small></div>
+<div class="mb-4 flex items-center gap-3 px-2 pb-2 lg:mb-7 lg:pb-0">
+    <div class="grid size-9 shrink-0 place-items-center rounded-xl bg-brand-600 font-display text-xl font-extrabold text-white">O<span class="text-emerald-200">.</span></div>
+    <div class="flex min-w-0 flex-col"><strong class="font-display text-lg font-extrabold tracking-tight text-ink">ojunny<span class="text-brand-500">sys</span></strong><small class="text-xs font-bold tracking-[0.15em] text-muted">GESTIÓN COMERCIAL</small></div>
 </div>
 
-<nav class="navigation" aria-label="Navegación principal">
-    <span class="nav-caption">GENERAL</span>
-    <NavLink class="nav-link" href="/app" Match="NavLinkMatch.All"><span class="nav-icon">⌂</span> Resumen</NavLink>
+<nav class="grid max-h-[36dvh] grid-cols-2 gap-1 overflow-y-auto md:flex md:max-h-none md:flex-col md:overflow-visible" aria-label="Navegación principal">
+    <span class="hidden px-3 pb-1 text-xs font-bold tracking-[0.12em] text-muted md:block md:pt-0">GENERAL</span>
+    <NavItem Href="/app" Icon="⌂" Match="NavLinkMatch.All">Resumen</NavItem>
     <AuthorizeView Roles="Administrator,Manager">
-        <NavLink class="nav-link" href="/app/customers"><span class="nav-icon">♧</span> Clientes <span class="nav-count">CRM</span></NavLink>
-        <NavLink class="nav-link" href="/app/products"><span class="nav-icon">▦</span> Productos</NavLink>
+        <NavItem Href="/app/customers" Icon="♧">Clientes <span class="ml-auto rounded bg-brand-100 px-1.5 py-0.5 text-xs font-bold text-brand-500">CRM</span></NavItem>
+        <NavItem Href="/app/products" Icon="▦">Productos</NavItem>
     </AuthorizeView>
     <AuthorizeView Roles="Administrator,Manager,Salesperson">
-        <NavLink class="nav-link" href="/app/crm"><span class="nav-icon">↗</span> Oportunidades y tareas</NavLink>
+        <NavItem Href="/app/crm" Icon="↗">Oportunidades y tareas</NavItem>
     </AuthorizeView>
     <AuthorizeView Roles="Administrator,Manager">
-        <NavLink class="nav-link" href="/app/crm/segments"><span class="nav-icon">◉</span> Segmentos CRM</NavLink>
-        <NavLink class="nav-link" href="/app/accounting"><span class="nav-icon">▤</span> Contabilidad</NavLink>
-        <NavLink class="nav-link" href="/app/reports/financial-statements"><span class="nav-icon">▥</span> Estados financieros</NavLink>
-        <NavLink class="nav-link" href="/app/banking"><span class="nav-icon">⌂</span> Bancos y conciliaciones</NavLink>
+        <NavItem Href="/app/crm/segments" Icon="◉">Segmentos CRM</NavItem>
+        <NavItem Href="/app/accounting" Icon="▤">Contabilidad</NavItem>
+        <NavItem Href="/app/reports/financial-statements" Icon="▥">Estados financieros</NavItem>
+        <NavItem Href="/app/banking" Icon="⌂">Bancos y conciliaciones</NavItem>
     </AuthorizeView>
     <AuthorizeView Roles="Administrator">
-        <NavLink class="nav-link" href="/app/workspace"><span class="nav-icon">◫</span> Mi empresa</NavLink>
-        <NavLink class="nav-link" href="/app/users"><span class="nav-icon">♙</span> Usuarios y accesos</NavLink>
-        <NavLink class="nav-link" href="/app/settings"><span class="nav-icon">⚙</span> Empresa e impuestos</NavLink>
-        <NavLink class="nav-link" href="/app/inventory/warehouses"><span class="nav-icon">▤</span> Almacenes</NavLink>
-        <NavLink class="nav-link" href="/app/pos/registers"><span class="nav-icon">▣</span> Terminales POS</NavLink>
-        <NavLink class="nav-link" href="/app/settings/payments"><span class="nav-icon">＄</span> Medios de pago</NavLink>
+        <NavItem Href="/app/workspace" Icon="◫">Mi empresa</NavItem>
+        <NavItem Href="/app/users" Icon="♙">Usuarios y accesos</NavItem>
+        <NavItem Href="/app/settings" Icon="⚙">Empresa e impuestos</NavItem>
+        <NavItem Href="/app/inventory/warehouses" Icon="▤">Almacenes</NavItem>
+        <NavItem Href="/app/pos/registers" Icon="▣">Terminales POS</NavItem>
+        <NavItem Href="/app/settings/payments" Icon="＄">Medios de pago</NavItem>
     </AuthorizeView>
     <AuthorizeView Roles="Administrator,Manager">
-        <NavLink class="nav-link" href="/app/inventory/adjustments"><span class="nav-icon">↕</span> Ajustes de inventario</NavLink>
+        <NavItem Href="/app/inventory/adjustments" Icon="↕">Ajustes de inventario</NavItem>
     </AuthorizeView>
     <AuthorizeView Roles="Administrator,Manager,PurchasingAgent">
-        <NavLink class="nav-link" href="/app/purchases"><span class="nav-icon">↗</span> Compras y proveedores</NavLink>
+        <NavItem Href="/app/purchases" Icon="↗">Compras y proveedores</NavItem>
     </AuthorizeView>
-    <span class="nav-caption section-caption">VENTAS</span>
+    <span class="col-span-2 mt-3 hidden px-3 pb-1 text-xs font-bold tracking-[0.12em] text-muted md:col-span-1 md:block">VENTAS</span>
     <AuthorizeView Roles="Administrator,Manager,Salesperson">
-        <NavLink class="nav-link" href="/app/sales/quotes"><span class="nav-icon">◇</span> Cotizaciones</NavLink>
+        <NavItem Href="/app/sales/quotes" Icon="◇">Cotizaciones</NavItem>
     </AuthorizeView>
     <AuthorizeView Roles="Administrator,Manager,Cashier">
-        <NavLink class="nav-link" href="/app/cash"><span class="nav-icon">＄</span> Caja y arqueo</NavLink>
-        <NavLink class="nav-link" href="/app/pos"><span class="nav-icon">▣</span> Punto de venta <span class="nav-live">●</span></NavLink>
-        <NavLink class="nav-link" href="/app/sales"><span class="nav-icon">▤</span> Historial de ventas</NavLink>
-        <NavLink class="nav-link" href="/app/receivables"><span class="nav-icon">＄</span> Cuentas por cobrar</NavLink>
+        <NavItem Href="/app/cash" Icon="＄">Caja y arqueo</NavItem>
+        <NavItem Href="/app/pos" Icon="▣">Punto de venta <span class="ml-auto text-xs text-emerald-500">●</span></NavItem>
+        <NavItem Href="/app/sales" Icon="▤">Historial de ventas</NavItem>
+        <NavItem Href="/app/receivables" Icon="＄">Cuentas por cobrar</NavItem>
     </AuthorizeView>
     <AuthorizeView Roles="Administrator,Manager">
-        <span class="nav-caption section-caption">ANÁLISIS</span>
-        <NavLink class="nav-link" href="/app/reports"><span class="nav-icon">▥</span> Reportes</NavLink>
+        <span class="col-span-2 mt-3 hidden px-3 pb-1 text-xs font-bold tracking-[0.12em] text-muted md:col-span-1 md:block">ANÁLISIS</span>
+        <NavItem Href="/app/reports" Icon="▥">Reportes</NavItem>
     </AuthorizeView>
     <AuthorizeView Roles="Administrator,Manager,Cashier,Salesperson">
-        <NavLink class="nav-link" href="/app/reports/customer-statement"><span class="nav-icon">▤</span> Estado de cuenta</NavLink>
+        <NavItem Href="/app/reports/customer-statement" Icon="▤">Estado de cuenta</NavItem>
     </AuthorizeView>
 </nav>
 
-<div class="sidebar-bottom">
+<div class="mt-3 border-t border-line pt-3 md:mt-auto">
     <AuthorizeView>
         <Authorized Context="auth">
-            <div class="profile-row">
-                <div class="avatar profile-avatar">@Initials(auth.User.Identity?.Name)</div>
-                <div class="profile-details"><strong>@auth.User.Identity?.Name</strong><small>@RoleLabel(auth.User)</small></div>
+            <div class="flex items-center gap-2">
+                <div class="grid size-8 shrink-0 place-items-center rounded-full bg-brand-100 text-xs font-bold text-brand-500">@Initials(auth.User.Identity?.Name)</div>
+                <div class="flex min-w-0 flex-1 flex-col gap-0.5"><strong class="truncate text-xs font-bold">@auth.User.Identity?.Name</strong><small class="text-xs text-muted">@RoleLabel(auth.User)</small></div>
                 <form method="post" action="/account/logout">
                     <AntiforgeryToken />
-                    <button class="logout-button" type="submit" title="Cerrar sesión" aria-label="Cerrar sesión">Salir</button>
+                    <button class="rounded-md border border-line bg-white px-2 py-1.5 text-xs text-slate-600 hover:border-brand-100 hover:text-brand-600" type="submit" title="Cerrar sesión" aria-label="Cerrar sesión">Salir</button>
                 </form>
             </div>
         </Authorized>

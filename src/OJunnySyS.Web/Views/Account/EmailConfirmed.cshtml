@@ -1,16 +1,18 @@
 @model EmailConfirmationViewModel
 @{
-    Layout = null;
+    Layout = "_AccountLayout";
     ViewData["Title"] = "Confirmación de correo · OJunnySyS";
 }
-<!DOCTYPE html>
-<html lang="es"><head>
-    <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" /><meta name="robots" content="noindex,nofollow" />
-    <title>@ViewData["Title"]</title><link rel="stylesheet" href="~/lib/bootstrap/dist/css/bootstrap.min.css" />
-    <style>body{min-height:100vh;margin:0;display:grid;place-items:center;background:#f4f7f5;color:#18251f;font:16px/1.55 system-ui,sans-serif}main{width:min(100% - 32px,500px);padding:38px;background:white;border:1px solid #e3e9e5;border-radius:18px;box-shadow:0 20px 70px #183d2a12}.mark{width:48px;height:48px;display:grid;place-items:center;background:#236c4d;color:white;border-radius:14px;font-weight:750;font-size:23px}.brand{display:flex;align-items:center;gap:12px;margin-bottom:30px}.brand strong,.brand small{display:block}.brand small{color:#6e7b73;font-size:12px;letter-spacing:.1em}h1{font-size:27px}a{color:#236c4d}.btn-primary{background:#236c4d;border-color:#236c4d}</style>
-</head><body><main>
-    <div class="brand"><div class="mark">O.</div><div><strong>OJunnySyS</strong><small>GESTIÓN COMERCIAL</small></div></div>
-    <h1>@(Model.Confirmed ? "Correo confirmado" : "No se pudo confirmar")</h1><p>@Model.Message</p>
-    @if (Model.Confirmed) { <a class="btn btn-primary" href="/account/login">Iniciar sesión</a> }
-    else { <a href="/account/resend-confirmation">Solicitar otro enlace</a> }
-</main></body></html>
+
+@await Html.PartialAsync("_AccountBrand")
+<div class="mb-4 grid size-12 place-items-center rounded-full @(Model.Confirmed ? "bg-emerald-50 text-emerald-700" : "bg-rose-50 text-rose-700")" aria-hidden="true">@(Model.Confirmed ? "✓" : "!")</div>
+<h1 class="font-display text-2xl font-bold tracking-tight text-ink">@(Model.Confirmed ? "Correo confirmado" : "No se pudo confirmar")</h1>
+<p class="mb-6 mt-2 text-sm leading-6 text-slate-600">@Model.Message</p>
+@if (Model.Confirmed)
+{
+    <a class="inline-flex min-h-12 w-full items-center justify-center rounded-xl bg-brand-600 px-5 text-sm font-bold text-white transition hover:bg-brand-700" href="/account/login">Iniciar sesión</a>
+}
+else
+{
+    <a class="font-semibold text-brand-600 hover:underline" href="/account/resend-confirmation">Solicitar otro enlace</a>
+}

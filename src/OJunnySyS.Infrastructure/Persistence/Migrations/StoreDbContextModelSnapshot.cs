@@ -1667,6 +1667,122 @@ namespace OJunnySyS.Infrastructure.Persistence.Migrations
                     b.ToTable("CustomerReceipts");
                 });
 
+            modelBuilder.Entity("OJunnySyS.Domain.Sales.ParkedSale", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("char(36)");
+
+                    b.Property<DateTimeOffset?>("CancelledAtUtc")
+                        .HasColumnType("datetime");
+
+                    b.Property<Guid?>("CancelledByUserId")
+                        .HasColumnType("char(36)");
+
+                    b.Property<Guid>("CashierUserId")
+                        .HasColumnType("char(36)");
+
+                    b.Property<Guid?>("ConvertedSaleId")
+                        .HasColumnType("char(36)");
+
+                    b.Property<DateTimeOffset>("CreatedAtUtc")
+                        .HasColumnType("datetime");
+
+                    b.Property<Guid?>("CustomerId")
+                        .HasColumnType("char(36)");
+
+                    b.Property<string>("CustomerName")
+                        .IsRequired()
+                        .HasMaxLength(220)
+                        .HasColumnType("varchar(220)");
+
+                    b.Property<Guid>("IdempotencyKey")
+                        .HasColumnType("char(36)");
+
+                    b.Property<string>("RegisterCode")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("varchar(40)");
+
+                    b.Property<long>("Revision")
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint")
+                        .HasDefaultValue(0L);
+
+                    b.Property<string>("SellerName")
+                        .HasMaxLength(160)
+                        .HasColumnType("varchar(160)");
+
+                    b.Property<Guid?>("SellerUserId")
+                        .HasColumnType("char(36)");
+
+                    b.Property<int>("Status")
+                        .HasColumnType("int");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("char(36)");
+
+                    b.Property<DateTimeOffset?>("UpdatedAtUtc")
+                        .HasColumnType("datetime");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TenantId", "IdempotencyKey")
+                        .IsUnique();
+
+                    b.HasIndex("TenantId", "RegisterCode", "Status", "CreatedAtUtc");
+
+                    b.ToTable("ParkedSales");
+                });
+
+            modelBuilder.Entity("OJunnySyS.Domain.Sales.ParkedSaleLine", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("char(36)");
+
+                    b.Property<DateTimeOffset>("CreatedAtUtc")
+                        .HasColumnType("datetime");
+
+                    b.Property<decimal>("DiscountPercent")
+                        .HasPrecision(5, 2)
+                        .HasColumnType("decimal(5,2)");
+
+                    b.Property<Guid>("ParkedSaleId")
+                        .HasColumnType("char(36)");
+
+                    b.Property<Guid>("ProductId")
+                        .HasColumnType("char(36)");
+
+                    b.Property<string>("ProductName")
+                        .IsRequired()
+                        .HasMaxLength(160)
+                        .HasColumnType("varchar(160)");
+
+                    b.Property<int>("Quantity")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Sku")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("varchar(40)");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("char(36)");
+
+                    b.Property<DateTimeOffset?>("UpdatedAtUtc")
+                        .HasColumnType("datetime");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TenantId", "ParkedSaleId");
+
+                    b.HasIndex("TenantId", "ProductId");
+
+                    b.ToTable("ParkedSaleLines");
+                });
+
             modelBuilder.Entity("OJunnySyS.Domain.Sales.Sale", b =>
                 {
                     b.Property<Guid>("Id")
@@ -1700,6 +1816,9 @@ namespace OJunnySyS.Infrastructure.Persistence.Migrations
                         .IsRequired()
                         .HasMaxLength(64)
                         .HasColumnType("varchar(64)");
+
+                    b.Property<Guid?>("ParkedSaleId")
+                        .HasColumnType("char(36)");
 
                     b.Property<int>("PaymentMethod")
                         .HasColumnType("int");
@@ -1759,6 +1878,9 @@ namespace OJunnySyS.Infrastructure.Persistence.Migrations
                         .IsUnique();
 
                     b.HasIndex("TenantId", "Number")
+                        .IsUnique();
+
+                    b.HasIndex("TenantId", "ParkedSaleId")
                         .IsUnique();
 
                     b.HasIndex("TenantId", "SalesQuoteId")
@@ -3060,6 +3182,32 @@ namespace OJunnySyS.Infrastructure.Persistence.Migrations
                         .IsRequired();
                 });
 
+            modelBuilder.Entity("OJunnySyS.Domain.Sales.ParkedSale", b =>
+                {
+                    b.HasOne("OJunnySyS.Domain.Tenancy.Tenant", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("OJunnySyS.Domain.Sales.ParkedSaleLine", b =>
+                {
+                    b.HasOne("OJunnySyS.Domain.Sales.ParkedSale", null)
+                        .WithMany("Lines")
+                        .HasForeignKey("TenantId", "ParkedSaleId")
+                        .HasPrincipalKey("TenantId", "Id")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("OJunnySyS.Domain.Catalog.Product", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "ProductId")
+                        .HasPrincipalKey("TenantId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("OJunnySyS.Domain.Sales.Sale", b =>
                 {
                     b.HasOne("OJunnySyS.Domain.Cash.CashSession", null)
@@ -3077,6 +3225,12 @@ namespace OJunnySyS.Infrastructure.Persistence.Migrations
                         .HasForeignKey("TenantId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
+
+                    b.HasOne("OJunnySyS.Domain.Sales.ParkedSale", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "ParkedSaleId")
+                        .HasPrincipalKey("TenantId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict);
 
                     b.HasOne("OJunnySyS.Domain.Sales.SalesQuote", null)
                         .WithMany()
@@ -3263,6 +3417,11 @@ namespace OJunnySyS.Infrastructure.Persistence.Migrations
                     b.Navigation("Lines");
 
                     b.Navigation("Payments");
+                });
+
+            modelBuilder.Entity("OJunnySyS.Domain.Sales.ParkedSale", b =>
+                {
+                    b.Navigation("Lines");
                 });
 
             modelBuilder.Entity("OJunnySyS.Domain.Sales.Sale", b =>

@@ -1,10 +1,10 @@
-<div class="empty-state">
-    <div class="empty-icon">@Icon</div>
-    <strong>@Title</strong>
-    <p>@Description</p>
+<div class="grid place-items-center px-5 py-12 text-center text-slate-500">
+    <div class="mb-3 grid size-11 place-items-center rounded-xl bg-brand-50 text-xl text-brand-500">@Icon</div>
+    <strong class="text-sm text-slate-700">@Title</strong>
+    <p class="mt-1.5 text-xs">@Description</p>
     @if (ChildContent is not null)
     {
-        <div class="empty-actions">@ChildContent</div>
+        <div class="mt-3 flex flex-wrap justify-center gap-2">@ChildContent</div>
     }
 </div>
 

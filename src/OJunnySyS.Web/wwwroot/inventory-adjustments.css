@@ -1,26 +1,26 @@
 .inventory-adjustment-layout{display:grid;grid-template-columns:minmax(320px,.82fr) minmax(0,1.45fr);align-items:start;gap:16px}
 .inventory-adjustment-form,.inventory-adjustment-history{min-width:0;padding:20px}
 .inventory-adjustment-form .panel-heading,.inventory-adjustment-history .panel-heading{padding:0;margin-bottom:17px}
-.inventory-adjustment-form .panel-heading h2,.inventory-adjustment-history .panel-heading h2{margin:6px 0 4px;color:var(--ink);font:700 17px Manrope,sans-serif}
-.inventory-adjustment-form .panel-heading p,.inventory-adjustment-history .panel-heading p{margin:0;color:var(--muted);font-size:10px;line-height:1.55}
+.inventory-adjustment-form .panel-heading h2,.inventory-adjustment-history .panel-heading h2{margin:6px 0 4px;color:var(--ink);font:700 1.125rem Manrope,sans-serif}
+.inventory-adjustment-form .panel-heading p,.inventory-adjustment-history .panel-heading p{margin:0;color:var(--muted);font-size:0.8125rem;line-height:1.55}
 .inventory-adjustment-fields{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:13px}
-.inventory-adjustment-fields label{display:grid;min-width:0;align-content:start;gap:6px;color:#59695f;font-size:10px;font-weight:650}
-.app-shell .inventory-adjustment-fields input:not([type=checkbox]),.inventory-adjustment-fields select{width:100%;min-width:0;min-height:38px;padding:0 11px;border:1px solid #e0e7e1;border-radius:10px;background:#fff;color:#3f4e44;font:inherit;font-size:11px;font-weight:500;outline-color:#77ac89;box-shadow:none}
+.inventory-adjustment-fields label{display:grid;min-width:0;align-content:start;gap:6px;color:#59695f;font-size:0.8125rem;font-weight:650}
+.app-shell .inventory-adjustment-fields input:not([type=checkbox]),.inventory-adjustment-fields select{width:100%;min-width:0;min-height:38px;padding:0 11px;border:1px solid #e0e7e1;border-radius:10px;background:#fff;color:#3f4e44;font:inherit;font-size:0.8125rem;font-weight:500;outline-color:#77ac89;box-shadow:none}
 .app-shell .inventory-adjustment-fields input:not([type=checkbox]):focus-visible{border-color:#78a98a;outline:0;box-shadow:0 0 0 3px #2f845218}
 .inventory-adjustment-fields .inventory-field-wide{grid-column:1/-1}
-.inventory-adjustment-fields textarea{min-height:80px;padding:10px 12px;border:1px solid #e4e9e3;border-radius:10px;resize:vertical;font:inherit;font-size:11px;outline-color:#77ac89}
+.inventory-adjustment-fields textarea{min-height:80px;padding:10px 12px;border:1px solid #e4e9e3;border-radius:0.75rem;resize:vertical;font:inherit;font-size:0.875rem;outline-color:#77ac89}
 .inventory-balance-preview,.inventory-cost-note{display:grid;gap:4px;align-content:center;min-height:64px;padding:11px 13px;border:1px solid #e8eee8;border-radius:11px;background:#f7faf7}
-.inventory-balance-preview span,.inventory-cost-note span{font-size:9px;color:#819087}
-.inventory-balance-preview strong,.inventory-cost-note strong{font:700 14px Manrope,sans-serif;color:#2b6543}
-.inventory-balance-preview small,.inventory-cost-note small,.inventory-field-help{font-size:9px;line-height:1.45;color:#89958d;font-weight:450}
-.inventory-accounting-hint{margin-top:15px;padding:11px 13px;border-left:3px solid #7db88d;border-radius:7px;background:#f3f8f3;color:#6b796f;font-size:10px;line-height:1.55}
+.inventory-balance-preview span,.inventory-cost-note span{font-size:0.75rem;color:#819087}
+.inventory-balance-preview strong,.inventory-cost-note strong{font:700 0.875rem Manrope,sans-serif;color:#2b6543}
+.inventory-balance-preview small,.inventory-cost-note small,.inventory-field-help{font-size:0.75rem;line-height:1.45;color:#89958d;font-weight:450}
+.inventory-accounting-hint{margin-top:15px;padding:11px 13px;border-left:3px solid #7db88d;border-radius:7px;background:#f3f8f3;color:#6b796f;font-size:0.8125rem;line-height:1.55}
 .inventory-adjustment-actions{display:flex;justify-content:flex-end;margin-top:14px}
-.inventory-adjustment-setup{padding:14px;border:1px solid #f0dfba;border-radius:10px;background:#fffbf0;color:#786742;font-size:11px}
+.inventory-adjustment-setup{padding:14px;border:1px solid #f0dfba;border-radius:10px;background:#fffbf0;color:#786742;font-size:0.8125rem}
 .inventory-adjustment-setup p{margin:0 0 8px}
 .inventory-adjustment-history .table-wrap{overflow:auto}
 .inventory-adjustment-history table{min-width:760px}
 .inventory-adjustment-history td{vertical-align:top}
-.inventory-history-sub{display:block;max-width:260px;margin-top:4px;color:#89958d;font-size:9px;line-height:1.45;white-space:normal}
+.inventory-history-sub{display:block;max-width:260px;margin-top:4px;color:#89958d;font-size:0.75rem;line-height:1.45;white-space:normal}
 .inventory-increase{color:#2d7a4f}
 .inventory-decrease{color:#b8554b}
 .inventory-adjustment-notice{margin-bottom:14px}

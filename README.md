@@ -22,10 +22,14 @@ La aplicación Blazor se sirve en `http://localhost:5144`. El script lee las cre
 Para iniciar manualmente la aplicación desde la raíz del repositorio:
 
 ```powershell
+npm ci
+npm run css:build
 dotnet restore OJunnySyS.slnx
 dotnet build OJunnySyS.slnx
 dotnet run --project src/OJunnySyS.Web --launch-profile http
 ```
+
+Durante cambios de interfaz, deja `npm run css:watch` ejecutándose en otra terminal para regenerar Tailwind al guardar componentes Razor. El estándar de diseño está en [`AGENTS.md`](AGENTS.md); la entrada y el tema Tailwind viven en `src/OJunnySyS.Web/Styles/tailwind.css`.
 
 Configura `.env` a partir de `.env.example`; no copies credenciales reales al repositorio.
 

@@ -424,6 +424,8 @@ public sealed class EfStoreRepository(IDbContextFactory<StoreDbContext> contextF
         var registerCode = PosRegister.NormalizeCode(request.RegisterCode);
         if (request.Payments is null && request.PaymentMethod == PaymentMethod.Credit) throw new DomainException("Las ventas a crédito aún no están habilitadas.");
         if (cashierUserId == Guid.Empty) throw new DomainException("No se pudo identificar al cajero.");
+        if (request.SalesQuoteId is not null && request.ParkedSaleId is not null)
+            throw new DomainException("Una venta no puede convertir una cotización y una venta en espera al mismo tiempo.");
         var tenantId = tenantContext.GetRequiredTenantId();
         await using var db = await CreateDbContextAsync(cancellationToken);
         await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
@@ -457,6 +459,21 @@ public sealed class EfStoreRepository(IDbContextFactory<StoreDbContext> contextF
             EnsureSameCheckout(priorSale, request, cashierUserId, registerCode);
             await transaction.CommitAsync(cancellationToken);
             return priorSale;
+        }
+        ParkedSale? parkedSale = null;
+        if (request.ParkedSaleId is { } parkedSaleId)
+        {
+            parkedSale = await db.ParkedSales.FromSqlInterpolated($"SELECT * FROM ParkedSales WHERE TenantId = {tenantId} AND Id = {parkedSaleId} FOR UPDATE")
+                .Include(x => x.Lines).SingleOrDefaultAsync(cancellationToken)
+                ?? throw new DomainException("La venta en espera no existe en esta empresa.");
+            var requestedLines = request.Lines.OrderBy(x => x.ProductId)
+                .Select(x => (x.ProductId, x.Quantity, x.DiscountPercent)).ToArray();
+            var parkedLines = parkedSale.Lines.OrderBy(x => x.ProductId)
+                .Select(x => (x.ProductId, x.Quantity, x.DiscountPercent)).ToArray();
+            if (parkedSale.Status != ParkedSaleStatus.Parked || parkedSale.RegisterCode != registerCode ||
+                parkedSale.CustomerId != request.CustomerId || parkedSale.SellerUserId != request.SellerUserId ||
+                !requestedLines.SequenceEqual(parkedLines))
+                throw new DomainException("La venta en espera cambió, ya se cobró o pertenece a otro terminal. Actualiza el POS.");
         }
         if (request.Lines.Any(x => x.DiscountPercent > 0m))
         {
@@ -517,10 +534,11 @@ public sealed class EfStoreRepository(IDbContextFactory<StoreDbContext> contextF
         }
 
         if (request.PaymentMethod == PaymentMethod.Credit && (customer is null || request.DueDate is null)) throw new DomainException("Selecciona un cliente y una fecha de vencimiento para vender a crédito.");
-        var sale = new Sale(tenantId, $"V-{DateTimeOffset.UtcNow:yyyyMMddHHmmss}-{Guid.NewGuid():N}", customer, request.PaymentMethod, lines, cashSession?.Id, cashierUserId, tenant.DefaultTaxRate, request.IdempotencyKey, registerCode, warehouseId, request.DueDate, salesQuote?.Id);
+        var sale = new Sale(tenantId, $"V-{DateTimeOffset.UtcNow:yyyyMMddHHmmss}-{Guid.NewGuid():N}", customer, request.PaymentMethod, lines, cashSession?.Id, cashierUserId, tenant.DefaultTaxRate, request.IdempotencyKey, registerCode, warehouseId, request.DueDate, salesQuote?.Id, parkedSale?.Id);
         sale.AssignSeller(request.SellerUserId, sellerName);
         sale.RecordPayments(request.PaymentMethod == PaymentMethod.Credit ? [] : await ResolvePaymentAllocationsAsync(db, tenantId, request, sale.Total, cancellationToken));
         salesQuote?.MarkConverted(sale.Id);
+        parkedSale?.Complete(sale.Id);
         foreach (var movement in stockMovements)
             db.InventoryMovements.Add(new InventoryMovement(tenantId, movement.Product.Id, InventoryMovementType.Sale, -movement.Quantity, movement.WarehouseBalance, sale.Number, warehouseId));
         customer?.RecordPurchase(sale.Total);
@@ -642,7 +660,7 @@ public sealed class EfStoreRepository(IDbContextFactory<StoreDbContext> contextF
         var requestedLines = request.Lines.GroupBy(x => x.ProductId).ToDictionary(x => x.Key,
             x => (Quantity: SumQuantities(x.Select(line => line.Quantity)), DiscountPercent: x.Select(line => line.DiscountPercent).Distinct().Single()));
         var storedLines = sale.Lines.ToDictionary(x => x.ProductId, x => (x.Quantity, x.DiscountPercent));
-        if (sale.CashierUserId != cashierUserId || sale.CustomerId != request.CustomerId || sale.SellerUserId != request.SellerUserId || sale.PaymentMethod != request.PaymentMethod
+        if (sale.CashierUserId != cashierUserId || sale.CustomerId != request.CustomerId || sale.SellerUserId != request.SellerUserId || sale.ParkedSaleId != request.ParkedSaleId || sale.PaymentMethod != request.PaymentMethod
             || (request.PaymentMethod == PaymentMethod.Credit && sale.DueDate != request.DueDate) || sale.RegisterCode != registerCode
             || requestedLines.Count != storedLines.Count || requestedLines.Any(x => !storedLines.TryGetValue(x.Key, out var stored) || stored != x.Value))
             throw new DomainException("La clave de idempotencia ya se utilizó con otros datos de cobro.");

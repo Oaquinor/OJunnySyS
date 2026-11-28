@@ -3,7 +3,7 @@
         <AuthorizeRouteView RouteData="routeData" DefaultLayout="typeof(Layout.MainLayout)">
             <NotAuthorized>
                 <LayoutView Layout="typeof(Layout.MainLayout)">
-                    <div class="empty-state"><h1>Inicia sesión</h1><p>Accede a tu cuenta para continuar.</p><a class="btn btn-primary" href="/account/login">Ir al inicio de sesión</a></div>
+                    <div class="grid place-items-center px-5 py-12 text-center text-slate-500"><h1 class="font-display text-2xl font-bold text-ink">Inicia sesión</h1><p class="mt-2 text-sm">Accede a tu cuenta para continuar.</p><a class="mt-4 inline-flex min-h-10 items-center justify-center rounded-lg bg-brand-600 px-4 text-sm font-bold text-white transition hover:bg-brand-700" href="/account/login">Ir al inicio de sesión</a></div>
                 </LayoutView>
             </NotAuthorized>
         </AuthorizeRouteView>

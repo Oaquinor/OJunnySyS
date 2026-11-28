@@ -1,46 +1,28 @@
 @model LoginInput
 @{
-    Layout = null;
+    Layout = "_AccountLayout";
     ViewData["Title"] = "Iniciar sesión · OJunnySyS";
 }
-<!DOCTYPE html>
-<html lang="es">
-<head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>@ViewData["Title"]</title>
-    <link rel="stylesheet" href="~/lib/bootstrap/dist/css/bootstrap.min.css" />
-    <style>
-        :root { color-scheme: light; --ink: #18251f; --muted: #6e7b73; --green: #236c4d; --line: #e3e9e5; }
-        body { min-height: 100vh; margin: 0; display: grid; place-items: center; background: #f4f7f5; color: var(--ink); font: 16px/1.5 system-ui, sans-serif; }
-        main { width: min(100% - 32px, 440px); padding: 40px; background: #fff; border: 1px solid var(--line); border-radius: 18px; box-shadow: 0 20px 70px #183d2a12; }
-        .brand { display: flex; align-items: center; gap: 12px; margin-bottom: 32px; }
-        .mark { width: 48px; height: 48px; display: grid; place-items: center; border-radius: 14px; background: var(--green); color: white; font-size: 25px; font-weight: 750; }
-        .brand strong { display: block; font-size: 19px; letter-spacing: .01em; }.brand small { color: var(--muted); font-size: 12px; letter-spacing: .1em; }
-        h1 { margin: 0 0 6px; font-size: 26px; }.intro { margin: 0 0 26px; color: var(--muted); }
-        label { display: block; margin-bottom: 7px; font-weight: 600; }.form-control { min-height: 48px; border-color: var(--line); }
-        .btn-primary { width: 100%; min-height: 48px; margin-top: 10px; border-color: var(--green); background: var(--green); font-weight: 650; }
-        .validation-summary-errors { margin-bottom: 16px; padding: 12px 14px; color: #842029; background: #f8d7da; border-radius: 8px; }
-        .validation-summary-errors ul { margin: 0; padding-left: 20px; }
-        @@media (max-width: 480px) { main { padding: 28px 22px; } }
-    </style>
-</head>
-<body>
-    <main>
-        <div class="brand"><div class="mark">O.</div><div><strong>OJunnySyS</strong><small>GESTIÓN COMERCIAL</small></div></div>
-        <h1>Bienvenido</h1>
-        <p class="intro">Inicia sesión para abrir tu espacio de trabajo.</p>
-        <form method="post" action="/account/login">
-            @Html.AntiForgeryToken()
-            <input type="hidden" asp-for="ReturnUrl" />
-            <div asp-validation-summary="ModelOnly" role="alert"></div>
-            <div class="mb-3"><label asp-for="Email">Correo electrónico</label><input asp-for="Email" class="form-control" autocomplete="username" autofocus /><span asp-validation-for="Email" class="text-danger"></span></div>
-            <div class="mb-3"><label asp-for="Password">Contraseña</label><input asp-for="Password" class="form-control" autocomplete="current-password" /><span asp-validation-for="Password" class="text-danger"></span></div>
-            <div class="form-check mb-3"><input asp-for="RememberMe" class="form-check-input" /><label asp-for="RememberMe" class="form-check-label">Mantener sesión iniciada</label></div>
-            <button type="submit" class="btn btn-primary">Iniciar sesión</button>
-        </form>
-        <p class="mt-4 mb-2 text-center">¿Aún no tienes espacio? <a href="/account/register">Crea tu empresa de prueba</a></p>
-        <p class="mb-0 text-center"><a href="/account/resend-confirmation">Reenviar confirmación de correo</a></p>
-    </main>
-</body>
-</html>
+
+@await Html.PartialAsync("_AccountBrand")
+<h1 class="font-display text-2xl font-bold tracking-tight text-ink">Bienvenido</h1>
+<p class="mb-6 mt-1 text-sm text-slate-600">Inicia sesión para abrir tu espacio de trabajo.</p>
+<form method="post" action="/account/login" class="grid gap-4">
+    @Html.AntiForgeryToken()
+    <input type="hidden" asp-for="ReturnUrl" />
+    <div asp-validation-summary="ModelOnly" role="alert" class="rounded-xl bg-rose-50 p-3 text-sm text-rose-800"></div>
+    <div class="grid gap-1.5">
+        <label asp-for="Email" class="text-sm font-semibold text-slate-700">Correo electrónico</label>
+        <input asp-for="Email" class="w-full rounded-xl border border-slate-200 px-3 py-3 text-sm outline-none transition focus:border-brand-500 focus:ring-2 focus:ring-brand-100" autocomplete="username" autofocus />
+        <span asp-validation-for="Email" class="text-xs text-rose-700"></span>
+    </div>
+    <div class="grid gap-1.5">
+        <label asp-for="Password" class="text-sm font-semibold text-slate-700">Contraseña</label>
+        <input asp-for="Password" class="w-full rounded-xl border border-slate-200 px-3 py-3 text-sm outline-none transition focus:border-brand-500 focus:ring-2 focus:ring-brand-100" autocomplete="current-password" />
+        <span asp-validation-for="Password" class="text-xs text-rose-700"></span>
+    </div>
+    <label class="flex items-center gap-2 text-sm text-slate-600"><input asp-for="RememberMe" class="size-4 accent-brand-600" />Mantener sesión iniciada</label>
+    <button type="submit" class="mt-1 inline-flex min-h-12 items-center justify-center rounded-xl bg-brand-600 px-5 text-sm font-bold text-white shadow-sm transition hover:bg-brand-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600">Iniciar sesión</button>
+</form>
+<p class="mt-6 text-center text-sm text-slate-600">¿Aún no tienes espacio? <a class="font-semibold text-brand-600 hover:underline" href="/account/register">Crea tu empresa de prueba</a></p>
+<p class="mb-0 text-center text-sm"><a class="font-semibold text-brand-600 hover:underline" href="/account/resend-confirmation">Reenviar confirmación de correo</a></p>

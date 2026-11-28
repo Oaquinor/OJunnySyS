@@ -9,7 +9,7 @@
 <div class="tax-profile-layout">
     <section class="panel list-panel">
         <div class="modal-heading"><div><span class="eyebrow">CATÁLOGO DE LA EMPRESA</span><h2>@(_editingId is null ? "Nuevo perfil" : "Editar perfil")</h2><p>El código debe ser único dentro de esta empresa.</p></div></div>
-        <EditForm Model="_form" OnValidSubmit="SaveAsync">
+        <EditForm Model="_form" OnValidSubmit="SaveAsync" class="tax-profile-form">
             <DataAnnotationsValidator />
             <div class="form-grid">
                 <label>Código interno<InputText @bind-Value="_form.Code" maxlength="24" placeholder="Ej. TASA-GENERAL" disabled="@(_editingId is not null)" /></label>

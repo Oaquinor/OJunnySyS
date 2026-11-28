@@ -1,0 +1,112 @@
+@import "tailwindcss";
+
+@source "../Components";
+@source "../Views";
+
+@theme {
+  --font-sans: "DM Sans", ui-sans-serif, system-ui, sans-serif;
+  --font-display: "Manrope", ui-sans-serif, system-ui, sans-serif;
+  --color-brand-50: #eaf5ee;
+  --color-brand-100: #dcefe2;
+  --color-brand-500: #24734f;
+  --color-brand-600: #176c4a;
+  --color-brand-700: #10583b;
+  --color-ink: #22342b;
+  --color-muted: #87928b;
+  --color-line: #e9ece7;
+  --color-canvas: #f7f8f5;
+}
+
+@layer base {
+  *,
+  ::before,
+  ::after {
+    box-sizing: border-box;
+  }
+
+  html,
+  body {
+    min-height: 100%;
+    background: var(--color-canvas);
+    color: var(--color-ink);
+    font-family: var(--font-sans);
+    font-synthesis: none;
+    text-rendering: optimizeLegibility;
+  }
+
+  body {
+    margin: 0;
+    font-size: 0.875rem;
+  }
+
+  select {
+    @apply min-h-10 rounded-xl border border-slate-200 bg-white px-3 pr-10 text-sm text-slate-700 outline-none transition;
+    appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%2365756a' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 0.8rem center;
+  }
+
+  input:not([type="checkbox"]):not([type="radio"]):not([type="hidden"]),
+  textarea {
+    @apply rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 outline-none transition;
+  }
+
+  select:focus-visible,
+  input:not([type="checkbox"]):not([type="radio"]):not([type="hidden"]):focus-visible,
+  textarea:focus-visible {
+    @apply border-brand-500 ring-2 ring-brand-100;
+  }
+
+  select:disabled,
+  input:disabled,
+  textarea:disabled {
+    @apply cursor-not-allowed bg-slate-100 text-slate-500;
+  }
+}
+
+@supports (appearance: base-select) {
+  @layer base {
+    select {
+      appearance: base-select;
+      background-image: none;
+    }
+
+    select::picker-icon {
+      color: #64766a;
+      transition: rotate 0.16s ease;
+    }
+
+    select:open::picker-icon {
+      rotate: 180deg;
+    }
+
+    select::picker(select) {
+      appearance: base-select;
+      margin-block: 0.3rem;
+      padding: 0.3rem;
+      border: 1px solid var(--color-line);
+      border-radius: 1rem;
+      background: white;
+      box-shadow: 0 0.75rem 1.875rem #1833261f;
+      color: #34463b;
+    }
+
+    select option {
+      min-height: 2.25rem;
+      padding: 0.5rem 0.7rem;
+      border-radius: 0.6rem;
+      color: #435148;
+    }
+
+    select option:hover {
+      background: #f0f6f0;
+    }
+
+    select option:checked {
+      background: #e6f2e8;
+      color: #246a45;
+      font-weight: 700;
+    }
+  }
+}

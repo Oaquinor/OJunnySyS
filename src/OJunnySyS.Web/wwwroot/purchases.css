@@ -19,27 +19,27 @@
 .purchases-grid > .panel > .table-wrap table { min-width: 510px; }
 .purchases-grid .form-grid label { gap: 7px; }
 .purchases-grid .form-grid input,
-.purchases-grid .form-grid select { width: 100%; min-height: 39px; padding-inline: 11px; font-size: 11px; }
+.purchases-grid .form-grid select { width: 100%; min-height:2.5rem; padding-inline: 11px; font-size:0.875rem; }
 .purchases-grid .form-action { align-self: end; }
 .purchases-grid .form-action .button { min-height: 39px; }
 .purchases-grid .purchase-total-breakdown { display: grid; gap: 8px; margin: 13px 20px 0; padding: 13px 15px; border: 1px solid #e9eee8; border-radius: 11px; background: #f8faf7; }
-.purchase-total-breakdown > div { display: flex; align-items: center; justify-content: space-between; gap: 12px; color: #758278; font-size: 10px; }
-.purchase-total-breakdown strong { color: #44564a; font-size: 11px; }
+.purchase-total-breakdown > div { display: flex; align-items: center; justify-content: space-between; gap: 12px; color: #758278; font-size: 0.8125rem; }
+.purchase-total-breakdown strong { color: #44564a; font-size: 0.8125rem; }
 .purchase-total-breakdown .purchase-total-final { margin-top: 3px; padding-top: 10px; border-top: 1px solid #e3eae2; color: #35493b; font-weight: 700; }
-.purchase-total-breakdown .purchase-total-final strong { color: #246d49; font: 700 17px Manrope, sans-serif; }
+.purchase-total-breakdown .purchase-total-final strong { color: #246d49; font: 700 1.125rem Manrope, sans-serif; }
 .purchase-lines { display: grid; gap: 7px; min-width: 215px; }
 .purchase-line { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 6px 0; border-bottom: 1px solid #edf0ec; }
 .purchase-line:last-child { border-bottom: 0; }
-.purchase-line > span { display: grid; gap: 2px; color: #4b5c50; font-size: 9px; }
+.purchase-line > span { display: grid; gap: 2px; color: #4b5c50; font-size: 0.75rem; }
 .purchase-line > span small { color: #9aa49c; }
 .purchase-line > div { display: flex; align-items: center; gap: 5px; }
-.receive-quantity { width: 52px; height: 30px; padding-inline: 5px; font-size: 10px; }
+.receive-quantity { width: 52px; height: 30px; padding-inline: 5px; font-size: 0.8125rem; }
 .purchase-line .button { min-height: 30px; height: 30px; }
 .purchase-orders { margin-top: 17px; }
 .purchase-orders .modal-heading { padding: 20px; }
 .purchase-orders td { white-space: normal; vertical-align: middle; }
 .purchase-orders .amount { white-space: nowrap; }
-.purchase-total-note { display: block; margin-top: 3px; color: #8a978d; font-size: 8px; font-weight: 500; }
+.purchase-total-note { display: block; margin-top: 3px; color: #8a978d; font-size: 0.75rem; font-weight: 500; }
 
 @media (max-width: 1050px) {
     .purchases-grid { grid-template-columns: 1fr; }

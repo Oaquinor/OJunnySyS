@@ -1,0 +1,15 @@
+@using Microsoft.AspNetCore.Components.Routing
+
+<NavLink class="flex min-h-10 items-center gap-2 rounded-lg px-3 text-xs font-medium text-slate-600 transition hover:bg-slate-50 [&.active]:bg-brand-50 [&.active]:font-bold [&.active]:text-brand-600"
+         href="@Href"
+         Match="Match">
+    <span class="w-4 shrink-0 text-center text-base" aria-hidden="true">@Icon</span>
+    @ChildContent
+</NavLink>
+
+@code {
+    [Parameter, EditorRequired] public string Href { get; set; } = "";
+    [Parameter] public string Icon { get; set; } = "•";
+    [Parameter] public NavLinkMatch Match { get; set; } = NavLinkMatch.Prefix;
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+}
