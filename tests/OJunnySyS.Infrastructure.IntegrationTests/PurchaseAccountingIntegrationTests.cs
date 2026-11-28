@@ -210,6 +210,7 @@ public sealed class PurchaseAccountingIntegrationTests
         Assert.AreEqual(1, await verify.Sales.CountAsync(x => x.SalesQuoteId == quote.Id));
         Assert.AreEqual(1, await verify.InventoryMovements.CountAsync(x => x.Reference == sale.Number));
         var entry = await verify.JournalEntries.Include(x => x.Lines).SingleAsync(x => x.SourceType == "SALE" && x.SourceId == sale.Id);
+        Assert.AreEqual(today, entry.EntryDate, "La venta se contabiliza en la fecha local definida para la empresa.");
         Assert.AreEqual(entry.Lines.Sum(x => x.Debit), entry.Lines.Sum(x => x.Credit));
     }
 
@@ -450,6 +451,7 @@ public sealed class PurchaseAccountingIntegrationTests
         Assert.AreEqual(10, (await verify.WarehouseStocks.SingleAsync(x => x.WarehouseId == warehouse.Id && x.ProductId == product.Id)).Quantity);
         var receipts = await verify.JournalEntries.Include(x => x.Lines).Where(x => x.SourceType == "PURCHASERECEIPT").ToListAsync();
         Assert.AreEqual(2, receipts.Count, "Cada recepción parcial tiene su asiento.");
+        Assert.IsTrue(receipts.All(x => x.EntryDate == date), "Las recepciones usan la fecha del negocio, no el día UTC del servidor.");
         Assert.AreEqual(2, await verify.PurchaseReceiptBatches.CountAsync(x => x.PurchaseOrderId == order.Id));
         Assert.AreEqual(2, await verify.InventoryMovements.CountAsync(x => x.Reference == order.Number));
         Assert.AreEqual(590m, receipts.Sum(x => x.Lines.Sum(line => line.Debit)));
@@ -459,6 +461,7 @@ public sealed class PurchaseAccountingIntegrationTests
         Assert.AreEqual(2, payments, "El reintento no duplica el abono al proveedor.");
         var paymentEntries = await verify.JournalEntries.Include(x => x.Lines).Where(x => x.SourceType == "SUPPLIERPAYMENT").ToListAsync();
         Assert.AreEqual(2, paymentEntries.Count);
+        Assert.IsTrue(paymentEntries.All(x => x.EntryDate == date), "Los pagos a proveedores usan la fecha contable del negocio.");
         Assert.AreEqual(590m, paymentEntries.Sum(x => x.Lines.Sum(line => line.Debit)));
         Assert.AreEqual(590m, paymentEntries.Sum(x => x.Lines.Sum(line => line.Credit)));
     }

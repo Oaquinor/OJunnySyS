@@ -1021,7 +1021,7 @@ public sealed class EfStoreRepository(IDbContextFactory<StoreDbContext> contextF
         var receivableAccount = accounts.SingleOrDefault(x => x.Code == "1100");
         if (paymentAccount is null || receivableAccount is null) throw new DomainException("Revisa las cuentas activas de cobro y cuentas por cobrar.");
         var entry = new JournalEntry(tenantId, $"COB-{DateTimeOffset.UtcNow:yyyyMMddHHmmss}-{Guid.NewGuid():N}"[..40],
-            DateOnly.FromDateTime(DateTime.UtcNow), $"Cobro de cliente · {sale.Number}", actorId,
+            DateOnly.FromDateTime(businessClock.ToBusinessTime(businessClock.UtcNow).DateTime), $"Cobro de cliente · {sale.Number}", actorId,
             [new JournalEntryLine(tenantId, paymentAccount.Id, paymentAccount.Code, paymentAccount.Name, receipt.Amount, 0, $"{method.Name} · {sale.CustomerName}"),
              new JournalEntryLine(tenantId, receivableAccount.Id, receivableAccount.Code, receivableAccount.Name, 0, receipt.Amount, $"Abono a {sale.Number}")],
             "CUSTOMERRECEIPT", receipt.Id);
@@ -1255,7 +1255,7 @@ public sealed class EfStoreRepository(IDbContextFactory<StoreDbContext> contextF
         return order;
     }
 
-    private static async Task PostPurchaseReceiptJournalEntryAsync(StoreDbContext db, Guid tenantId, PurchaseOrder order, Guid batchId,
+    private async Task PostPurchaseReceiptJournalEntryAsync(StoreDbContext db, Guid tenantId, PurchaseOrder order, Guid batchId,
         IReadOnlyCollection<(PurchaseOrderLine Line, int Quantity, decimal Tax)> receivedLines, Guid actorId, CancellationToken ct)
     {
         var subtotal = receivedLines.Sum(x => decimal.Round(x.Line.UnitCost * x.Quantity, 2, MidpointRounding.AwayFromZero));
@@ -1273,7 +1273,7 @@ public sealed class EfStoreRepository(IDbContextFactory<StoreDbContext> contextF
         if (tax > 0) lines.Add(new JournalEntryLine(tenantId, accounts["1300"].Id, accounts["1300"].Code, accounts["1300"].Name, tax, 0, $"Impuesto acreditable · {order.Number}"));
         lines.Add(new JournalEntryLine(tenantId, accounts["2000"].Id, accounts["2000"].Code, accounts["2000"].Name, 0, total, $"Cuenta por pagar · {order.SupplierName}"));
         var entry = new JournalEntry(tenantId, $"REC-{DateTimeOffset.UtcNow:yyyyMMddHHmmss}-{Guid.NewGuid():N}"[..40],
-            DateOnly.FromDateTime(DateTime.UtcNow), $"Recepción de compra {order.Number}", actorId, lines, "PURCHASERECEIPT", batchId);
+            DateOnly.FromDateTime(businessClock.ToBusinessTime(businessClock.UtcNow).DateTime), $"Recepción de compra {order.Number}", actorId, lines, "PURCHASERECEIPT", batchId);
         db.JournalEntries.Add(entry);
     }
 
@@ -1344,7 +1344,7 @@ public sealed class EfStoreRepository(IDbContextFactory<StoreDbContext> contextF
         var payableAccount = await db.ChartAccounts.SingleOrDefaultAsync(x => x.Code == "2000" && x.IsActive, cancellationToken)
             ?? throw new DomainException("La cuenta de cuentas por pagar está inactiva o no existe.");
         var paymentEntry = new JournalEntry(tenantId, $"PAG-{DateTimeOffset.UtcNow:yyyyMMddHHmmss}-{Guid.NewGuid():N}"[..40],
-            DateOnly.FromDateTime(DateTime.UtcNow), $"Pago a proveedor {order.Number}", paidByUserId,
+            DateOnly.FromDateTime(businessClock.ToBusinessTime(businessClock.UtcNow).DateTime), $"Pago a proveedor {order.Number}", paidByUserId,
             [new JournalEntryLine(tenantId, payableAccount.Id, payableAccount.Code, payableAccount.Name, payment.Amount, 0, $"Abono · {order.SupplierName}"),
              new JournalEntryLine(tenantId, paymentAccount.Id, paymentAccount.Code, paymentAccount.Name, 0, payment.Amount, $"Pago {request.Method} · {order.Number}")],
             "SUPPLIERPAYMENT", payment.Id);
